@@ -53,6 +53,8 @@ static pthread_mutex_t lw_url_lock = PTHREAD_MUTEX_INITIALIZER; // thread-safe a
 typedef struct {
     ws_cli_conn_t *client;                              // pointer unique to each connection, else NULL
     uint8_t *pixels;                                    // this client's current display image
+    int pixel_users;                                    // active borrowers of this pixels buffer
+    bool pixels_retiring;                               // close has begun; free pixels once the borrowers are gone
 } SessionInfo;
 static SessionInfo *si_list;                            // malloced list
 static int si_n;                                        // n malloced
@@ -137,35 +139,48 @@ static void wifiSTBWrite_helper (void *context, void *data, int size)
     }
 }
 
-/* return the pixels pointer for the existing client, else NULL.
- * pixels pointer is safe to use outside si_lock and even if si_list is later realloced (and hence moves).
+/* borrow pixels for the given client and keep them alive until return_session_pixels().
  */
-static uint8_t *getSIPixels (ws_cli_conn_t *client)
+static uint8_t *borrow_session_pixels (ws_cli_conn_t *client)
 {
-    // protect list while manipulating -- N.B. unlock before returning!
     pthread_mutex_lock (&si_lock);
 
-    // scan si_list for client
-    SessionInfo *found_sip = NULL;
     for (int i = 0; i < si_n; i++) {
-        if (si_list[i].client == client) {
-            found_sip = &si_list[i];
+        SessionInfo *sip = &si_list[i];
+        if (sip->client == client && sip->pixels) {
+            sip->pixel_users++;
+            uint8_t *pixels = sip->pixels;
+            pthread_mutex_unlock (&si_lock);
+            return (pixels);
+        }
+    }
+
+    pthread_mutex_unlock (&si_lock);
+    Serial.printf ("LIVE: client %s: no session pixels to borrow\n", ws_getaddress(client));
+    return (NULL);
+}
+
+/* give back pixels borrowed from borrow_session_pixels().
+ */
+static void return_session_pixels (uint8_t *pixels)
+{
+    pthread_mutex_lock (&si_lock);
+
+    for (int i = 0; i < si_n; i++) {
+        SessionInfo *sip = &si_list[i];
+        if (sip->pixels == pixels) {
+            if (sip->pixel_users > 0)
+                sip->pixel_users--;
+            if (sip->pixels_retiring && sip->pixel_users == 0) {
+                free (sip->pixels);
+                sip->pixels = NULL;
+                sip->pixels_retiring = false;
+            }
             break;
         }
     }
 
-    // capture pixels address before unlocking
-    uint8_t *pixels = NULL;
-    if (found_sip)
-        pixels = found_sip->pixels;
-    else
-        Serial.printf ("LIVE: client %s: missing pixels\n", ws_getaddress(client));
-
-    // unlock
     pthread_mutex_unlock (&si_lock);
-
-    // return result
-    return (pixels);
 }
 
 /* send difference between client's last known screen image and the current image,
@@ -177,21 +192,23 @@ static void updateExistingClient (ws_cli_conn_t *client)
     struct timeval tv0;
     gettimeofday (&tv0, NULL);
 
-    // find client's current pixels
-    uint8_t *pixels = getSIPixels(client);
+    // use the client's pixels buffer directly, protected by a borrowed reference
+    uint8_t *pixels = borrow_session_pixels(client);
     if (!pixels)
         return;
 
-    // make a copy of client's last known image
+    // keep only a copy of the client's prior image for diffing
     uint8_t *img_client = (uint8_t *) malloc (LIVE_NBYTES);
-    if (!img_client)
+    if (!img_client) {
+        return_session_pixels (pixels);
         bye ("No memory for LIVE update\n");
+    }
     memcpy (img_client, pixels, LIVE_NBYTES);
 
-    // replace clients's pixels with current screen contents
+    // replace client's current image with a fresh capture
     if (!tft.getRawPix (pixels, LIVE_NPIX))
         bye ("getRawPix for update failed\n");
-    uint8_t *img_now = pixels;                      // better name
+    uint8_t *img_now = pixels;
 
     if (debugLevel (DEBUG_WEB, 2)) {
         struct timeval tv1;
@@ -377,14 +394,14 @@ static void updateExistingClient (ws_cli_conn_t *client)
     // finished with temps
     free (chg_regns);
     free (img_client);
+    return_session_pixels (pixels);
 }
 
 /* capture fresh screen image for client and send.
  */
 static void sendClientPNG (ws_cli_conn_t *client)
 {
-    // get this client's current pixels array
-    uint8_t *pixels = getSIPixels(client);
+    uint8_t *pixels = borrow_session_pixels(client);
     if (!pixels)
         return;
 
@@ -398,6 +415,8 @@ static void sendClientPNG (ws_cli_conn_t *client)
 
     if (debugLevel (DEBUG_WEB, 1))
         Serial.printf ("LIVE: client %s: sent full PNG\n", ws_getaddress(client));
+
+    return_session_pixels (pixels);
 }
 
 /* send message that user wants full screen.
@@ -446,8 +465,8 @@ static void getLiveUpdate (ws_cli_conn_t *client, char args[], size_t args_len)
         sendFullScreen (client);
 
     // check for pending openurl if this client did a touch
+    pthread_mutex_lock (&lw_url_lock);
     if (lastest_ws_touch_client == client) {
-        pthread_mutex_lock (&lw_url_lock);
         if (liveweb_openurl) {
             Serial.printf ("LIVE: sending URL %s\n", liveweb_openurl);
             sendURL (client, liveweb_openurl);
@@ -455,8 +474,8 @@ static void getLiveUpdate (ws_cli_conn_t *client, char args[], size_t args_len)
             liveweb_openurl = NULL;
             lastest_ws_touch_client = NULL;
         }
-        pthread_mutex_unlock (&lw_url_lock);
     }
+    pthread_mutex_unlock (&lw_url_lock);
 
     // close if time out
     if (liveweb_to) {
@@ -612,7 +631,9 @@ static void setLiveTouch (ws_cli_conn_t *client, char args[], size_t args_len)
             wifi_tt = button ? TT_TAP_BX : TT_TAP;              // 0 means button 1 -- go figure
 
             // record this client as the latest to do a touch
+            pthread_mutex_lock (&lw_url_lock);
             lastest_ws_touch_client = client;
+            pthread_mutex_unlock (&lw_url_lock);
 
             Serial.printf ("LIVE: set_touch %d %d with %d\n", wifi_tt_s.x, wifi_tt_s.y, button);
         }
@@ -702,13 +723,8 @@ static void ws_onopen(ws_cli_conn_t *client)
     SessionInfo *new_sip = NULL;
     for (int i = 0; i < si_n; i++) {
         SessionInfo *sip = &si_list[i];
-        if (!sip->client) {
+        if (!sip->client && !sip->pixels && sip->pixel_users == 0 && !sip->pixels_retiring) {
             new_sip = sip;
-            // insure no stale pixels
-            if (new_sip->pixels) {
-                free (new_sip->pixels);
-                new_sip->pixels = NULL;
-            }
             break;
         }
     }
@@ -756,6 +772,8 @@ static void ws_onopen(ws_cli_conn_t *client)
  */
 static void ws_onclose (ws_cli_conn_t *client)
 {
+    pthread_mutex_lock (&si_lock);
+
     // remove from si_list
     for (int i = 0; i < si_n; i++) {
         SessionInfo *sip = &si_list[i];
@@ -764,8 +782,12 @@ static void ws_onclose (ws_cli_conn_t *client)
 
             // recycle pixel memory
             if (sip->pixels) {
-                free (sip->pixels);
-                sip->pixels = NULL;
+                if (sip->pixel_users > 0)
+                    sip->pixels_retiring = true;
+                else {
+                    free (sip->pixels);
+                    sip->pixels = NULL;
+                }
             }
 
             // decrement appropriate counter
@@ -777,9 +799,26 @@ static void ws_onclose (ws_cli_conn_t *client)
                 Serial.printf ("LIVE: RW client %s disconnected, now %d\n", ws_getaddress(client), n_rwweb);
             }
 
+            pthread_mutex_unlock (&si_lock);
+
+            // discard stale touch/url state from the dead client
+            pthread_mutex_lock (&lw_url_lock);
+            if (lastest_ws_touch_client == client) {
+                lastest_ws_touch_client = NULL;
+                if (liveweb_openurl) {
+                    free (liveweb_openurl);
+                    liveweb_openurl = NULL;
+                }
+                if (wifi_tt != TT_NONE)
+                    wifi_tt = TT_NONE;
+            }
+            pthread_mutex_unlock (&lw_url_lock);
+
             return;
         }
     }
+
+    pthread_mutex_unlock (&si_lock);
 
     // if get here, client was not found in si_list -- usually just because closed because too many open
     // Serial.printf ("LIVE: client %s: disappeared after closing websocket\n", ws_getaddress(client));
@@ -946,5 +985,8 @@ void openLiveWebURL (const char *url)
  */
 bool isLiveWebTouch (void)
 {
-    return (lastest_ws_touch_client != NULL);
+    pthread_mutex_lock (&lw_url_lock);
+    bool is_live_touch_pending = lastest_ws_touch_client != NULL;
+    pthread_mutex_unlock (&lw_url_lock);
+    return (is_live_touch_pending);
 }
