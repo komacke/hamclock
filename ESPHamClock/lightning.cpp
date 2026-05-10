@@ -465,36 +465,36 @@ void drawLightningOnMap (void)
         return;
 
     for (int ageloop = 0; ageloop < 3; ageloop++) {  // age in loop goes from oldest 0 to newest 2
-		for (int i = 0; i < n_strikes; i++) {
+        for (int i = 0; i < n_strikes; i++) {
 
-			SCoord s;
-			ll2sRaw (strikes[i].lat * (M_PIF / 180.0F),
-					strikes[i].lng * (M_PIF / 180.0F),
-					s, 8);
+            SCoord s;
+            ll2sRaw (strikes[i].lat * (M_PIF / 180.0F),
+                    strikes[i].lng * (M_PIF / 180.0F),
+                    s, 8);
 
-			if (s.x == 0 && s.y == 0)
-				continue;
+            if (s.x == 0 && s.y == 0)
+                continue;
 
-			// Don't draw over the RSS banner
-			if (overRSS (raw2appSCoord (s)))
-				continue;
+            // Don't draw over the RSS banner
+            if (overRSS (raw2appSCoord (s)))
+                continue;
 
-			int myage;
-			uint16_t color;
-			if      (strikes[i].age_s < 120) {
-				color = RGB565(255, 220,   0);
-				myage=2;
-			}
-			else if (strikes[i].age_s < 300)  {
-				color = RGB565(255, 140,   0);
-				myage=1;
-			}
-			else {
-				color = RGB565(220,  40,  40);
-				myage=0;
-			}
-			if (ageloop == myage)
-				drawBolt ((int16_t)s.x, (int16_t)s.y, color);
-		}
-	}
+            int myage;
+            uint16_t color;
+            if      (strikes[i].age_s < 120) {
+                color = RGB565(255, 220,   0);
+                myage=2;
+            }
+            else if (strikes[i].age_s < 300)  {
+                color = RGB565(255, 140,   0);
+                myage=1;
+            }
+            else {
+                color = RGB565(220,  40,  40);
+                myage=0;
+            }
+            if (ageloop == myage)
+                drawBolt ((int16_t)s.x, (int16_t)s.y, color);
+        }
+    }
 }
