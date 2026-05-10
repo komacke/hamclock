@@ -1,5 +1,7 @@
 # HamClock Client
 
+[![C++11 web](https://img.shields.io/github/actions/workflow/status/openhamclock/hamclock/compile-web.yml?branch=main&label=C%2B%2B11%20web&logo=cplusplus&style=flat)](https://github.com/openhamclock/hamclock/actions/workflows/compile-web.yml) [![C++11 Pi](https://img.shields.io/github/actions/workflow/status/openhamclock/hamclock/compile-fb0.yml?branch=main&label=C%2B%2B11%20Pi&logo=raspberrypi&style=flat)](https://github.com/openhamclock/hamclock/actions/workflows/compile-fb0.yml)
+
 This repository is the primary source for ongoing maintenance of the HamClock Client,
 aka the HamClock "frontend", and often just referred to as "HamClock".
 
