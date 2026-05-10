@@ -49,6 +49,7 @@ typedef struct {
 static LightningStrike  strikes[LIGHTNING_MAX_STRIKES];
 static int              n_strikes;
 static time_t           next_fetch;
+static time_t           limit_msg_until;
 
 uint8_t  lightning_on;      // extern; saved to NV_LIGHTNING_ON
 uint8_t  ltg_worldwide;     // extern; 1=worldwide, 0=radius mode
@@ -56,7 +57,12 @@ uint16_t ltg_radius_km;     // extern; search radius in km when not worldwide
 
 #define LTG_RADIUS_DEFAULT  500
 #define LTG_RADIUS_MIN      10
-#define LTG_RADIUS_MAX      9999
+#define LTG_RADIUS_MAX      20000
+
+static void showLightningRadiusLimitMsg(void)
+{
+    limit_msg_until = myNow() + 7;
+}
 
 // ---- bolt icon -----------------------------------------------------------
 //
@@ -254,6 +260,27 @@ static void drawLightningRings (void)
 
 void drawNCDXFLightningStats (void)
 {
+    if (limit_msg_until != 0 && myNow() < limit_msg_until) {
+        prepPlotBox (NCDXF_b);
+        selectFontStyle (BOLD_FONT, FAST_FONT);
+        tft.setTextColor (RA8875_RED);
+        static const char * const lines[] = {
+            "Max Earth",
+            "grt circl",
+            "distance",
+            "20000 km",
+        };
+        uint16_t y = NCDXF_b.y + NCDXF_b.h/5;
+        const uint16_t line_step = 16;
+        for (int i = 0; i < (int)NARRAY(lines); i++) {
+            uint16_t w = getTextWidth (lines[i]);
+            tft.setCursor (NCDXF_b.x + (NCDXF_b.w - w)/2, y);
+            tft.print (lines[i]);
+            y += line_step;
+        }
+        return;
+    }
+
     // Erase panel
     fillSBox (NCDXF_b, RA8875_BLACK);
 
@@ -335,6 +362,7 @@ void initLightning (void)
 
     n_strikes  = 0;
     next_fetch = 0;
+    limit_msg_until = 0;
     Serial.printf ("LTG: init, overlay %s mode %s radius %dkm\n",
                    lightning_on  ? "ON" : "OFF",
                    ltg_worldwide ? "worldwide" : "radius",
@@ -348,6 +376,11 @@ void updateLightning (void)
         return;
 
     time_t now = myNow();
+    if (limit_msg_until != 0 && now >= limit_msg_until) {
+        limit_msg_until = 0;
+        if (brb_mode == BRB_SHOW_LIGHTNING)
+            drawNCDXFLightningStats();
+    }
     if (now < next_fetch)
         return;
 
@@ -368,11 +401,7 @@ void doLightningTouch (void)
     char rad_lbl[] = "";           // no prefix label -- units shown in radio button
 
     // initialise text field with current radius
-    char tmp[5]; int pos = 4; tmp[pos] = '\0';
-    int n = ltg_radius_km;
-    do { tmp[--pos] = (char)('0' + n % 10); n /= 10; } while (n > 0);
-    strncpy (rad_buf, tmp + pos, sizeof(rad_buf) - 1);
-    rad_buf[sizeof(rad_buf) - 1] = '\0';
+    snprintf (rad_buf, sizeof(rad_buf), "%u", ltg_radius_km);
 
     MenuText mt;
     memset (&mt, 0, sizeof(mt));
@@ -412,10 +441,14 @@ void doLightningTouch (void)
         if (!ltg_worldwide) {
             int r = atoi (rad_buf);
             Serial.printf ("LTG: radius text '%s' parsed as %d\n", rad_buf, r);
-            if (r >= LTG_RADIUS_MIN && r <= LTG_RADIUS_MAX)
+            if (r > LTG_RADIUS_MAX) {
+                ltg_radius_km = LTG_RADIUS_MAX;
+                showLightningRadiusLimitMsg();
+            } else if (r >= LTG_RADIUS_MIN && r <= LTG_RADIUS_MAX) {
                 ltg_radius_km = (uint16_t) r;
-            else
+            } else {
                 ltg_radius_km = LTG_RADIUS_DEFAULT;
+            }
             NVWriteUInt16 (NV_LTG_RADIUS, ltg_radius_km);
             Serial.printf ("LTG: radius set to %dkm\n", ltg_radius_km);
         }
