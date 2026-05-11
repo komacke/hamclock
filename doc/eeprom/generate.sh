@@ -5,16 +5,18 @@ script_path=${0%/*}/
 src_path=${script_path}../../ESPHamClock/
 doc_eeprompath="${script_path}../../doc/eeprom/"
 contrib_path="${script_path}../../hamclock-contrib/"
+eeprom_file="$HOME/.hamclock/eeprom"
 
 usage() {
     echo "Usage: $0 [-s src_path] [-c contrib_path] [-e doc_eeprompath]"
     echo "  -s  path to ESPHamClock source    (default: ${src_path})"
     echo "  -c  path to hamclock-contrib      (default: ${contrib_path})"
     echo "  -e  path to output eeprom doc dir (default: ${doc_eeprompath})"
+    echo "  -f  path to eeprom file           (default: ${eeprom_file})"
     exit 1
 }
 
-while getopts "s:c:e:" opt; do
+while getopts "s:c:e:f:" opt; do
     case $opt in
         s)  src_path="${OPTARG}"
             # ensure trailing slash
@@ -36,6 +38,12 @@ while getopts "s:c:e:" opt; do
             if [[ ! -w "${doc_eeprompath}hceeprom.log" ]] && \
                ! touch "${doc_eeprompath}hceeprom.log" 2>/dev/null; then
                 echo "Error: -e invalid path, ${doc_eeprompath}hceeprom.log cannot be written"
+                exit 1
+            fi
+            ;;
+        f)  eeprom_file="${OPTARG}"
+            if [[ ! -f "${eeprom_file}" ]]; then
+                echo "Error: -f invalid file, ${eeprom_file} does not exist"
                 exit 1
             fi
             ;;
@@ -69,7 +77,7 @@ log_file=$(realpath "$log_file")
 csv_file=$(realpath "$csv_file")
 
 cd ${src_path}
-perl ${contrib_path}hceeprom.pl -a | grep NV_ > ${log_file}
+perl ${contrib_path}hceeprom.pl -a -e ${eeprom_file} | grep NV_ > ${log_file}
 echo Addr,Name,Len,Type,Description > ${csv_file}
 awk '
 BEGIN { FS=" " ; OFS="," }

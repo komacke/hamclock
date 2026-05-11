@@ -208,5 +208,8 @@ Addr,Name,Len,Type,Description
 0xAE0,NV_ANT_DE_INDEX,2,i,Antenna index for TX
 0xAE3,NV_ANT_DX_INDEX,2,i,Antenna index for RX
 0xAE6,NV_ANT_DEDX_CONTROL,1,i,Antenna selection b0 DE b1 DX
-0xAE8,NV_ANT_DE_AZ,4,i,Antenna Azimuth for DE
-0xAED,NV_ANT_DX_AZ,4,i,Antenna Azimuth for DX
+0xAE8,NV_ANT_DE_AZ,4,f,Antenna Azimuth for DE
+0xAED,NV_ANT_DX_AZ,4,f,Antenna Azimuth for DX
+0xAF2,NV_LIGHTNING_ON,1,i,whether to show lightning strikes overlay
+0xAF4,NV_LTG_WORLDWIDE,1,i,"lightning: 1=worldwide, 0=radius"
+0xAF6,NV_LTG_RADIUS,2,i,lightning: search radius in km
