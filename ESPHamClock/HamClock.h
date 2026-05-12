@@ -2582,6 +2582,11 @@ extern const char *getWiFiSSID(void);
 extern const char *getWiFiPW(void);
 extern const char *getCallsign(void);
 extern bool setCallsign (const char *cs);
+
+/* cfg_info.cpp -- backup sidecar maintenance */
+extern void writeCfgInfo (const char *cfg_name);
+extern void deleteCfgInfo (const char *cfg_name);
+extern void renameCfgInfo (const char *from, const char *to);
 extern const char *getDXClusterHost(void);
 extern int getDXClusterPort(void);
 extern bool setDXCluster (char *host, char *port_str, Message &ynot);
