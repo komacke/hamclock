@@ -42,6 +42,7 @@ endif
 LDXXFLAGS = -LArduinoLib -LwsServer -Lzlib-hc -g -pthread
 LIBS = -lpthread -larduino -lzlib-hc -lws
 CXX = g++
+PYTHON = python3
 
 # macOS does not have X11 by default; this assumes XQuartz or macports xorg has been installed
 ifeq ($(shell uname -s), Darwin)
@@ -316,3 +317,11 @@ clean clobber:
 	$(MAKE) -C zlib-hc clean
 	touch x.o x.dSYM hamclock hamclock-
 	rm -rf *.o *.dSYM hamclock hamclock-*
+
+
+.PHONY: test test-eeprom
+
+test: test-eeprom
+
+test-eeprom:
+	$(PYTHON) ../tests/test_eeprom.py
