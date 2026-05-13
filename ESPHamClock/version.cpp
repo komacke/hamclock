@@ -1,3 +1,3 @@
 // N.B. if beta be sure to use 2 places: 4.09b01
 
-const char *hc_version = "4.24b99";
+const char *hc_version = "4.25b99";

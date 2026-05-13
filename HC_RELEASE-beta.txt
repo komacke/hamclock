@@ -1,2 +1,2 @@
 Changes with latest release:
-- no changes at this time
+- no changes - same as 4.24
