@@ -1,11 +1,7 @@
-Changes with latest release
-- fix 1-sat crash in Show planner
-- better diag file posting
-- show backend host/IP in status
-- prevent OTA crash on long pre/suffix
-- fix gpio pin for alarm
-- add -T for HTTP timeout
-- add T= build argument for HTTP timeout
-- add -S for alt software server
-- add S= build argument for software server
-- add B= build argument for backend server:port
+Changes with latest release:
+- fix maidenhead conversions in REST api
+- show lightning strikes on maps
+- directional antennas in voacap
+- highlight "now" in VOACAP DE-DX
+- compile opts to set dx cluster
+- exponential backoff for voacap maps

@@ -1,7 +1,2 @@
 Changes with latest release:
-- fix maidenhead conversions in REST api
-- show lightning strikes on maps
-- directional antennas in voacap
-- highlight "now" in VOACAP DE-DX
-- compile opts to set dx cluster
-- exponential backoff for voacap maps
+- no changes at this time
