@@ -581,7 +581,7 @@ get_current_api_port() {
         if [ -z "$CURRENT_API_PORT" ]; then
             CURRENT_API_PORT="${IPS[$i]}:${PORTS[$i]}"
         else
-            CURRENT_API_PORT="${CURRENT_LIVE_PORT}|${IPS[$i]}:${PORTS[$i]}"
+            CURRENT_API_PORT="${CURRENT_API_PORT}|${IPS[$i]}:${PORTS[$i]}"
         fi
         i=$(($i+1))
     done
@@ -596,7 +596,7 @@ get_current_ro_port() {
         if [ -z "$CURRENT_RO_PORT" ]; then
             CURRENT_RO_PORT="${IPS[$i]}:${PORTS[$i]}"
         else
-            CURRENT_RO_PORT="${CURRENT_LIVE_PORT}|${IPS[$i]}:${PORTS[$i]}"
+            CURRENT_RO_PORT="${CURRENT_RO_PORT}|${IPS[$i]}:${PORTS[$i]}"
         fi
         i=$(($i+1))
     done
