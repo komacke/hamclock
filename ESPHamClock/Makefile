@@ -294,14 +294,16 @@ hamclock-fb0-3200x1920: $(OBJS) hclibs
 
 
 
-# /usr/local/bin seems right although Alpine linux does not have it even though it is in the default PATH
 install:
 	@SOURCE=hamclock-*0x*0 ; \
-	DIR=/usr/local/bin ; \
+	DIR=$${DIR:-/usr/local/bin} ; \
 	TARGET=$$DIR/hamclock ; \
 	if ! [ -x $$SOURCE ] ; then \
 		echo 'make something first' ; \
 		make help ; \
+	elif [ `id -un` != 'root' ] && [ -w $$DIR ] ; then \
+		mkdir -p $$DIR \
+		&& mv -f $$SOURCE $$TARGET ; \
 	elif [ `id -un` != 'root' ] ; then \
 		echo please run with sudo ; \
 	else \
