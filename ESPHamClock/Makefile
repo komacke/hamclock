@@ -104,6 +104,7 @@ OBJS = \
 	cities.o \
 	color.o \
 	configs.o \
+	cfg_info.o \
 	contests.o \
 	cputemp.o \
 	debug.o \

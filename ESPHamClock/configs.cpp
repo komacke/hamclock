@@ -3,6 +3,7 @@
  */
 
 #include "HamClock.h"
+#include "cfg_info_format.h"
 
 // directory and suffix for more eeprom files
 static const char cfg_dir[] = "configurations";
@@ -315,6 +316,9 @@ static void cfg2file (const char *cfg_name, char fn[], size_t fn_l)
  */
 static bool file2cfg (const char *fn, char cfg[], size_t cfg_l)
 {
+    // sidecar files live alongside .eeprom files; skip them silently
+    if (strstr (fn, HC_INFO_SUFFIX)) return (false);
+
     const char *suffix = strstr (fn, cfg_suffix);
     if (suffix) {
         size_t basename_l = suffix - fn;
@@ -441,6 +445,7 @@ static void saveCfgFile (const char *cfg_name)
     fclose (from_fp);
 
     Serial.printf ("CFG: save '%s'\n", cfg_name);
+    writeCfgInfo (cfg_name);
 }
 
 /* delete the config file based on the given name
@@ -452,6 +457,7 @@ static void deleteCfgFile (const char *cfg_name)
     if (unlink (buf) < 0)
         fatalError ("unlink(%s): %s", buf, strerror(errno));
     Serial.printf ("CFG: delete '%s'\n", cfg_name);
+    deleteCfgInfo (cfg_name);
 }
 
 /* rename config file from to to
@@ -464,6 +470,7 @@ static void renameCfgFile (const char *from, const char *to)
     if (rename (f_buf, t_buf) < 0)
         fatalError ("rename(%s,%s): %s", f_buf, t_buf, strerror(errno));
     Serial.printf ("CFG: rename '%s' to '%s'\n", from, to);
+    renameCfgInfo (from, to);
 }
 
 /* free a string list and its contents
