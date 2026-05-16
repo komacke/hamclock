@@ -301,7 +301,12 @@ install:
 	if ! [ -x $$SOURCE ] ; then \
 		echo 'make something first' ; \
 		make help ; \
-	elif [ `id -un` != 'root' ] && [ -w $$DIR ] ; then \
+	elif [ `id -un` != 'root' ] && \
+	     ( D="$$DIR"; \
+	       while [ ! -d "$$D" ]; do \
+	           D=`dirname "$$D"`; \
+	       done ; \
+	       [ -w "$$D" ] ) ; then \
 		mkdir -p $$DIR \
 		&& mv -f $$SOURCE $$TARGET ; \
 	elif [ `id -un` != 'root' ] ; then \
