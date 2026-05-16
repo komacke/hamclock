@@ -126,6 +126,7 @@ bool plotChoiceIsAvailable (PlotChoice pc)
     case PLOT_CH_AURORA:        // fallthru
     case PLOT_CH_DXPEDS:        // fallthru
     case PLOT_CH_DST:           // fallthru
+    case PLOT_CH_STORMS:        // fallthru
         return (true);
 
     case PLOT_CH_N:
@@ -459,6 +460,12 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
         break;
     case PLOT_CH_DXPEDS:
         if (checkDXPedsTouch (s, box))
+            return (true);
+        in_top = true;
+        break;
+
+    case PLOT_CH_STORMS:
+        if (checkStormsTouch (s, box))
             return (true);
         in_top = true;
         break;

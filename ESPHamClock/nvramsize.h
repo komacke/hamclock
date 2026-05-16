@@ -364,6 +364,9 @@ static const uint8_t nv_sizes[NV_N] = {
     1,                          // NV_LTG_WORLDWIDE
     2,                          // NV_LTG_RADIUS
 
+    // 249
+    1,                          // NV_STORMS_ON
+
 };
 
 #endif // _NVRAMSIZE_H

@@ -606,6 +606,7 @@ void setup()
     rss_bnr_b.h = 68;
     NVReadUInt8 (NV_RSS_ON, &rss_on);
     initLightning();
+    initStorms();
     if (!NVReadUInt8 (NV_RSS_INTERVAL, &rss_interval) || rss_interval < RSS_MIN_INT) {
         rss_interval = RSS_DEF_INT;
         NVWriteUInt8 (NV_RSS_INTERVAL, rss_interval);
@@ -1708,6 +1709,7 @@ void drawAllSymbols()
     drawDXClusterSpotsOnMap();
     drawADIFSpotsOnMap();
     drawDXPedsOnMap();
+    drawStormsOnMap();
     drawDEMarker(false);
     drawDXMarker(false);
     drawFarthestPSKSpots();
