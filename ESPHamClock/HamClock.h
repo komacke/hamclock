@@ -2367,6 +2367,7 @@ extern void initLightning (void);
 extern void resetLightning (void);
 extern void updateLightning (void);
 extern void drawLightningOnMap (void);
+extern void notifyLightningBlockedMap (void);
 extern void doLightningTouch (void);
 extern uint8_t  ltg_worldwide;          // 1=worldwide, 0=radius mode
 extern uint16_t ltg_radius_km;          // search radius when not worldwide
