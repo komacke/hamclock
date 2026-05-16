@@ -577,8 +577,18 @@ void drawInfoBox()
 
     else if (over_map) {
 
-        // move ll to city and draw if interested
-        was_city = drawIB_City (ll, ms, minfo_b, names_w, names_y);
+        // storm hover wins over city name when cursor is close to a current storm position
+        const char *storm_label = getStormHoverLabel (ll);
+        if (storm_label) {
+            tft.fillCircle (ms.x, ms.y, CDOT_R, RA8875_RED);
+            names_w = getTextWidth (storm_label);
+            tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+            tft.print (storm_label);
+            was_city = true;
+        } else {
+            // move ll to city and draw if interested
+            was_city = drawIB_City (ll, ms, minfo_b, names_w, names_y);
+        }
 
         drawIB_Loc (minfo_b, ll, ms);
     }

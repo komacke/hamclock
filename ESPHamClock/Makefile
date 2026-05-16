@@ -111,6 +111,7 @@ OBJS = \
 	dxcluster.o \
 	dxpeds.o \
 	dxpeds_hide.o \
+	hurricane.o \
 	earthmap.o \
 	earthsat.o \
 	emetool.o \

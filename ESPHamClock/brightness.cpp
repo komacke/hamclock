@@ -1123,7 +1123,8 @@ static void runNCDXFMenu (void)
         // this list of each BRB is to avoid knowing their values, nice BUT must be in same order as mitems[]
         static uint8_t mi_brb_order[BRB_N] = {
             BRB_SHOW_BEACONS, BRB_SHOW_SWSTATS, BRB_SHOW_ONOFF, BRB_SHOW_PHOT, BRB_SHOW_BR,
-            BRB_SHOW_BME76, BRB_SHOW_BME77, BRB_SHOW_DXWX, BRB_SHOW_DEWX, BRB_SHOW_LIGHTNING
+            BRB_SHOW_BME76, BRB_SHOW_BME77, BRB_SHOW_DXWX, BRB_SHOW_DEWX,
+            BRB_SHOW_LIGHTNING
         };
 
         // don't show WX if already is already in a pane

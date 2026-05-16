@@ -326,18 +326,37 @@ static void drawMapPopup(void)
     MenuFieldType ctr_mft = pan_ok ? (reset_ok ? MENU_01OFN : MENU_TOGGLE) : MENU_IGNORE;
     MenuFieldType rst_mft = reset_ok ? (pan_ok ? MENU_01OFN : MENU_TOGGLE) : MENU_IGNORE;
 
-    MenuItem mitems[] = {
-        {MENU_01OFN, false,          1, ZINDENT, "Set DX", 0},             // 0
-        {MENU_01OFN, false,          1, ZINDENT, "Set DE", 0},             // 1
-        {MENU_BLANK, false,          0, ZINDENT, NULL, 0},                 // 2
-        {z1_mft, pan_zoom.zoom == 1, 2, ZINDENT, "Zoom 1x", 0},            // 3
-        {z2_mft, pan_zoom.zoom == 2, 2, ZINDENT, "Zoom 2x", 0},            // 4
-        {z3_mft, pan_zoom.zoom == 3, 2, ZINDENT, "Zoom 3x", 0},            // 5
-        {z4_mft, pan_zoom.zoom == 4, 2, ZINDENT, "Zoom 4x", 0},            // 6
-        {ctr_mft, false,             4, ZINDENT, "Recenter", 0},           // 7
-        {rst_mft, false,             4, ZINDENT, "Reset", 0},              // 8
-    };
-    const int n_menu = NARRAY(mitems);
+    char storm_l1[36], storm_l2[36], storm_l3[36];
+    bool have_storm = getStormMapMenuInfo (map_popup.ll,
+                    storm_l1, sizeof(storm_l1), storm_l2, sizeof(storm_l2), storm_l3, sizeof(storm_l3));
+
+    MenuItem mitems[14];
+    int n_menu = 0;
+
+    if (have_storm) {
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, storm_l1, 0};
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, storm_l2, 0};
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, storm_l3, 0};
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, "-------------", 0};
+    }
+
+    int mi_setdx = n_menu;
+    mitems[n_menu++] = {MENU_01OFN, false,          1, ZINDENT, "Set DX", 0};
+    int mi_setde = n_menu;
+    mitems[n_menu++] = {MENU_01OFN, false,          1, ZINDENT, "Set DE", 0};
+    mitems[n_menu++] = {MENU_BLANK, false,          0, ZINDENT, NULL, 0};
+    int mi_zoom1 = n_menu;
+    mitems[n_menu++] = {z1_mft, pan_zoom.zoom == 1, 2, ZINDENT, "Zoom 1x", 0};
+    int mi_zoom2 = n_menu;
+    mitems[n_menu++] = {z2_mft, pan_zoom.zoom == 2, 2, ZINDENT, "Zoom 2x", 0};
+    int mi_zoom3 = n_menu;
+    mitems[n_menu++] = {z3_mft, pan_zoom.zoom == 3, 2, ZINDENT, "Zoom 3x", 0};
+    int mi_zoom4 = n_menu;
+    mitems[n_menu++] = {z4_mft, pan_zoom.zoom == 4, 2, ZINDENT, "Zoom 4x", 0};
+    int mi_ctr = n_menu;
+    mitems[n_menu++] = {ctr_mft, false,             4, ZINDENT, "Recenter", 0};
+    int mi_rst = n_menu;
+    mitems[n_menu++] = {rst_mft, false,             4, ZINDENT, "Reset", 0};
 
     // boxes
     SBox menu_b = {map_popup.s.x, map_popup.s.y, 0, 0};         // shrink wrap
@@ -352,13 +371,13 @@ static void drawMapPopup(void)
         PanZoom new_pz = pan_zoom;
 
         // check for new DX or DE, rely on runMenu to never set both
-        if (mitems[0].set)
+        if (mitems[mi_setdx].set)
             newDX (map_popup.ll, NULL, NULL);
-        if (mitems[1].set)
+        if (mitems[mi_setde].set)
             newDE (map_popup.ll, NULL);
 
         // reset else other stuff
-        if (mitems[8].set) {
+        if (mitems[mi_rst].set) {
 
             new_pz.pan_x = new_pz.pan_y = 0;
             new_pz.zoom = MIN_ZOOM;
@@ -366,19 +385,19 @@ static void drawMapPopup(void)
         } else {
 
             // pan BEFORE changing zoom because that's the zoom at which the location was selected
-            if (mitems[7].set) {
+            if (mitems[mi_ctr].set) {
                 new_pz.pan_x += (map_popup.s.x - (map_b.x + map_b.w/2)) / new_pz.zoom;
                 new_pz.pan_y += ((map_b.y + map_b.h/2) - map_popup.s.y) / new_pz.zoom;
             }
 
             // N.B. rely on menu setup to know these make sense
-            if (mitems[3].set)
+            if (mitems[mi_zoom1].set)
                 new_pz.zoom = MIN_ZOOM;
-            else if (mitems[4].set)
+            else if (mitems[mi_zoom2].set)
                 new_pz.zoom = MIN_ZOOM + 1;
-            else if (mitems[5].set)
+            else if (mitems[mi_zoom3].set)
                 new_pz.zoom = MIN_ZOOM + 2;
-            else if (mitems[6].set)
+            else if (mitems[mi_zoom4].set)
                 new_pz.zoom = MIN_ZOOM + 3;
 
             // insure still in bounds
