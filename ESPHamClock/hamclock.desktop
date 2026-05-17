@@ -6,7 +6,7 @@
 #
 [Desktop Entry]
 Name=HamClock
-Exec=/usr/local/bin/hamclock
+Exec=sh -c 'until [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; do sleep 1; done; sleep 5; exec /usr/local/bin/hamclock'
 Icon=/home/pi/.hamclock/hamclock.png
 Terminal=false
 Type=Application
