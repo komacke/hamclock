@@ -25,9 +25,14 @@
 
 // ---- tunables ------------------------------------------------------------
 
-#define LIGHTNING_INTERVAL      (5*60)  // fetch interval, seconds
+#define LIGHTNING_INTERVAL      60      // fetch interval, seconds
 #define LIGHTNING_RETRY_SECS    60      // retry after failed fetch
 #define LIGHTNING_MAX_STRIKES   5000    // worldwide coverage  - ~3 min of global activity
+
+// Bolt readability: scale glyph by SCALESZ so apparent size is constant
+// across build resolutions; de-clutter cell merges overlapping strikes.
+#define LTG_BOLT_PX     3       // bolt half-height @ SCALESZ=1; ~12px @ SCALESZ2
+#define LTG_CELL_MULT   1       // de-clutter cell = this * bolt height
 
 // Ring distances in km  - frames the 500km search radius
 static const int ltg_ring_km[] = { 100, 200, 300, 400, 500 };
@@ -74,19 +79,36 @@ static void showLightningRadiusLimitMsg(void)
 
 static void drawBolt (int16_t cx, int16_t cy, uint16_t color)
 {
-    // Guard: bolt extends 6px vertically and 4px horizontally from centre.
-    // Use raw map bounds to ensure every pixel lands on screen.
+    int s = tft.SCALESZ;
+    if (s < 1) s = 1;
+    int h = LTG_BOLT_PX * s;
+    if (h < 3) h = 3;
+
+    int16_t v1 = (int16_t) h;
+    int16_t v2 = (int16_t) (h / 6 + 1);
+    int16_t hx = (int16_t) ((h * 4) / 3);
+    int16_t in = (int16_t) (h / 3 + 1);
+    int16_t th = (int16_t) (h / 3);
+    if (th < 2) th = 2;
+    int16_t ht = (int16_t) (th + 2 * s);
+
+    // Guard: ensure the whole glyph lands within raw map bounds.
     uint16_t mx = (uint16_t)(tft.SCALESZ * map_b.x);
     uint16_t my = (uint16_t)(tft.SCALESZ * map_b.y);
     uint16_t mw = (uint16_t)(tft.SCALESZ * map_b.w);
     uint16_t mh = (uint16_t)(tft.SCALESZ * map_b.h);
-    if (cx-4 < (int16_t)mx || cx+4 >= (int16_t)(mx+mw) ||
-        cy-6 < (int16_t)my || cy+6 >= (int16_t)(my+mh))
+    if (cx-hx < (int16_t)mx || cx+hx >= (int16_t)(mx+mw) ||
+        cy-v1 < (int16_t)my || cy+v1 >= (int16_t)(my+mh))
         return;
 
-    tft.drawLineRaw (cx+2, cy-6,  cx-2, cy-1,  2, color);
-    tft.drawLineRaw (cx-4, cy,    cx+4, cy,     2, color);
-    tft.drawLineRaw (cx+2, cy+1,  cx-2, cy+6,  2, color);
+    // Dark halo first for contrast over both ocean and bright land.
+    tft.drawLineRaw (cx+in, cy-v1,  cx-in, cy-v2,  ht, RA8875_BLACK);
+    tft.drawLineRaw (cx-hx, cy,     cx+hx, cy,     ht, RA8875_BLACK);
+    tft.drawLineRaw (cx+in, cy+v2,  cx-in, cy+v1,  ht, RA8875_BLACK);
+
+    tft.drawLineRaw (cx+in, cy-v1,  cx-in, cy-v2,  th, color);
+    tft.drawLineRaw (cx-hx, cy,     cx+hx, cy,     th, color);
+    tft.drawLineRaw (cx+in, cy+v2,  cx-in, cy+v1,  th, color);
     tft.drawPixelRaw (cx, cy, RA8875_WHITE);
 }
 
@@ -500,37 +522,79 @@ void drawLightningOnMap (void)
     if (n_strikes == 0)
         return;
 
-    for (int ageloop = 0; ageloop < 3; ageloop++) {  // age in loop goes from oldest 0 to newest 2
-        for (int i = 0; i < n_strikes; i++) {
+    int s = tft.SCALESZ;
+    if (s < 1) s = 1;
+    uint16_t mx = (uint16_t)(tft.SCALESZ * map_b.x);
+    uint16_t my = (uint16_t)(tft.SCALESZ * map_b.y);
+    uint16_t mw = (uint16_t)(tft.SCALESZ * map_b.w);
+    uint16_t mh = (uint16_t)(tft.SCALESZ * map_b.h);
 
-            SCoord s;
-            ll2sRaw (strikes[i].lat * (M_PIF / 180.0F),
-                    strikes[i].lng * (M_PIF / 180.0F),
-                    s, 8);
+    int bolt_h = LTG_BOLT_PX * s;
+    if (bolt_h < 3) bolt_h = 3;
+    int cell = LTG_CELL_MULT * 2 * bolt_h;
+    if (cell < 1) cell = 1;
+    int  gw    = (int)(mw / cell) + 1;
+    int  gh    = (int)(mh / cell) + 1;
+    long ncell = (long)gw * (long)gh;
 
-            if (s.x == 0 && s.y == 0)
-                continue;
+    int    *best = ncell >= 1 ? (int *)    malloc (ncell * sizeof(int))      : NULL;
+    SCoord *sc   = best      ? (SCoord *)  malloc (n_strikes * sizeof(SCoord)) : NULL;
 
-            // Don't draw over the RSS banner
-            if (overRSS (raw2appSCoord (s)))
-                continue;
-
-            int myage;
-            uint16_t color;
-            if      (strikes[i].age_s < 120) {
-                color = RGB565(255, 220,   0);
-                myage=2;
+    if (!best || !sc) {
+        // Allocation failed: fall back to the original age-layered draw of
+        // every strike (oldest first so fresh bolts paint on top).
+        free (best); free (sc);
+        for (int ageloop = 0; ageloop < 3; ageloop++) {
+            for (int i = 0; i < n_strikes; i++) {
+                SCoord s2;
+                ll2sRaw (strikes[i].lat * (M_PIF / 180.0F),
+                        strikes[i].lng * (M_PIF / 180.0F), s2, 8);
+                if (s2.x == 0 && s2.y == 0) continue;
+                if (overRSS (raw2appSCoord (s2))) continue;
+                int myage; uint16_t color;
+                if      (strikes[i].age_s < 120) { color = RGB565(255,220,0); myage=2; }
+                else if (strikes[i].age_s < 300) { color = RGB565(255,140,0); myage=1; }
+                else                             { color = RGB565(220, 40,40); myage=0; }
+                if (ageloop == myage)
+                    drawBolt ((int16_t)s2.x, (int16_t)s2.y, color);
             }
-            else if (strikes[i].age_s < 300)  {
-                color = RGB565(255, 140,   0);
-                myage=1;
-            }
-            else {
-                color = RGB565(220,  40,  40);
-                myage=0;
-            }
+        }
+        return;
+    }
+
+    for (long c = 0; c < ncell; c++) best[c] = -1;
+
+    // Project once; keep the youngest strike per cell.
+    for (int i = 0; i < n_strikes; i++) {
+        ll2sRaw (strikes[i].lat * (M_PIF / 180.0F),
+                 strikes[i].lng * (M_PIF / 180.0F), sc[i], 8);
+        if (sc[i].x == 0 && sc[i].y == 0) continue;
+        if (sc[i].x < mx || sc[i].x >= mx+mw ||
+            sc[i].y < my || sc[i].y >= my+mh) continue;
+        if (overRSS (raw2appSCoord (sc[i]))) continue;
+
+        long c = (long)((sc[i].y - my) / cell) * (long)gw
+               + (long)((sc[i].x - mx) / cell);
+        if (c < 0 || c >= ncell) continue;
+        if (best[c] < 0 || strikes[i].age_s < strikes[best[c]].age_s)
+            best[c] = i;
+    }
+
+    // Draw survivors oldest-first so fresh bolts paint on top (preserves
+    // the original age-layering across any cells that still overlap).
+    for (int ageloop = 0; ageloop < 3; ageloop++) {
+        for (long c = 0; c < ncell; c++) {
+            int i = best[c];
+            if (i < 0) continue;
+            int myage; uint16_t color;
+            if      (strikes[i].age_s < 120) { color = RGB565(255,220,0); myage=2; }
+            else if (strikes[i].age_s < 300) { color = RGB565(255,140,0); myage=1; }
+            else                             { color = RGB565(220, 40,40); myage=0; }
             if (ageloop == myage)
-                drawBolt ((int16_t)s.x, (int16_t)s.y, color);
+                drawBolt ((int16_t)sc[i].x, (int16_t)sc[i].y, color);
         }
     }
+
+    free (sc);
+    free (best);
 }
