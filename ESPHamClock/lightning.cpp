@@ -168,6 +168,7 @@ static bool fetchLightning (void)
         client.print (ltg_radius_km);
     }
     client.print (" HTTP/1.0\r\n");
+    sendUserAgent (client);
     client.print ("Host: ");
     client.println (backend_host);
     client.print ("Connection: close\r\n\r\n");
