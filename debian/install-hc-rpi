@@ -333,7 +333,7 @@ if ask "start HamClock automatically each time Pi is booted" ; then
             if [ -e "$ASFILE" ] ; then
                 inform Autostart file already exists, leaving it unchanged: $ASFILE
             else
-                cp hamclock-autostart.desktop "$ASFILE"
+                cp hamclock.desktop "$ASFILE"
             fi
         else
             inform Error: $DOTCFG does not exist
