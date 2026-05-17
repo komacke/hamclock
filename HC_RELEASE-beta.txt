@@ -1,7 +1,7 @@
 Changes with latest release:
 - improve lightning icons
-- fix Agent but in lightning
-- tropical cyclone support
+- fix UA missing in lightning
+- tropical cyclone feature
 - support save configuration
 - allow unselect all
 - better missing satellite
