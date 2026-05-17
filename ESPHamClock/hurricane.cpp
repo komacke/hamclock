@@ -158,12 +158,9 @@ static bool parseStormsFile (FILE *fp)
             if (n_storms >= STORM_MAXSTORMS)
                 continue;
             sp = &storms[n_storms++];
-            strncpy (sp->name,  name,  STORM_NAMELEN-1);
-            sp->name[STORM_NAMELEN-1] = '\0';
-            strncpy (sp->basin, basin, 2);
-            sp->basin[2] = '\0';
-            strncpy (sp->advisory, advisory, STORM_IDLEN-1);
-            sp->advisory[STORM_IDLEN-1] = '\0';
+            quietStrncpy (sp->name, name, sizeof(sp->name));
+            quietStrncpy (sp->basin, basin, sizeof(sp->basin));
+            quietStrncpy (sp->advisory, advisory, sizeof(sp->advisory));
             sp->peak_cat  = 0;
             sp->peak_wind = 0;
             sp->n_pts     = 0;
@@ -183,17 +180,14 @@ static bool parseStormsFile (FILE *fp)
             pt.wind_kt  = (uint16_t)wind;
             pt.fcst_hour = (uint16_t)fcst_hour;
             pt.category = (uint8_t)cat;
-            strncpy (pt.type, type, 3);
-            pt.type[3] = '\0';
+            quietStrncpy (pt.type, type, sizeof(pt.type));
 
             // record current position (fcst_hour==0)
             if (fcst_hour == 0) {
                 sp->cur_ll.lat_d = lat;
                 sp->cur_ll.lng_d = lon;
-                if (advisory[0]) {
-                    strncpy (sp->advisory, advisory, STORM_IDLEN-1);
-                    sp->advisory[STORM_IDLEN-1] = '\0';
-                }
+                if (advisory[0])
+                    quietStrncpy (sp->advisory, advisory, sizeof(sp->advisory));
             }
         }
     }
