@@ -1890,6 +1890,7 @@ typedef enum {
     MENU_OK_OK,                 // normal ok button appearance
     MENU_OK_BUSY,               // busy ok button appearance
     MENU_OK_ERR,                // error ok button appearance
+    MENU_OK_DISABLE,            // disabled ok button appearance
 } MenuOkState;
 
 typedef struct {
