@@ -38,6 +38,7 @@ bool dx_info_for_sat;                   // global to indicate whether dx_info_b 
 #define BTN_COLOR       RA8875_GREEN    // button fill color
 #define SATUP_COLOR     RGB565(0,200,0) // time color when sat is up
 #define SOON_COLOR      RGB565(200,0,0) // table text color for pass soon
+#define GONE_COLOR      RGB565(255,90,90) // table text color for a sat that has gone missing
 #define SOON_MINS       10              // "soon", minutes
 #define CB_SIZE         20              // size of selection check box
 #define CELL_H          32              // display cell height
@@ -104,6 +105,44 @@ typedef struct {
 } SatState;
 static SatState sat_state[MAX_ACTIVE_SATS];             // [1].sat is set only if [0].sat is also set
 static bool new_pass;                                   // set when new pass is ready
+
+// remember names of sats that were saved/selected but could not be found in the TLE lists.
+// these are NOT a fatal condition: the sat is just dropped and flagged here so the selection
+// table can show it in a distinct color instead of throwing an in-your-face error.
+#define MAX_MISSING_SATS  8
+static char missing_sats[MAX_MISSING_SATS][NV_SATNAME_LEN];
+static int n_missing_sats;
+
+/* record that the named sat could not be found so the chooser can mark it.
+ * silently ignores duplicates and overflow.
+ */
+static void noteMissingSat (const char *name)
+{
+    if (!name || !name[0])
+        return;
+    for (int i = 0; i < n_missing_sats; i++)
+        if (strcasecmp (missing_sats[i], name) == 0)
+            return;                                     // already known
+    if (n_missing_sats < MAX_MISSING_SATS) {
+        strncpy (missing_sats[n_missing_sats], name, NV_SATNAME_LEN-1);
+        missing_sats[n_missing_sats][NV_SATNAME_LEN-1] = '\0';
+        n_missing_sats++;
+    }
+}
+
+/* forget that the named sat was missing, eg, once it is found again or reselected.
+ */
+static void clearMissingSat (const char *name)
+{
+    for (int i = 0; i < n_missing_sats; i++) {
+        if (strcasecmp (missing_sats[i], name) == 0) {
+            for (int j = i+1; j < n_missing_sats; j++)
+                strcpy (missing_sats[j-1], missing_sats[j]);
+            n_missing_sats--;
+            return;
+        }
+    }
+}
 
 #define NO_CUR_SAT  (-1)                                // flag for currentSat and dxpaneSat
 
@@ -919,13 +958,17 @@ static bool satLookup (SatState &s)
 
     // final check
     if (ok) {
-        // TLE looks good: define new sat
+        // TLE looks good: define new sat and clear any prior missing flag
         s.sat = new Satellite (t1, t2);
+        clearMissingSat (s.name);
     } else {
+        // NOT fatal: just log, remember the name as missing so the chooser can mark it,
+        // and let the caller drop this sat. The app keeps running normally.
         if (err_msg[0])
-            fatalSatError ("%s", err_msg);
+            Serial.printf ("SAT: %s\n", err_msg);
         else
-            fatalSatError ("%s disappeared", s.name);
+            Serial.printf ("SAT: %s disappeared\n", s.name);
+        noteMissingSat (s.name);
     }
 
     return (ok);
@@ -1121,6 +1164,43 @@ static int askSat (char selections[MAX_ACTIVE_SATS][NV_SATNAME_LEN])
         tft.print (user_name);
     }
 
+    // append any sats that went missing so the user can see what happened instead of
+    // getting a fatal error. these are shown in red with a "Gone" marker and are NOT
+    // selectable: n_sat_table is left pointing past them so the tap bounds check rejects
+    // taps in this region.
+    {
+        int slot = n_sat_table;
+        for (int m = 0; m < n_missing_sats && slot < MAX_NSAT; m++) {
+
+            // skip if this missing name actually showed up in the live table above
+            bool present = false;
+            for (int k = 0; k < n_sat_table; k++) {
+                if (strcasecmp (sat_table[k], missing_sats[m]) == 0) { present = true; break; }
+            }
+            if (present)
+                continue;
+
+            int r = slot % N_ROWS;
+            int c = slot / N_ROWS;
+            SCoord cell_s;
+            cell_s.x = c*CELL_W;
+            cell_s.y = TBORDER + r*CELL_H;
+
+            // empty (unchecked, but not drawn as selectable) box
+            showSelectionBox (r, c, false);
+
+            // status + name in the dedicated "gone" color
+            tft.setTextColor (GONE_COLOR);
+            tft.setCursor (cell_s.x + CB_SIZE + 8, cell_s.y + FONT_H);
+            tft.print ("Gone ");
+            char user_name[NV_SATNAME_LEN];
+            strncpySubChar (user_name, missing_sats[m], ' ', '_', NV_SATNAME_LEN);
+            tft.print (user_name);
+
+            slot++;
+        }
+    }
+
     // bale if no satellites displayed
     if (n_sat_table == 0)
         goto out;
@@ -1277,7 +1357,9 @@ static bool checkSatUpToDate (SatState &s, bool *updated)
     // confirm age still ok
     time_t now_wo = nowWO();
     if (!satEpochOk (s.sat, s.name, now_wo)) {
-        fatalSatError ("Epoch for %s is out of date", s.name);
+        // not fatal: flag as missing/stale and let caller drop it
+        Serial.printf ("SAT: Epoch for %s is out of date\n", s.name);
+        noteMissingSat (s.name);
         return (false);
     }
 
@@ -1921,8 +2003,11 @@ bool initSat()
         s0.show_path = s1.show_path;
         NVWriteUInt8 (s0.nv_flags, s0.show_path ? SF_PATH_MASK : 0);
         unsetSat (s1);                                  // resets s1 name and nv_name
-        if (!checkSatUpToDate (s0, NULL))
-            fatalError ("sat %s disappeared", s0.name);
+        if (!checkSatUpToDate (s0, NULL)) {
+            // not fatal: it was already flagged missing by satLookup; just drop it
+            Serial.printf ("SAT: %s disappeared during startup consolidation\n", s0.name);
+            unsetSat (s0);
+        }
     }
 
     // set current to lowest set
