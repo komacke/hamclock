@@ -48,7 +48,8 @@ bool dx_info_for_sat;                   // global to indicate whether dx_info_b 
 #define MAX_NSAT        (N_ROWS*N_COLS) // max names we can display
 #define MAX_PASS_STEPS  30              // max lines to draw for pass map
 #define OFFSCRN         20000           // x or y coord that is definitely off screen
-static SBox ok_b = {730,10,55,35};      // Ok button
+static SBox ok_b      = {735, 8, 60, 35}; // Ok button
+static SBox refresh_b = {690,55,105,35}; // Refresh button below Ok, out of legend row
 
 // NV_SATnFLAGS bit masks
 typedef enum {
@@ -974,6 +975,53 @@ static bool satLookup (SatState &s)
     return (ok);
 }
 
+
+/* clear all missing satellite names that now exist in either the user's file or the server file.
+ */
+static void clearFoundMissingSats()
+{
+    FILE *rns_fp = NULL;
+    RNS_t rns_state = RNS_INIT;
+    char name[NV_SATNAME_LEN];
+    char t1[TLE_LINEL];
+    char t2[TLE_LINEL];
+
+    while (readNextSat (rns_fp, rns_state, name, t1, t2)) {
+        for (int i = 0; i < n_missing_sats; ) {
+            if (strcasecmp (missing_sats[i], name) == 0)
+                clearMissingSat (missing_sats[i]);
+            else
+                i++;
+        }
+    }
+
+    if (rns_fp)
+        fclose (rns_fp);
+}
+
+/* force a fresh copy of the central server satellite list into the local cache.
+ * return whether the refreshed file could be opened afterwards.
+ */
+static bool refreshServerSatCache()
+{
+    FILE *old_fp = fopenOurs (esat_sfn, "r");
+    if (old_fp) {
+        fclose (old_fp);
+        unlinkOurs (esat_sfn);
+    }
+
+    FILE *new_fp = openCachedFile (esat_sfn, esat_url, 0, 0);   // ok if empty
+    if (new_fp) {
+        fclose (new_fp);
+        clearFoundMissingSats();
+        Serial.printf ("SAT: refreshed %s from %s\n", esat_sfn, esat_url);
+        return (true);
+    }
+
+    Serial.printf ("SAT: refresh of %s from %s failed\n", esat_sfn, esat_url);
+    return (false);
+}
+
 /* show table selection box marked or not
  */
 static void showSelectionBox (int r, int c, bool on)
@@ -1037,7 +1085,7 @@ static int askSat (char selections[MAX_ACTIVE_SATS][NV_SATNAME_LEN])
     uint16_t title_y = 3*TBORDER/4;
     selectFontStyle (BOLD_FONT, SMALL_FONT);
     tft.setCursor (5, title_y);
-    tft.print ("Select up to two satellites");
+    tft.print ("Select satellites (two)");
 
     // show rise units
     selectFontStyle (LIGHT_FONT, SMALL_FONT);
@@ -1055,7 +1103,8 @@ static int askSat (char selections[MAX_ACTIVE_SATS][NV_SATNAME_LEN])
     tft.setCursor (tft.width()-170, title_y);
     tft.print ("Up Now");
 
-    // show Ok button
+    // show control buttons
+    drawStringInBox ("Refresh", refresh_b, false, RA8875_WHITE);
     drawStringInBox ("Ok", ok_b, false, RA8875_WHITE);
 
 
@@ -1225,6 +1274,25 @@ static int askSat (char selections[MAX_ACTIVE_SATS][NV_SATNAME_LEN])
         // skip if any other char -- we only support tap control
         if (ui.kb_char != CHAR_NONE)
             continue;
+
+        // refresh central server TLE cache then rebuild the chooser
+        if (inBox (ui.tap, refresh_b)) {
+            drawStringInBox ("Refresh", refresh_b, true, RA8875_WHITE);
+            if (rns_fp) {
+                fclose (rns_fp);
+                rns_fp = NULL;
+            }
+            bool refresh_ok = refreshServerSatCache();
+            tft.fillRect (5, TBORDER-12, 420, 10, RA8875_BLACK);
+            tft.setTextColor (refresh_ok ? SATUP_COLOR : SOON_COLOR);
+            tft.setCursor (5, TBORDER-4);
+            tft.print (refresh_ok ? "TLEs refreshed" : "TLE refresh failed");
+            wdDelay (500);
+            if (refresh_ok)
+                return (askSat (selections));
+            drawStringInBox ("Refresh", refresh_b, false, RA8875_WHITE);
+            continue;
+        }
 
         // find table index at tap
         int r = (ui.tap.y - TBORDER)/CELL_H;
