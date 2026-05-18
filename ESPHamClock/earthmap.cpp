@@ -926,6 +926,15 @@ static void drawMapMenu()
             lightning_on = mitems[MI_LTG_YES].set;
             NVWriteUInt8 (NV_LIGHTNING_ON, lightning_on);
             resetLightning();
+
+            // The NCDXF Lightning choice depends on the main map Lightning overlay.
+            // If Lightning is turned off here, also remove it from the NCDXF rotation
+            // set so it can not keep rotating as a hidden zero-count panel.
+            if (!lightning_on && (brb_rotset & (1 << BRB_SHOW_LIGHTNING))) {
+                brb_rotset &= ~(1 << BRB_SHOW_LIGHTNING);
+                checkBRBRotset();               // falls back to beacons if this emptied the set
+                brb_next_update = 0;            // force prompt NCDXF redraw/update
+            }
         }
 
         // engage change
