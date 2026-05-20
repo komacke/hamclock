@@ -35,10 +35,9 @@ CRON_D_DIR="/etc/cron.d"
 
 # Format:
 # "Name|IP|hostname|port|updates"
-# Change the hcdc line to 'yes' when it can offer updates
 BACKENDS=(
     "Open HamClock backend|44.32.64.64|ohb.hamclock.app|80|yes"
-    "Hamclock.com backend|3.128.20.228|hamclock.com|80|no"
+    "Hamclock.com backend|3.128.20.228|hamclock.com|80|yes"
     "CSI backend|77.167.43.150|clearskyinstitute.com|80|yes"
 )
 
