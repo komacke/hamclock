@@ -1,7 +1,2 @@
 Changes with latest release:
-- improve lightning icons
-- fix UA missing in lightning
-- tropical cyclone feature
-- support save configuration
-- allow unselect all
-- better missing satellite
+- same as 4.25 - starting new beta
