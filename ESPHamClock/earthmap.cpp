@@ -305,6 +305,16 @@ void normalizePanZoom (PanZoom &pz)
     pz.pan_y = CLAMPF (pz.pan_y, MIN_PANY(pz.zoom), MAX_PANY(pz.zoom));
 }
 
+/* set pz so the given location is at the center of the Mercator map.
+ * N.B. pz zoom is not changed.
+ */
+static void centerMercatorPanZoom (PanZoom &pz, const LatLong &ll)
+{
+    pz.pan_x = roundf (map_b.w*(ll.lng_d - getCenterLng())/360);
+    pz.pan_y = roundf (map_b.h*ll.lat_d/180);
+    normalizePanZoom (pz);
+}
+
 /* draw and operate the map popup menu
  */
 static void drawMapPopup(void)
@@ -365,8 +375,6 @@ static void drawMapPopup(void)
     // go
     MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 1, n_menu, mitems};
     if (runMenu (menu)) {
-
-
         // init copy for changes
         PanZoom new_pz = pan_zoom;
 
@@ -378,30 +386,33 @@ static void drawMapPopup(void)
 
         // reset else other stuff
         if (mitems[mi_rst].set) {
-
             new_pz.pan_x = new_pz.pan_y = 0;
             new_pz.zoom = MIN_ZOOM;
-
         } else {
-
-            // pan BEFORE changing zoom because that's the zoom at which the location was selected
-            if (mitems[mi_ctr].set) {
-                new_pz.pan_x += (map_popup.s.x - (map_b.x + map_b.w/2)) / new_pz.zoom;
-                new_pz.pan_y += ((map_b.y + map_b.h/2) - map_popup.s.y) / new_pz.zoom;
-            }
-
             // N.B. rely on menu setup to know these make sense
+	    uint8_t old_zoom = new_pz.zoom;
             if (mitems[mi_zoom1].set)
                 new_pz.zoom = MIN_ZOOM;
-            else if (mitems[mi_zoom2].set)
+            else if (mitems[mi_zoom2].set) {
                 new_pz.zoom = MIN_ZOOM + 1;
-            else if (mitems[mi_zoom3].set)
+	    }
+            else if (mitems[mi_zoom3].set) {
                 new_pz.zoom = MIN_ZOOM + 2;
-            else if (mitems[mi_zoom4].set)
+	    }
+            else if (mitems[mi_zoom4].set) {
                 new_pz.zoom = MIN_ZOOM + 3;
+	    }
 
-            // insure still in bounds
-            normalizePanZoom (new_pz);
+	    // Zoom only -> centers on DE
+	    // Recenter only -> centers on clicked map point
+	    // Zoom + Recenter -> zooms and centers on clicked map point
+            bool zoom_changed = new_pz.zoom != old_zoom;
+	    if (mitems[mi_ctr].set)
+	       centerMercatorPanZoom (new_pz, map_popup.ll);
+	    else if (new_pz.zoom > MIN_ZOOM && zoom_changed)
+	       centerMercatorPanZoom (new_pz, de_ll);
+	    else
+               normalizePanZoom (new_pz);
         }
 
         // save and do full update if pz changed
