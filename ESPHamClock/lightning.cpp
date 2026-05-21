@@ -34,9 +34,9 @@
 #define LTG_BOLT_PX     3       // bolt half-height @ SCALESZ=1; ~12px @ SCALESZ2
 #define LTG_CELL_MULT   1       // de-clutter cell = this * bolt height
 
-// Ring distances in km  - frames the 500km search radius
-static const int ltg_ring_km[] = { 100, 200, 300, 400, 500 };
-#define LTG_N_RINGS  ((int)NARRAY(ltg_ring_km))
+// Ring distances in configured units - frames the 500km/311mi search radius
+static const int ltg_ring_dist[] = { 100, 200, 300, 400, 500 };
+#define LTG_N_RINGS  ((int)NARRAY(ltg_ring_dist))
 
 // OHB endpoint
 static const char ltg_strikes[] = "/ham/HamClock/lightning/strikes.pl";
@@ -145,7 +145,7 @@ static bool fetchLightning (void)
     if (ltg_worldwide)
         Serial.printf ("LTG: requesting worldwide\n");
     else
-        Serial.printf ("LTG: requesting radius %dkm lat=%.4f lon=%.4f\n",
+        Serial.printf ("LTG: requesting radius %ukm lat=%.4f lon=%.4f\n",
                        ltg_radius_km, (double)de_ll.lat_d, (double)de_ll.lng_d);
 
     WiFiClient client;
@@ -230,11 +230,12 @@ static void drawLightningRings (void)
 {
     const uint16_t ring_color = RGB565(100, 140, 180);  // blue-grey
     const float    step       = deg2rad (1.5F);          // step between ring points
+    const float    erad       = showDistKm() ? (ERAD_M * KM_PER_MI) : ERAD_M;
 
     for (int r = 0; r < LTG_N_RINGS; r++) {
 
         // Angular radius in radians for this ring
-        float ang_r = ltg_ring_km[r] / (ERAD_M * KM_PER_MI);
+        float ang_r = (float)ltg_ring_dist[r] / erad;
 
         // Draw dashed great circle  - matches drawDXPath() pattern
         SCoord s0 = {0, 0}, s1;
@@ -329,7 +330,14 @@ void drawNCDXFLightningStats (void)
     memset (values, 0, sizeof(values));
     memset (colors, 0, sizeof(colors));
 
-    snprintf (titles[0], NCDXF_B_MAXLEN, "%s", ltg_worldwide ? "Wldwide" : "Radius");
+    if (ltg_worldwide) {
+        snprintf (titles[0], NCDXF_B_MAXLEN, "Wldwide");
+    } else {
+        if (showDistKm())
+            snprintf (titles[0], NCDXF_B_MAXLEN, "%ukm", ltg_radius_km);
+        else
+            snprintf (titles[0], NCDXF_B_MAXLEN, "%umi", (uint16_t)roundf(ltg_radius_km / KM_PER_MI));
+    }
     snprintf (values[0], NCDXF_B_MAXLEN, "%u", LTG_CLAMP(n_strikes));
     colors[0] = RA8875_WHITE;
 
@@ -423,9 +431,6 @@ void doLightningTouch (void)
     char rad_buf[8];
     char rad_lbl[] = "";           // no prefix label -- units shown in radio button
 
-    // initialise text field with current radius
-    snprintf (rad_buf, sizeof(rad_buf), "%u", ltg_radius_km);
-
     MenuText mt;
     memset (&mt, 0, sizeof(mt));
     mt.text    = rad_buf;
@@ -434,20 +439,34 @@ void doLightningTouch (void)
     mt.l_mem   = sizeof(rad_lbl);
     mt.to_upper = false;
 
+    // Determine radius label based on configured units
+    char radius_label[10]; // "r (km):" or "r (mi):"
+    if (showDistKm()) {
+        strcpy(radius_label, "r (km):");
+    } else {
+        strcpy(radius_label, "r (mi):");
+    }
+
     #define LTG_MI_WORLD  0
     #define LTG_MI_RADIUS 1
     #define LTG_MI_TEXT   2
     #define LTG_MI_N      3
 
     MenuItem mitems[LTG_MI_N] = {
-        {MENU_1OFN,  (bool) ltg_worldwide,  1, 2, "Wldwide",  NULL},
-        {MENU_1OFN,  (bool)!ltg_worldwide,  1, 2, "r (km):",  NULL},
+        {MENU_1OFN,  (bool) ltg_worldwide,  1, 2, "Wldwide",   NULL},
+        {MENU_1OFN,  (bool)!ltg_worldwide,  1, 2, radius_label, NULL},
         {MENU_TEXT,  false,                 2, 4, NULL,        &mt},
     };
 
     SBox menu_b, ok_b;
     menu_b.x = NCDXF_b.x + 2;
     menu_b.y = NCDXF_b.y + 2;
+    // Initialize text field with current radius, converted to miles if needed
+    if (showDistKm()) {
+        snprintf (rad_buf, sizeof(rad_buf), "%u", ltg_radius_km);
+    } else {
+        snprintf (rad_buf, sizeof(rad_buf), "%u", (uint16_t)roundf(ltg_radius_km / KM_PER_MI));
+    }
     menu_b.w = 0;
     menu_b.h = 0;
 
@@ -462,18 +481,24 @@ void doLightningTouch (void)
 
         // parse radius from text field if radius mode selected
         if (!ltg_worldwide) {
-            int r = atoi (rad_buf);
-            Serial.printf ("LTG: radius text '%s' parsed as %d\n", rad_buf, r);
-            if (r > LTG_RADIUS_MAX) {
-                ltg_radius_km = LTG_RADIUS_MAX;
+            float r_float = atof (rad_buf); // Use atof to handle potential decimal input
+            uint16_t r_km;
+            if (!showDistKm()) {
+                r_km = (uint16_t)roundf(r_float * KM_PER_MI); // Convert miles to km
+            } else {
+                r_km = (uint16_t)roundf(r_float); // Already in km
+            }
+            Serial.printf ("LTG: radius text '%s' parsed as %.0f %s, stored as %u km\n", rad_buf, r_float, showDistKm() ? "km" : "mi", r_km);
+            if (r_km > LTG_RADIUS_MAX) {
+                ltg_radius_km = LTG_RADIUS_MAX; // Cap at max allowed km
                 showLightningRadiusLimitMsg();
-            } else if (r >= LTG_RADIUS_MIN && r <= LTG_RADIUS_MAX) {
-                ltg_radius_km = (uint16_t) r;
+            } else if (r_km >= LTG_RADIUS_MIN) { // Ensure minimum km
+                ltg_radius_km = r_km;
             } else {
                 ltg_radius_km = LTG_RADIUS_DEFAULT;
             }
             NVWriteUInt16 (NV_LTG_RADIUS, ltg_radius_km);
-            Serial.printf ("LTG: radius set to %dkm\n", ltg_radius_km);
+            Serial.printf ("LTG: radius set to %ukm\n", ltg_radius_km);
         }
 
         // force immediate refetch with new settings
@@ -538,8 +563,8 @@ void drawLightningOnMap (void)
     int  gh    = (int)(mh / cell) + 1;
     long ncell = (long)gw * (long)gh;
 
-    int    *best = ncell >= 1 ? (int *)    malloc (ncell * sizeof(int))      : NULL;
-    SCoord *sc   = best      ? (SCoord *)  malloc (n_strikes * sizeof(SCoord)) : NULL;
+    int    *best = ncell >= 1 ? (int *)    malloc ((size_t)ncell * sizeof(int))      : NULL;
+    SCoord *sc   = best      ? (SCoord *)  malloc ((size_t)n_strikes * sizeof(SCoord)) : NULL;
 
     if (!best || !sc) {
         // Allocation failed: fall back to the original age-layered draw of
