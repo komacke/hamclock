@@ -815,7 +815,7 @@ static bool getWiFiOnTheAir (WiFiClient &client, char line[], size_t line_len)
     }
 
     // list
-    spotsHelper (client, NULL, 0, line, line_len);
+    spotsHelper (client, spots, nspots, line, line_len);
 
     return (true);
 }
@@ -2532,6 +2532,23 @@ void antennas_supported_values (
 
 
 /*
+ * remote command to serve the mobile dashboard
+ */
+
+static bool getWiFiDashboardGui (WiFiClient &client, char line[], size_t line_len)
+{
+    client.println ("HTTP/1.0 200 OK");
+    sendUserAgent (client);
+    client.println ("Content-Type: text/html; charset=utf-8");
+    client.println ("Cache-Control: no-store");
+    client.println ("Connection: close\r\n");
+    client.print (dashboard_html);
+    Serial.printf ("Served dashboard.html\n");
+    return (true);
+}
+
+
+/*
  * remote command to list antennas
  */
 
@@ -2541,14 +2558,13 @@ void antennas_supported_values (
 
 	client.println ("HTTP/1.0 200 OK");
 	sendUserAgent (client);
-	client.println ("Content-Type: text/html; charset=us-ascii");
+	client.println ("Content-Type: text/html; charset=utf-8");
 	client.println ("Cache-Control: no-store");
 	client.println ("Connection: close\r\n");
 	client.print (antennas_html);
 	Serial.printf ("Served antennas.html\n");
 	return (true);
  }
-
 
 /*
  * remote command to list antennas
@@ -4644,6 +4660,7 @@ typedef struct {
 } CmdTble;
 static const CmdTble command_table[] = {
     { "antennas.html ",     getWiFiAntennasGui,    "antennas widget to administer antenna information" },	
+    { "dashboard.html ",    getWiFiDashboardGui,   "mobile dashboard for HamClock REST data" },
     { "get_antennas.txt ",  getWiFiAntennas,       "Get antenna information from hamclock and backend" },
     { "get_capture.bmp ",   getWiFiCaptureBMP,     "get live screen shot in bmp format" },
     { "get_config.txt ",    getWiFiConfig,         "get current display settings" },
