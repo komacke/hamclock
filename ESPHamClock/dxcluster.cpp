@@ -23,7 +23,7 @@ static WiFiClient dxc_client;                   // persistent TCP connection whi
 static WiFiUDP udp_server;                      // or persistent UDP "connection" to WSJT-X client program
 static bool multi_cntn;                         // set when cluster has noticed multiple connections
 #define MAX_LCN         10                      // max lost connections per MAX_LCDT
-#define MAX_LCDT        3600                    // max lost connections period, seconds
+#define MAX_LCDT        1800                    // max lost connections period, seconds
 
 // ages
 static const uint8_t dxc_ages[] = {10, 20, 40, 60};   // menu selections in ascending order, minutes
@@ -812,7 +812,7 @@ bool connectDXCluster (void)
 {
     // check max lost connection rate
     if (checkLostConnRate()) {
-        showDXClusterErr ("Hit max %d lost connections/hr limit", MAX_LCN);
+        showDXClusterErr ("Dropped %d times. Check cluster config. Lockout: 30 mins", MAX_LCN);
         return (false);
     }
 
