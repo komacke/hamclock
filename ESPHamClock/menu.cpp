@@ -557,6 +557,18 @@ static bool menuStateOk (MenuInfo &menu)
     // check each group that contains at least one MENU_AL1OFN
     for (int i = 0; i < menu.n_items; i++) {
         if (menu.items[i].type == MENU_AL1OFN) {
+
+            // only mandatory if parent item is set, if any
+            int parent_i = -1;
+            for (int j = i - 1; j >= 0; j--) {
+                if (MENU_ACTIVE(menu.items[j].type) && menu.items[j].indent < menu.items[i].indent) {
+                    parent_i = j;
+                    break;
+                }
+            }
+            if (parent_i >= 0 && !menu.items[parent_i].set)
+                continue;
+
             if (menuCountItemsSet (menu, i) == 0)
                 return (false);
         }
