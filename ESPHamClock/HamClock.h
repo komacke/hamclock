@@ -2360,7 +2360,9 @@ extern const uint16_t runner[HC_RUNNER_W*HC_RUNNER_H] PROGMEM;
 
 extern void drawSanta(void);
 extern void drawFireworks(void);
+extern void drawEnterprise(void);
 extern SBox santa_b;
+extern SBox ent_b;
 
 /*
  * lightning.cpp
