@@ -278,7 +278,11 @@ static void updateExistingClient (ws_cli_conn_t *client)
     typedef struct {
         uint8_t x, y, l;                                // region location and length in units of blocks
     } RegnLoc;
-    RegnLoc locs[MAX_REGNS];                            // room for max number of header region entries
+    RegnLoc *locs = (RegnLoc *) malloc (MAX_REGNS * sizeof(RegnLoc));
+    if (!locs) {
+        return_session_pixels (pixels);
+        bye ("No memory for LIVE region headers\n");
+    }
     uint16_t n_regns = 0;                               // n regions defined so far
     int n_bloks = 0;                                    // n blocks within all regions so far
 
@@ -392,6 +396,7 @@ static void updateExistingClient (ws_cli_conn_t *client)
                         ws_getaddress(client), n_regns, n_bloks);
 
     // finished with temps
+    free (locs);
     free (chg_regns);
     free (img_client);
     return_session_pixels (pixels);
