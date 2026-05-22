@@ -1715,6 +1715,7 @@ void drawAllSymbols()
     drawFarthestPSKSpots();
     drawLightningOnMap();
     drawSanta ();
+    drawEnterprise ();
 
     updateClocks(false);
 }
