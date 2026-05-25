@@ -1714,6 +1714,7 @@ void drawAllSymbols()
     drawDXMarker(false);
     drawFarthestPSKSpots();
     drawLightningOnMap();
+    drawSatPathAndFoot();
     drawSanta ();
     drawEnterprise ();
 
