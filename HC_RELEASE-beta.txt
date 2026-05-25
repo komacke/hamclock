@@ -1,2 +1,7 @@
 Changes with latest release:
-- no changes
+- mobile dashboard on 8080:/dashboard.html
+- update dxcluster connection retry
+- center clicked on zoom map
+- lightning uses config units
+- fix DE format's OK button broken
+- fix web-3200x1920 in alpine docker
