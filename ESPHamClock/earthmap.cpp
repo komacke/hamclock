@@ -268,7 +268,7 @@ static void drawMaidGridKey()
     selectFontStyle (LIGHT_FONT, FAST_FONT);
     tft.setTextColor (RA8875_WHITE);
 
-    // print labels across the top, use latitude of map center then scan lng
+    // print field letter labels across the top, use latitude of map center then scan lng
     uint16_t rowy = map_b.y + MH_TR_DY;
     LatLong ll;
     s2ll (map_b.x+map_b.w/2, map_b.y+map_b.h/2, ll);
@@ -282,7 +282,7 @@ static void drawMaidGridKey()
         }
     }
 
-    // print labels down the right, use lng of map center then scan lat
+    // print field letter labels down the right, use lng of map center then scan lat
     uint16_t colx = map_b.x + map_b.w - MH_RC_W + MH_RC_DX;
     s2ll (map_b.x+map_b.w/2, map_b.y+map_b.h/2, ll);
     for (uint8_t i = 0; i < 18; i++) {
@@ -603,8 +603,9 @@ static void drawMapGrid()
     case MAPGRID_MAID4:
 
         drawMaidGridKey();
-        drawLLGrid (1, 2);              // 4-char squares: 1 deg lat x 2 deg lng
-        drawLLGrid (10, 20);            // field boundaries drawn after, so they sit on top
+        if (pan_zoom.zoom >= MAX_ZOOM)
+            drawLLGrid (1, 2);          // 4-char squares: 1 deg lat x 2 deg lng -- max zoom only
+        drawLLGrid (10, 20);            // field boundaries
         break;
 
     case MAPGRID_LATLNG:
