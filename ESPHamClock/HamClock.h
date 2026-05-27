@@ -663,6 +663,7 @@ typedef enum {
     MAPGRID_TROPICS,
     MAPGRID_LATLNG,
     MAPGRID_MAID,
+    MAPGRID_MAID4,                      // Maidenhead fields + 4-char squares
     MAPGRID_AZIM,
     MAPGRID_CQZONES,
     MAPGRID_ITUZONES,

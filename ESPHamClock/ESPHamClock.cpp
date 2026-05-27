@@ -61,6 +61,7 @@ const char *grid_styles[MAPGRID_N] = {
     "Tropics",
     "Lat/Long",
     "Maidenhead",
+    "Maidenhead+",
     "Azimuthal",
     "CQ Zones",
     "ITU Zones",
@@ -1615,7 +1616,8 @@ const SCoord raw2appSCoord (const SCoord &s_raw)
  */
 static bool overMaidKey (const SCoord &s)
 {
-    return (map_proj == MAPP_MERCATOR && mapgrid_choice == MAPGRID_MAID       
+    return (map_proj == MAPP_MERCATOR
+                        && (mapgrid_choice == MAPGRID_MAID || mapgrid_choice == MAPGRID_MAID4)
                         && (inBox(s,maidlbltop_b) || inBox(s,maidlblright_b)) );
 }
 

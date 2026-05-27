@@ -250,7 +250,7 @@ void drawDECalTime(bool center)
 static void drawMaidGridKey()
 {
     // only if selected and using mercator projection
-    if (mapgrid_choice != MAPGRID_MAID || map_proj != MAPP_MERCATOR)
+    if ((mapgrid_choice != MAPGRID_MAID && mapgrid_choice != MAPGRID_MAID4) || map_proj != MAPP_MERCATOR)
         return;
 
 
@@ -600,6 +600,13 @@ static void drawMapGrid()
         drawLLGrid (10, 20);
         break;
 
+    case MAPGRID_MAID4:
+
+        drawMaidGridKey();
+        drawLLGrid (1, 2);              // 4-char squares: 1 deg lat x 2 deg lng
+        drawLLGrid (10, 20);            // field boundaries drawn after, so they sit on top
+        break;
+
     case MAPGRID_LATLNG:
 
         drawLLGrid (LL_LAT_GRID, LL_LNG_GRID);
@@ -715,7 +722,7 @@ static void updateCircumstances()
 static void drawMapMenuButton()
 {
 
-    if (mapgrid_choice == MAPGRID_MAID && map_proj == MAPP_MERCATOR)
+    if ((mapgrid_choice == MAPGRID_MAID || mapgrid_choice == MAPGRID_MAID4) && map_proj == MAPP_MERCATOR)
         view_btn_b.y = map_b.y + MH_TR_H;
     else
         view_btn_b.y = map_b.y;
@@ -742,7 +749,7 @@ static void drawMapMenu()
             MI_STY_CTY, MI_STY_TER, MI_STY_DRA, MI_STY_MUF, MI_STY_MRT, MI_STY_AUR, MI_STY_WXX,
             MI_STY_CLO, MI_STY_USR, MI_STY_TOA, MI_STY_REL,
         MI_GRD_TTL,
-            MI_GRD_NON, MI_GRD_TRO, MI_GRD_LLG, MI_GRD_MAI, MI_GRD_AZM, MI_GRD_CQZ, MI_GRD_ITU,
+            MI_GRD_NON, MI_GRD_TRO, MI_GRD_LLG, MI_GRD_MAI, MI_GRD_MA4, MI_GRD_AZM, MI_GRD_CQZ, MI_GRD_ITU,
         MI_PRJ_TTL,
             MI_PRJ_MER, MI_PRJ_AZM, MI_PRJ_AZ1, MI_PRJ_MOL,
         MI_RSS_YES,
@@ -771,6 +778,7 @@ static void drawMapMenu()
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_TROPICS], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_LATLNG], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_MAID], 0},
+            {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_MAID4], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_AZIM], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_CQZONES], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_ITUZONES], 0},
@@ -812,6 +820,7 @@ static void drawMapMenu()
     mitems[MI_GRD_TRO].set = mapgrid_choice == MAPGRID_TROPICS;
     mitems[MI_GRD_LLG].set = mapgrid_choice == MAPGRID_LATLNG;
     mitems[MI_GRD_MAI].set = mapgrid_choice == MAPGRID_MAID;
+    mitems[MI_GRD_MA4].set = mapgrid_choice == MAPGRID_MAID4;
     mitems[MI_GRD_AZM].set = mapgrid_choice == MAPGRID_AZIM;
     mitems[MI_GRD_CQZ].set = mapgrid_choice == MAPGRID_CQZONES;
     mitems[MI_GRD_ITU].set = mapgrid_choice == MAPGRID_ITUZONES;
@@ -887,6 +896,9 @@ static void drawMapMenu()
             NVWriteUInt8 (NV_GRIDSTYLE, mapgrid_choice);
         } else if (mitems[MI_GRD_MAI].set && mapgrid_choice != MAPGRID_MAID) {
             mapgrid_choice = MAPGRID_MAID;
+            NVWriteUInt8 (NV_GRIDSTYLE, mapgrid_choice);
+        } else if (mitems[MI_GRD_MA4].set && mapgrid_choice != MAPGRID_MAID4) {
+            mapgrid_choice = MAPGRID_MAID4;
             NVWriteUInt8 (NV_GRIDSTYLE, mapgrid_choice);
         } else if (mitems[MI_GRD_AZM].set && mapgrid_choice != MAPGRID_AZIM) {
             mapgrid_choice = MAPGRID_AZIM;
