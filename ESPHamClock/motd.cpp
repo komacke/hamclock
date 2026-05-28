@@ -327,11 +327,14 @@ static void motdShowPopup()
     drawSBox (ok_b, MOTD_FG);
     static const char ok_str[] = "OK";
     uint16_t ok_str_w = getTextWidth (ok_str);
-    tft.setCursor (ok_b.x + (ok_b.w - ok_str_w)/2, ok_b.y + (ok_b.h - 7)/2);
+    uint16_t ok_text_x = ok_b.x + (ok_b.w - ok_str_w)/2;
+    uint16_t ok_text_y = ok_b.y + (ok_b.h - 7)/2;
+    tft.setCursor (ok_text_x, ok_text_y);
     tft.print (ok_str);
 
-    // wait for any click in the popup, or timeout. inbox is the whole popup so a click
-    // anywhere (including the OK button) will close. Tooltip uses the same idiom.
+    // wait for input. We loop so we can give the OK button visible "got it" feedback
+    // before closing -- otherwise the popup just vanishes and users wonder if they hit
+    // the button or just any random pixel. Any tap or key inside the popup will close.
     UserInput ui = {
         popup_b,
         UI_UFuncNone,
@@ -340,7 +343,32 @@ static void motdShowPopup()
         UF_CLOCKSOK,
         {0,0}, TT_NONE, '\0', false, false
     };
-    (void) waitForUser (ui);
+    while (waitForUser (ui)) {
+        // closing event: ESC, CR, or any tap inside the popup
+        bool tap_in_ok = (ui.kb_char == CHAR_NONE) && inBox (ui.tap, ok_b);
+        bool tap_in_popup = (ui.kb_char == CHAR_NONE) && inBox (ui.tap, popup_b);
+        bool key_close = ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL || ui.kb_char == CHAR_ESC;
+
+        if (tap_in_ok || key_close) {
+            // flash the OK button yellow so the user knows we registered the click
+            fillSBox (ok_b, RA8875_YELLOW);
+            drawSBox (ok_b, MOTD_FG);
+            tft.setTextColor (RA8875_BLACK);
+            tft.setCursor (ok_text_x, ok_text_y);
+            tft.print (ok_str);
+            if (boxesOverlap (popup_b, map_b))
+                tft.drawPR();
+            wdDelay (120);
+            break;
+        }
+
+        if (tap_in_popup) {
+            // click anywhere else in popup also closes, but without the flash
+            break;
+        }
+
+        // tap was outside the popup -- ignore and keep waiting
+    }
     drainTouch();
 
     // restore screen contents underneath the popup
