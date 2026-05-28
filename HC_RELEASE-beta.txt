@@ -5,3 +5,6 @@ Changes with latest release:
 - lightning uses config units
 - fix DE format's OK button broken
 - fix web-3200x1920 in alpine docker
+- support sys admin messages
+- ensure sat tracks on top
+- support 4-char grid squares
