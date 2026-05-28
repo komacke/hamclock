@@ -68,6 +68,9 @@ static void drawUTCButton()
     tft.setCursor(x, clock_b.y+vgap+1);             tft.print(msg[0]);
     tft.setCursor(x, clock_b.y+2*vgap+FFONT_H+1);   tft.print(msg[1]);
     tft.setCursor(x, clock_b.y+3*vgap+2*FFONT_H+1); tft.print(msg[2]);
+
+    // draw the MOTD mailbox icon to the left of the UTC button (or blank slot if no MOTD)
+    drawMOTDIcon();
 }
 
 /* function given to TimeLib's setSyncProvider() to resync its time base occasionally.
@@ -1152,6 +1155,16 @@ void drawDXSunRiseSetInfo()
 bool checkClockTouch (SCoord &s)
 {
     bool ours = false;
+
+    // check MOTD mailbox icon first since it sits inside clock_b and would otherwise be
+    // swallowed by the clock-area dispatch below
+    Serial.printf ("MOTD: checkClockTouch s=(%d,%d) motd_btn_b=(%d,%d %dx%d) present=%d\n",
+                   s.x, s.y, motd_btn_b.x, motd_btn_b.y, motd_btn_b.w, motd_btn_b.h,
+                   motdIsPresent());
+    if (motdIsPresent() && inBox (s, motd_btn_b)) {
+        motdClicked();
+        return (true);
+    }
 
     if (inBox (s, auxtime_b)) {
 

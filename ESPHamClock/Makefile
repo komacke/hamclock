@@ -133,6 +133,7 @@ OBJS = \
 	menu.o \
 	moon_imgs.o \
 	moonpane.o \
+	motd.o \
 	ncdxf.o \
 	nmea.o \
 	nvram.o \

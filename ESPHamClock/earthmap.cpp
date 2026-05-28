@@ -250,7 +250,7 @@ void drawDECalTime(bool center)
 static void drawMaidGridKey()
 {
     // only if selected and using mercator projection
-    if (mapgrid_choice != MAPGRID_MAID || map_proj != MAPP_MERCATOR)
+    if ((mapgrid_choice != MAPGRID_MAID && mapgrid_choice != MAPGRID_MAID4) || map_proj != MAPP_MERCATOR)
         return;
 
 
@@ -268,7 +268,7 @@ static void drawMaidGridKey()
     selectFontStyle (LIGHT_FONT, FAST_FONT);
     tft.setTextColor (RA8875_WHITE);
 
-    // print labels across the top, use latitude of map center then scan lng
+    // print field letter labels across the top, use latitude of map center then scan lng
     uint16_t rowy = map_b.y + MH_TR_DY;
     LatLong ll;
     s2ll (map_b.x+map_b.w/2, map_b.y+map_b.h/2, ll);
@@ -282,7 +282,7 @@ static void drawMaidGridKey()
         }
     }
 
-    // print labels down the right, use lng of map center then scan lat
+    // print field letter labels down the right, use lng of map center then scan lat
     uint16_t colx = map_b.x + map_b.w - MH_RC_W + MH_RC_DX;
     s2ll (map_b.x+map_b.w/2, map_b.y+map_b.h/2, ll);
     for (uint8_t i = 0; i < 18; i++) {
@@ -294,6 +294,7 @@ static void drawMaidGridKey()
             tft.print ((char)('A' + 17 - i));
         }
     }
+
 }
 
 /* check and fix pz to be sure it is legal
@@ -600,6 +601,30 @@ static void drawMapGrid()
         drawLLGrid (10, 20);
         break;
 
+    case MAPGRID_MAID4:
+
+        drawMaidGridKey();
+        // inner grid lines only at max zoom on mercator -- log on state change so we can
+        // diagnose any user reports of inner lines appearing at the wrong zoom or projection
+        {
+            bool show_inner = (pan_zoom.zoom >= MAX_ZOOM && map_proj == MAPP_MERCATOR);
+            static int last_zoom = -1;
+            static int last_proj = -1;
+            static int last_show = -1;
+            if ((int)pan_zoom.zoom != last_zoom || (int)map_proj != last_proj || (int)show_inner != last_show) {
+                Serial.printf ("MAID4: zoom=%d (MAX=%d) proj=%d (MERC=%d) inner=%s\n",
+                               pan_zoom.zoom, MAX_ZOOM, map_proj, MAPP_MERCATOR,
+                               show_inner ? "yes" : "no");
+                last_zoom = pan_zoom.zoom;
+                last_proj = map_proj;
+                last_show = show_inner;
+            }
+            if (show_inner)
+                drawLLGrid (1, 2);      // 4-char squares: 1 deg lat x 2 deg lng -- max zoom mercator only
+        }
+        drawLLGrid (10, 20);            // field boundaries
+        break;
+
     case MAPGRID_LATLNG:
 
         drawLLGrid (LL_LAT_GRID, LL_LNG_GRID);
@@ -715,7 +740,7 @@ static void updateCircumstances()
 static void drawMapMenuButton()
 {
 
-    if (mapgrid_choice == MAPGRID_MAID && map_proj == MAPP_MERCATOR)
+    if ((mapgrid_choice == MAPGRID_MAID || mapgrid_choice == MAPGRID_MAID4) && map_proj == MAPP_MERCATOR)
         view_btn_b.y = map_b.y + MH_TR_H;
     else
         view_btn_b.y = map_b.y;
@@ -742,7 +767,7 @@ static void drawMapMenu()
             MI_STY_CTY, MI_STY_TER, MI_STY_DRA, MI_STY_MUF, MI_STY_MRT, MI_STY_AUR, MI_STY_WXX,
             MI_STY_CLO, MI_STY_USR, MI_STY_TOA, MI_STY_REL,
         MI_GRD_TTL,
-            MI_GRD_NON, MI_GRD_TRO, MI_GRD_LLG, MI_GRD_MAI, MI_GRD_AZM, MI_GRD_CQZ, MI_GRD_ITU,
+            MI_GRD_NON, MI_GRD_TRO, MI_GRD_LLG, MI_GRD_MAI, MI_GRD_MA4, MI_GRD_AZM, MI_GRD_CQZ, MI_GRD_ITU,
         MI_PRJ_TTL,
             MI_PRJ_MER, MI_PRJ_AZM, MI_PRJ_AZ1, MI_PRJ_MOL,
         MI_RSS_YES,
@@ -771,6 +796,7 @@ static void drawMapMenu()
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_TROPICS], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_LATLNG], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_MAID], 0},
+            {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_MAID4], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_AZIM], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_CQZONES], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_ITUZONES], 0},
@@ -812,6 +838,7 @@ static void drawMapMenu()
     mitems[MI_GRD_TRO].set = mapgrid_choice == MAPGRID_TROPICS;
     mitems[MI_GRD_LLG].set = mapgrid_choice == MAPGRID_LATLNG;
     mitems[MI_GRD_MAI].set = mapgrid_choice == MAPGRID_MAID;
+    mitems[MI_GRD_MA4].set = mapgrid_choice == MAPGRID_MAID4;
     mitems[MI_GRD_AZM].set = mapgrid_choice == MAPGRID_AZIM;
     mitems[MI_GRD_CQZ].set = mapgrid_choice == MAPGRID_CQZONES;
     mitems[MI_GRD_ITU].set = mapgrid_choice == MAPGRID_ITUZONES;
@@ -888,6 +915,9 @@ static void drawMapMenu()
         } else if (mitems[MI_GRD_MAI].set && mapgrid_choice != MAPGRID_MAID) {
             mapgrid_choice = MAPGRID_MAID;
             NVWriteUInt8 (NV_GRIDSTYLE, mapgrid_choice);
+        } else if (mitems[MI_GRD_MA4].set && mapgrid_choice != MAPGRID_MAID4) {
+            mapgrid_choice = MAPGRID_MAID4;
+            NVWriteUInt8 (NV_GRIDSTYLE, mapgrid_choice);
         } else if (mitems[MI_GRD_AZM].set && mapgrid_choice != MAPGRID_AZIM) {
             mapgrid_choice = MAPGRID_AZIM;
             NVWriteUInt8 (NV_GRIDSTYLE, mapgrid_choice);
@@ -899,19 +929,35 @@ static void drawMapMenu()
             NVWriteUInt8 (NV_GRIDSTYLE, mapgrid_choice);
         }
 
-        // check for different map projection
+        // check for different map projection. on any projection change, reset pan and zoom
+        // back to the default view so the user doesn't carry stale state across projections
+        // (e.g. a leftover MAX_ZOOM from a previous Mercator session would otherwise persist
+        // through azimuth/robinson and then re-apply when switching back to Mercator).
+        bool proj_changed = false;
         if (mitems[MI_PRJ_MER].set && map_proj != MAPP_MERCATOR) {
             map_proj = MAPP_MERCATOR;
             NVWriteUInt8 (NV_MAPPROJ, map_proj);
+            proj_changed = true;
         } else if (mitems[MI_PRJ_AZM].set && map_proj != MAPP_AZIMUTHAL) {
             map_proj = MAPP_AZIMUTHAL;
             NVWriteUInt8 (NV_MAPPROJ, map_proj);
+            proj_changed = true;
         } else if (mitems[MI_PRJ_AZ1].set && map_proj != MAPP_AZIM1) {
             map_proj = MAPP_AZIM1;
             NVWriteUInt8 (NV_MAPPROJ, map_proj);
+            proj_changed = true;
         } else if (mitems[MI_PRJ_MOL].set && map_proj != MAPP_ROB) {
             map_proj = MAPP_ROB;
             NVWriteUInt8 (NV_MAPPROJ, map_proj);
+            proj_changed = true;
+        }
+        if (proj_changed) {
+            pan_zoom.zoom = MIN_ZOOM;
+            pan_zoom.pan_x = 0;
+            pan_zoom.pan_y = 0;
+            NVWriteUInt8 (NV_ZOOM, pan_zoom.zoom);
+            NVWriteInt16 (NV_PANX, pan_zoom.pan_x);
+            NVWriteInt16 (NV_PANY, pan_zoom.pan_y);
         }
 
         // check for change night option

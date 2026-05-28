@@ -663,6 +663,7 @@ typedef enum {
     MAPGRID_TROPICS,
     MAPGRID_LATLNG,
     MAPGRID_MAID,
+    MAPGRID_MAID4,                      // Maidenhead fields + 4-char squares
     MAPGRID_AZIM,
     MAPGRID_CQZONES,
     MAPGRID_ITUZONES,
@@ -676,6 +677,13 @@ extern SBox satname_b;                  // satellite name pick
 extern SBox de_info_b;                  // de info pane
 extern SBox map_b;                      // main map 
 extern SBox view_btn_b;                 // map view menu button
+extern SBox motd_btn_b;                 // MOTD mailbox icon (next to UTC button)
+
+// MOTD (Message of the Day) functions
+extern void checkMOTD (void);
+extern bool motdIsPresent (void);
+extern void drawMOTDIcon (void);
+extern void motdClicked (void);
 extern SBox dx_maid_b;                  // dx maidenhead pick
 extern SBox de_maid_b;                  // de maidenhead pick
 extern SBox lkscrn_b;                   // screen lock icon button

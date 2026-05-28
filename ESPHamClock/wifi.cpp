@@ -2448,6 +2448,9 @@ void updateWiFi(void)
     // freshen RSS
     checkRSS();
 
+    // check for new Message of the Day file on backend
+    checkMOTD();
+
     // update lightning overlay if due
     updateLightning();
 
