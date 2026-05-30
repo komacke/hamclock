@@ -37,6 +37,7 @@ SBox motd_btn_b;
 // module state
 static char *motd_text;                         // malloced body, or NULL if no MOTD
 static time_t motd_next_poll;                   // when to next check the server
+static bool motd_is_new;                        // whether MOTD is new/unread
 
 
 /* free any cached text and forget the MOTD
@@ -47,6 +48,7 @@ static void motdForget()
         free (motd_text);
         motd_text = NULL;
     }
+    motd_is_new = false;
 }
 
 
@@ -127,11 +129,16 @@ static void motdFetch()
         return;
     }
 
-    // install
-    motdForget();
-    motd_text = buf;
-
-    Serial.printf ("MOTD: stored %d bytes\n", used);
+    // install if changed
+    if (motd_text == NULL || strcmp (motd_text, buf) != 0) {
+        motdForget();
+        motd_text = buf;
+        motd_is_new = true;
+        Serial.printf ("MOTD: stored %d bytes (new content)\n", used);
+    } else {
+        // same content as before
+        free (buf);
+    }
 }
 
 
@@ -144,14 +151,15 @@ void checkMOTD()
         return;
 
     bool had_motd = (motd_text != NULL);
+    bool was_new = motd_is_new;
     motdFetch();
     bool have_motd = (motd_text != NULL);
+    bool is_new = motd_is_new;
 
-    // if the present/absent state changed, redraw the icon so it appears or disappears
+    // if the present/absent state changed, or it is new content, redraw the icon
     // without waiting for some other event to trigger a clock-area redraw
-    if (had_motd != have_motd) {
-        Serial.printf ("MOTD: state changed, now %s -- redrawing icon\n",
-                       have_motd ? "present" : "absent");
+    if (had_motd != have_motd || (is_new && !was_new)) {
+        Serial.printf ("MOTD: state or novelty changed, redrawing icon\n");
         drawMOTDIcon();
     }
 
@@ -189,37 +197,24 @@ void drawMOTDIcon()
     if (!motdIsPresent())
         return;
 
-    // a simple mailbox shape: a rectangle for the body, with an arched top suggested
-    // by stair-step pixels at the corners, plus a vertical flag on the right side and
-    // a small horizontal slot to indicate the door.
+    uint16_t icon_col = motd_is_new ? RA8875_RED : GRAY;
+
+    // a simple envelope shape: a rectangle for the body with a "V" flap.
     const uint16_t bx = motd_btn_b.x;
     const uint16_t by = motd_btn_b.y;
-    const uint16_t bw = motd_btn_b.w;
 
-    // mailbox body: 10 px wide, 9 px tall, leaving room for flag on right
-    const uint16_t body_x = bx + 1;
-    const uint16_t body_y = by + 3;
-    const uint16_t body_w = 9;
-    const uint16_t body_h = 9;
+    // envelope body: 12 px wide, 8 px tall
+    const uint16_t env_x = bx + 1;
+    const uint16_t env_y = by + 3;
+    const uint16_t env_w = 12;
+    const uint16_t env_h = 8;
+
     // outline
-    tft.drawLine (body_x,           body_y+2,             body_x,           body_y+body_h-1,    MOTD_FG);  // left
-    tft.drawLine (body_x+body_w-1,  body_y+2,             body_x+body_w-1,  body_y+body_h-1,    MOTD_FG);  // right
-    tft.drawLine (body_x,           body_y+body_h-1,      body_x+body_w-1,  body_y+body_h-1,    MOTD_FG);  // bottom
-    // arched top: a couple of stair-step pixels to suggest curvature
-    tft.drawPixel (body_x+1,        body_y+1,             MOTD_FG);
-    tft.drawPixel (body_x+2,        body_y,               MOTD_FG);
-    tft.drawLine  (body_x+3,        body_y,               body_x+body_w-3,  body_y,             MOTD_FG);
-    tft.drawPixel (body_x+body_w-3, body_y,               MOTD_FG);
-    tft.drawPixel (body_x+body_w-2, body_y+1,             MOTD_FG);
+    tft.drawRect (env_x, env_y, env_w, env_h, icon_col);
 
-    // door slot: short horizontal line near the middle
-    tft.drawLine (body_x+2,         body_y+body_h-3,      body_x+body_w-3,  body_y+body_h-3,    MOTD_FG);
-
-    // flag: a tall thin rectangle on the right side, raised to indicate new mail
-    const uint16_t flag_x = bx + bw - 2;
-    const uint16_t flag_y = by;
-    tft.drawLine (flag_x,           flag_y,               flag_x,           flag_y+5,           MOTD_FG);  // pole
-    tft.fillRect (flag_x-2,         flag_y,               2,                3,                  MOTD_FG);  // flag
+    // flap
+    tft.drawLine (env_x, env_y, env_x + env_w/2, env_y + env_h/2, icon_col);
+    tft.drawLine (env_x + env_w - 1, env_y, env_x + env_w/2, env_y + env_h/2, icon_col);
 }
 
 
@@ -387,6 +382,11 @@ void motdClicked()
                    motdIsPresent(), (void*)motd_text);
     if (!motdIsPresent())
         return;
+
+    // mark as seen and update icon color
+    motd_is_new = false;
+    drawMOTDIcon();
+
     Serial.printf ("MOTD: calling motdShowPopup() with %lu bytes of text\n",
                    (unsigned long)strlen(motd_text));
     motdShowPopup();
