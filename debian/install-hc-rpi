@@ -82,7 +82,8 @@ function dumpConfig ()
 }
 
 # when requesting a specific hamclock version, find it in github
-get_hamclock_source_url() {
+function get_hamclock_source_url()
+{
     local substring=$1
 
     if [ -z "$substring" ]; then
@@ -113,6 +114,14 @@ get_hamclock_source_url() {
     fi
     TBURL="$download_url"
 }
+
+function find_latest_tag()
+{
+    ALL_TAGS_JSON=$(curl -s "https://api.github.com/repos/$GITHUB_REPO/tags")
+    STABLE_TAG=$(echo "$ALL_TAGS_JSON" | jq -r '.[].name' | grep -v "b" | sort -V | tail -n 1)
+    BETA_TAG=$(echo "$ALL_TAGS_JSON" | jq -r '.[].name' | grep "b" | sort -V | tail -n 1)
+}
+
 
 ######################################################################################
 #
@@ -299,7 +308,8 @@ if [ -d ~/Desktop ] && [ $HC_WEBONLY -eq 0 ] ; then
     UGFN=HamClockKey.pdf
     DTFN=$HOME/Desktop/$UGFN
     if ask "install User Guide on desktop" ; then
-        UGURL=https://qsl.net/g6nhu/hamclock/$UGFN
+        find_latest_tag
+        UGURL=https://github.com/openhamclock/hamclock/releases/download/$STABLE_TAG/$UGFN
         if ! curl --silent --show-error --output $DTFN $UGURL >> $LOGFN 2>&1 ; then
             inform Error downloading $UGURL -- see $LOGFN
         fi
