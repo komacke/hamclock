@@ -1780,6 +1780,7 @@ typedef enum {
     X(CM_PMTOA,     BC_INTERVAL,        "TOA",       PROPBAND_NONE, false, false)       \
     X(CM_PMREL,     BC_INTERVAL,        "REL",       PROPBAND_NONE, false, false)       \
     X(CM_CLOUDS,    CLOUDS_INTERVAL,    "Clouds",    PROPBAND_NONE, false, false)       \
+    X(CM_TROPO,     TROPO_INTERVAL,     "Tropo",     PROPBAND_NONE, false, false)       \
     X(CM_USER,      CACHE_FOREVER,      "User",      PROPBAND_NONE, false, false)
 
 #define X(a,b,c,d,e,f)  a,                      // expands COREMAPS to each enum followed by comma
@@ -1794,7 +1795,7 @@ typedef enum {
 // macro to test whether the given core map style is just a file (not an active query)
 #define CM_ISFILE(cm)     ((cm) == CM_COUNTRIES || (cm) == CM_TERRAIN || (cm) == CM_DRAP || \
                            (cm) == CM_AURORA    || (cm) == CM_WX      || (cm) == CM_MUF_RT || \
-                           (cm) == CM_CLOUDS    || (cm) == CM_USER)
+                           (cm) == CM_CLOUDS    || (cm) == CM_TROPO   || (cm) == CM_USER)
 
 typedef struct {
     int max_age;                                // refresh interval, secs
@@ -3229,6 +3230,7 @@ extern bool bypass_pw;
 // core map update intervals
 #define DRAPMAP_INTERVAL        (300)                   // polling interval, secs
 #define MUF_RT_INTERVAL         (900)                   // polling interval, secs
+#define TROPO_INTERVAL          (6*3600)		// polling interval, secs
 #define DEWX_INTERVAL           (1700)                  // polling interval, secs
 #define DXWX_INTERVAL           (1600)                  // polling interval, secs
 #define BC_INTERVAL             (3400)                  // polling interval, secs
