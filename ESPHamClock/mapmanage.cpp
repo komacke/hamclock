@@ -632,6 +632,7 @@ bool installFreshMaps()
         case CM_AURORA:
         case CM_CLOUDS:
         case CM_WX:
+	case CM_TROPO:
         case CM_USER:
             ok = installFileMaps (core_map);
             break;
@@ -800,6 +801,7 @@ bool mapScaleIsUp(void)
     case CM_WX:
     case CM_PMTOA:
     case CM_PMREL:
+    case CM_TROPO:
         return (true);
     case CM_COUNTRIES:
     case CM_TERRAIN:
@@ -877,6 +879,19 @@ void drawMapScale()
         {100,  0x44CC44, 0},
     };
 
+    // CM_TROPO — surface refractivity N-units.  Low N = dry/cold (dark blue),
+    // high N = warm/humid (red).  Ducting becomes likely above ~370 N-units.
+    static const MapScalePoint tropo_scale[] = {
+        {280, 0x00005A, 0},   // near-black — very dry, no ducting
+        {295, 0x001E8C, 0},   // dark blue
+        {310, 0x0050C8, 0},   // blue — below normal
+        {325, 0x00A0D2, 1},   // cyan — normal
+        {340, 0x50D250, 1},   // green — slightly enhanced
+        {355, 0xA0E132, 1},   // yellow-green — superrefractive
+        {370, 0xF0C800, 1},   // yellow — ducting possible
+        {395, 0xFF8200, 1},   // orange — ducting probable
+        {420, 0xE61E00, 1},   // red — strong ducting
+    };
 
     // set these depending on map
     const MapScalePoint *msp = NULL;                    // one of above tables
@@ -905,6 +920,12 @@ void drawMapScale()
         n_scale = NARRAY(a_scale);
         n_labels = 11;
         title = "% Chance";
+        break;
+    case CM_TROPO:
+        msp = tropo_scale;
+        n_scale = NARRAY(tropo_scale);
+        n_labels = 9;
+        title = "N-units";
         break;
     case CM_WX:
         msp = w_scale;
