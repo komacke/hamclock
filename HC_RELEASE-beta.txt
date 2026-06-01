@@ -8,3 +8,4 @@ Changes with latest release:
 - support sys admin messages
 - ensure sat tracks on top
 - support 4-char grid squares
+- prelim support for tropo maps
