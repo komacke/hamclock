@@ -602,17 +602,16 @@ bool checkStormsTouch (const SCoord &s, const SBox &box)
 
     } else {
 
-        // tapped a storm entry -- map the display row to the right storm, set DX, then pan & zoom onto it
+        // tapped a storm entry -- map the display row to the right storm, then pan & zoom onto it
         int item = (s.y - box.y - STORM_START_DY) / STORM_ROW_H;
         int index;
         if (storm_ss.findDataIndex (item, index) && index >= 0 && index < n_storms) {
             const Storm &st = storms[index];
             LatLong ll = st.cur_ll;
-            newDX (ll, NULL, NULL);
             if (!panZoomToLocation (ll, MAX_ZOOM))
                 Serial.printf ("STORM: %s tapped; map pan/zoom unavailable in this projection\n",
                                st.name);
-            Serial.printf ("STORM: set DX to %s at %.2f,%.2f\n",
+            Serial.printf ("STORM: panned to %s at %.2f,%.2f\n",
                            st.name, ll.lat_d, ll.lng_d);
             return true;
         }
