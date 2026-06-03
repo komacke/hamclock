@@ -316,6 +316,45 @@ static void centerMercatorPanZoom (PanZoom &pz, const LatLong &ll)
     normalizePanZoom (pz);
 }
 
+/* Pan, and optionally zoom, the map so the given location is centered.
+ * 'zoom' is clamped to [MIN_ZOOM,MAX_ZOOM]; pass MAX_ZOOM to zoom in as far as possible.
+ * Centering works in Mercator and Robinson projections; zoom is only meaningful in
+ * Mercator so it is left unchanged in other projections. The new view is persisted
+ * to NVRAM and the map is scheduled for a fresh redraw.
+ * Returns true if the view actually changed, else false (e.g. unsupported projection).
+ */
+bool panZoomToLocation (const LatLong &ll, uint8_t zoom)
+{
+    // pan is only supported on the flat projections; nothing sensible to do otherwise
+    if (map_proj != MAPP_MERCATOR && map_proj != MAPP_ROB)
+        return false;
+
+    PanZoom new_pz = pan_zoom;
+
+    // zoom only applies to Mercator
+    if (map_proj == MAPP_MERCATOR)
+        new_pz.zoom = CLAMPF (zoom, MIN_ZOOM, MAX_ZOOM);
+
+    // center the requested location (also normalizes)
+    centerMercatorPanZoom (new_pz, ll);
+
+    // nothing to do if unchanged
+    if (memcmp (&pan_zoom, &new_pz, sizeof(pan_zoom)) == 0)
+        return false;
+
+    // commit, persist and refresh
+    pan_zoom = new_pz;
+    NVWriteUInt8 (NV_ZOOM, pan_zoom.zoom);
+    NVWriteInt16 (NV_PANX, pan_zoom.pan_x);
+    NVWriteInt16 (NV_PANY, pan_zoom.pan_y);
+    initEarthMap();
+    scheduleFreshMap();
+
+    Serial.printf ("PANZOOM: center %.2f,%.2f zoom %d -> pan_x %d pan_y %d\n",
+                   ll.lat_d, ll.lng_d, pan_zoom.zoom, pan_zoom.pan_x, pan_zoom.pan_y);
+    return true;
+}
+
 /* draw and operate the map popup menu
  */
 static void drawMapPopup(void)
