@@ -1492,6 +1492,7 @@ extern bool segmentSpanOkRaw (const SCoord &s0, const SCoord &s1, uint16_t borde
 extern bool desiredBearing (const LatLong &ll, float &bear);
 extern void checkBGMap(void);
 extern void normalizePanZoom (PanZoom &pz);
+extern bool panZoomToLocation (const LatLong &ll, uint8_t zoom);
 
 
 
