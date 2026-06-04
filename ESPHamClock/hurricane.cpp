@@ -32,6 +32,7 @@
 #define STORM_CAT_DY        28          // top of category/wind line within a row (FAST_FONT)
 #define STORM_COORD_DY      40          // top of basin/coords line within a row (FAST_FONT)
 #define STORM_TITLE_RSV     28          // reserve at right so title clears the scroll-arrow control
+#define STORM_RESET_W       18          // size of the reset-view button on the centered storm's row
 static const char storm_page[] = "/storms/storms.txt";
 static const char storm_fn[]   = "storms.txt";
 
@@ -73,6 +74,11 @@ typedef struct {
 
 static Storm  storms[STORM_MAXSTORMS];
 static int    n_storms = 0;
+
+// map-centering state for the "reset view" button (feature: tap storm centers map, button restores)
+static int      storm_centered_idx = -1;        // data index of storm the map is centered on, else -1
+static bool     storm_pz_saved = false;         // whether storm_saved_pz holds a pre-focus map view
+static PanZoom  storm_saved_pz;                 // map view to restore when the reset button is tapped
 static ScrollState storm_ss;
 
 // ---------------------------------------------------------------------------
@@ -216,6 +222,34 @@ static bool parseStormsFile (FILE *fp)
 // Pane drawing
 // ---------------------------------------------------------------------------
 
+/* geometry of the reset-view button within a storm row whose top is at row_y */
+static SBox stormResetBox (const SBox &box, uint16_t row_y)
+{
+    SBox b;
+    b.w = STORM_RESET_W;
+    b.h = STORM_RESET_W;
+    b.x = box.x + box.w - STORM_RESET_W - 3;
+    b.y = row_y + 3;
+    return b;
+}
+
+/* draw a small "restore previous map view" button (refresh-style icon) */
+static void drawStormResetButton (const SBox &b)
+{
+    tft.fillRect (b.x, b.y, b.w, b.h, RA8875_BLACK);
+    tft.drawRect (b.x, b.y, b.w, b.h, GRAY);
+
+    uint16_t cx = b.x + b.w/2;
+    uint16_t cy = b.y + b.h/2;
+    int rr = b.w/2 - 4;
+    if (rr < 2)
+        rr = 2;
+    tft.drawCircle (cx, cy, rr, RA8875_WHITE);                  // ring
+    tft.fillRect (cx+rr-1, cy-1, 3, 3, RA8875_BLACK);           // gap in the ring
+    tft.fillTriangle (cx+rr-2, cy-rr+1, cx+rr+2, cy-rr+1,
+                      cx+rr,   cy-rr+4, RA8875_WHITE);           // arrowhead -> refresh/reset
+}
+
 static void drawStormsPane (const SBox &box)
 {
     prepPlotBox (box);
@@ -305,6 +339,10 @@ static void drawStormsPane (const SBox &box)
             uint16_t w3 = getTextWidth (line3);
             tft.setCursor (box.x + (box.w > w3 ? (box.w-w3)/2 : 1), y + STORM_COORD_DY);
             tft.print (line3);
+
+            // reset-view button on the storm the map is currently centered on
+            if (storm_pz_saved && i == storm_centered_idx)
+                drawStormResetButton (stormResetBox (box, y));
         }
     }
 }
@@ -451,6 +489,41 @@ const char *getStormHoverLabel (const LatLong &ll)
               stormCategoryLabel (st->peak_cat, st->peak_wind, st->pts[0].type),
               st->peak_wind);
     return buf;
+}
+
+/* true if there is at least one active storm (used to skip an empty pane in rotation) */
+bool stormsActive (void)
+{
+    return n_storms > 0;
+}
+
+/* If ms is hovering over a storm row in the Storms pane, return that storm's current position in
+ * *ll plus a short label, and return true. Lets infobox highlight the storm on the map the same
+ * way it does when hovering over a station listing.
+ */
+bool getStormPaneHover (const SCoord &ms, LatLong *ll, char *label, size_t label_len)
+{
+    if (n_storms == 0)
+        return false;
+
+    PlotPane pp = findPaneChoiceNow (PLOT_CH_STORMS);
+    if (pp == PANE_NONE)
+        return false;
+    const SBox &box = plot_b[pp];
+    if (!inBox (ms, box) || ms.y < box.y + STORM_START_DY)      // not over the storm-rows region
+        return false;
+
+    int item = (ms.y - box.y - STORM_START_DY) / STORM_ROW_H;
+    int index;
+    if (!storm_ss.findDataIndex (item, index) || index < 0 || index >= n_storms)
+        return false;
+
+    const Storm &st = storms[index];
+    *ll = st.cur_ll;
+    const StormPoint &cur = st.pts[0];
+    snprintf (label, label_len, "%s  %s  %d kt", st.name,
+              stormCategoryLabel (cur.category, cur.wind_kt, cur.type), cur.wind_kt);
+    return true;
 }
 
 
@@ -602,17 +675,40 @@ bool checkStormsTouch (const SCoord &s, const SBox &box)
 
     } else {
 
-        // tapped a storm entry -- map the display row to the right storm, then pan & zoom onto it
+        // tapped a storm row -- map the display row to the right storm
         int item = (s.y - box.y - STORM_START_DY) / STORM_ROW_H;
         int index;
         if (storm_ss.findDataIndex (item, index) && index >= 0 && index < n_storms) {
+
+            // if this is the centered storm and the tap is on its reset button, restore the prior view
+            if (storm_pz_saved && index == storm_centered_idx) {
+                uint16_t row_y = (box.y + STORM_START_DY) + item * STORM_ROW_H;
+                if (inBox (s, stormResetBox (box, row_y))) {
+                    restorePanZoom (storm_saved_pz);
+                    storm_pz_saved = false;
+                    storm_centered_idx = -1;
+                    drawStormsPane (box);
+                    Serial.printf ("STORM: restored previous map view\n");
+                    return true;
+                }
+            }
+
+            // otherwise center & max-zoom the map on this storm
             const Storm &st = storms[index];
             LatLong ll = st.cur_ll;
-            if (!panZoomToLocation (ll, MAX_ZOOM))
+            PanZoom before = pan_zoom;
+            if (panZoomToLocation (ll, MAX_ZOOM)) {
+                if (!storm_pz_saved) {              // remember the view we had before focusing any storm
+                    storm_saved_pz = before;
+                    storm_pz_saved = true;
+                }
+                storm_centered_idx = index;
+            } else {
                 Serial.printf ("STORM: %s tapped; map pan/zoom unavailable in this projection\n",
                                st.name);
-            Serial.printf ("STORM: panned to %s at %.2f,%.2f\n",
-                           st.name, ll.lat_d, ll.lng_d);
+            }
+            drawStormsPane (box);                  // redraw so the reset button appears on this row
+            Serial.printf ("STORM: panned to %s at %.2f,%.2f\n", st.name, ll.lat_d, ll.lng_d);
             return true;
         }
     }

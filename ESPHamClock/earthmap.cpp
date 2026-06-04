@@ -355,6 +355,20 @@ bool panZoomToLocation (const LatLong &ll, uint8_t zoom)
     return true;
 }
 
+/* Restore a previously-saved map view (pan and zoom), persist it and refresh the map.
+ * Used to undo a pan/zoom such as the Storms pane "center on storm" action.
+ */
+void restorePanZoom (const PanZoom &pz)
+{
+    pan_zoom = pz;
+    normalizePanZoom (pan_zoom);
+    NVWriteUInt8 (NV_ZOOM, pan_zoom.zoom);
+    NVWriteInt16 (NV_PANX, pan_zoom.pan_x);
+    NVWriteInt16 (NV_PANY, pan_zoom.pan_y);
+    initEarthMap();
+    scheduleFreshMap();
+}
+
 /* draw and operate the map popup menu
  */
 static void drawMapPopup(void)

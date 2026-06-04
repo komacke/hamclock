@@ -293,14 +293,19 @@ PlotChoice getNextRotationChoice (PlotPane pp, PlotChoice pc)
     if (isPaneRotating (pp)) {
         for (int i = 1; i < PLOT_CH_N; i++) {
             int j = (pc + i) % PLOT_CH_N;
-            if (plot_rotset[pp] & (1 << j))
+            if (plot_rotset[pp] & (1 << j)) {
+                // don't rotate into the Storms pane when there are no active storms; skip it so the
+                // pane only appears once a storm exists. If Storms is the sole choice, isPaneRotating()
+                // is false and we never get here, so it always shows in that case.
+                if (j == PLOT_CH_STORMS && !stormsActive())
+                    continue;
                 return ((PlotChoice)j);
+            }
         }
+        // only an (empty) Storms choice remained besides us -- stay on the current choice
+        return (pc);
     } else
         return (pc);
-
-    fatalError ("getNextRotationChoice() none for pane %d", (int)pp);
-    return (pc); // lint because fatalError never returns
 }
 
 /* return any available unassigned plot choice

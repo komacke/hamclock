@@ -515,11 +515,14 @@ void drawInfoBox()
                                     || getOnTheAirPaneSpot (ms, &dx_s, &dxc_ll)
                                     || getADIFPaneSpot (ms, &dx_s, &dxc_ll)
                                 );
+    char storm_pane_label[40];
+    bool over_storm_pane = over_app && !over_map && !over_dxped && !over_pane
+                                && getStormPaneHover (ms, &dxc_ll, storm_pane_label, sizeof(storm_pane_label));
     bool over_sdo = over_app && !over_map && (pp = findPaneChoiceNow(PLOT_CH_SDO)) != PANE_NONE
                         && inBox (ms, plot_b[pp]);
     bool over_moon = over_app && !over_map && (pp = findPaneChoiceNow(PLOT_CH_MOON)) != PANE_NONE
                         && inBox (ms, plot_b[pp]);
-    bool draw_info = over_map || over_psk || over_spot || over_pane || over_dxped;
+    bool draw_info = over_map || over_psk || over_spot || over_pane || over_dxped || over_storm_pane;
 
     // erase any previous city then reset was_city as flag for next time
     if (was_city) {
@@ -549,6 +552,8 @@ void drawInfoBox()
         drawIB_MapMarker (moon_ss_ll, minfo_b, true);
     else if (over_psk || over_spot || over_pane)
         drawIB_MapMarker (dxc_ll, minfo_b, false);
+    else if (over_storm_pane)
+        drawIB_MapMarker (dxc_ll, minfo_b, false);
     else if (dxp)
         drawIB_MapMarker (dxp->ll, minfo_b, true);
 
@@ -574,6 +579,13 @@ void drawInfoBox()
 
     else if (over_spot || over_pane)
         drawIB_DX (minfo_b, dx_s, dxc_ll);
+
+    else if (over_storm_pane) {
+        names_w = getTextWidth (storm_pane_label);
+        tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+        tft.print (storm_pane_label);
+        was_city = true;
+    }
 
     else if (over_map) {
 
