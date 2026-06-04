@@ -522,7 +522,7 @@ void drawInfoBox()
                         && inBox (ms, plot_b[pp]);
     bool over_moon = over_app && !over_map && (pp = findPaneChoiceNow(PLOT_CH_MOON)) != PANE_NONE
                         && inBox (ms, plot_b[pp]);
-    bool draw_info = over_map || over_psk || over_spot || over_pane || over_dxped || over_storm_pane;
+    bool draw_info = over_map || over_psk || over_spot || over_pane || over_dxped;
 
     // erase any previous city then reset was_city as flag for next time
     if (was_city) {
@@ -552,10 +552,20 @@ void drawInfoBox()
         drawIB_MapMarker (moon_ss_ll, minfo_b, true);
     else if (over_psk || over_spot || over_pane)
         drawIB_MapMarker (dxc_ll, minfo_b, false);
-    else if (over_storm_pane)
-        drawIB_MapMarker (dxc_ll, minfo_b, false);
     else if (dxp)
         drawIB_MapMarker (dxp->ll, minfo_b, true);
+
+    // hovering a storm name in the Storms pane: just ring it on the map and name it in the bar,
+    // no info dropdown (there is no map location under the cursor to describe)
+    if (over_storm_pane) {
+        drawIB_MapMarker (dxc_ll, minfo_b, true);
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        names_w = getTextWidth (storm_pane_label);
+        tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+        tft.print (storm_pane_label);
+        was_city = true;
+    }
 
     // that's all folks if no menu
     if (!draw_info)
@@ -579,13 +589,6 @@ void drawInfoBox()
 
     else if (over_spot || over_pane)
         drawIB_DX (minfo_b, dx_s, dxc_ll);
-
-    else if (over_storm_pane) {
-        names_w = getTextWidth (storm_pane_label);
-        tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
-        tft.print (storm_pane_label);
-        was_city = true;
-    }
 
     else if (over_map) {
 
