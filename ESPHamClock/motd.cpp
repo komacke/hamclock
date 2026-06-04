@@ -148,7 +148,8 @@ static void motdFetch()
         }
         motd_is_new = (new_hash != read_hash);
 
-        Serial.printf ("MOTD: stored %d bytes (new content), is_new=%d\n", used, (int)motd_is_new);
+        if (motd_is_new)
+            Serial.printf ("MOTD: stored %d bytes (new content), is_new=%d\n", used, (int)motd_is_new);
     } else {
         // same content as before
         free (buf);
@@ -404,6 +405,7 @@ void motdClicked()
         if (h_fp) {
             fprintf (h_fp, "%u\n", current_hash);
             fclose (h_fp);
+            Serial.printf ("MOTD: wrote hash %u to %s\n", current_hash, MOTD_HASH_FN);
         }
         motd_is_new = false;
     }
