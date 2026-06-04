@@ -1493,6 +1493,7 @@ extern bool desiredBearing (const LatLong &ll, float &bear);
 extern void checkBGMap(void);
 extern void normalizePanZoom (PanZoom &pz);
 extern bool panZoomToLocation (const LatLong &ll, uint8_t zoom);
+extern void restorePanZoom (const PanZoom &pz);
 
 
 
@@ -2397,6 +2398,8 @@ extern bool updateStorms (const SBox &box, bool fresh);
 extern void drawStormsOnMap (void);
 extern bool checkStormsTouch (const SCoord &s, const SBox &box);
 extern const char *getStormHoverLabel (const LatLong &ll);
+extern bool getStormPaneHover (const SCoord &ms, LatLong *ll, char *label, size_t label_len);
+extern bool stormsActive (void);
 extern bool getStormMapMenuInfo (const LatLong &ll, char *line1, size_t line1_len,
         char *line2, size_t line2_len, char *line3, size_t line3_len);
 extern uint16_t stormCategoryColor (uint8_t cat, uint16_t wind_kt);
