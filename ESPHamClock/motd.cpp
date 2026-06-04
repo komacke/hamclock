@@ -26,6 +26,9 @@
 #define MOTD_OK_W               40              // OK button width, pixels
 #define MOTD_OK_H               16              // OK button height, pixels
 
+// filename to persist the hash of the last read message
+#define MOTD_HASH_FN            "motd_hash.txt"
+
 // icon geometry: small mailbox in the upper-right of clock_b, just left of the UTC button
 #define MOTD_ICON_W             14
 #define MOTD_ICON_H             14
@@ -133,8 +136,19 @@ static void motdFetch()
     if (motd_text == NULL || strcmp (motd_text, buf) != 0) {
         motdForget();
         motd_text = buf;
-        motd_is_new = true;
-        Serial.printf ("MOTD: stored %d bytes (new content)\n", used);
+
+        // determine if this is really new to the user by comparing hash with persistent record
+        uint32_t new_hash = stringHash (motd_text);
+        uint32_t read_hash = 0;
+        FILE *h_fp = fopenOurs (MOTD_HASH_FN, "r");
+        if (h_fp) {
+            if (fscanf (h_fp, "%u", &read_hash) != 1)
+                read_hash = 0;
+            fclose (h_fp);
+        }
+        motd_is_new = (new_hash != read_hash);
+
+        Serial.printf ("MOTD: stored %d bytes (new content), is_new=%d\n", used, (int)motd_is_new);
     } else {
         // same content as before
         free (buf);
@@ -383,8 +397,17 @@ void motdClicked()
     if (!motdIsPresent())
         return;
 
-    // mark as seen and update icon color
-    motd_is_new = false;
+    // if was new, record hash as having been read
+    if (motd_is_new) {
+        uint32_t current_hash = stringHash (motd_text);
+        FILE *h_fp = fopenOurs (MOTD_HASH_FN, "w");
+        if (h_fp) {
+            fprintf (h_fp, "%u\n", current_hash);
+            fclose (h_fp);
+        }
+        motd_is_new = false;
+    }
+
     drawMOTDIcon();
 
     Serial.printf ("MOTD: calling motdShowPopup() with %lu bytes of text\n",
