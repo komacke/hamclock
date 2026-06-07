@@ -276,7 +276,7 @@ $DESKTOP_EXEC_LINE
 # Check current /etc/hosts state
 match_count=$(grep -E "^[[:space:]]*[^#].*[[:space:]]$DOMAIN([[:space:]]|$)" "$HOSTS_FILE" | wc -l)
 
-if ! { [ "$match_count" -eq 1 ] && grep -Eq "^[[:space:]]*$HOSTS_IP[[:space:]]+$DOMAIN([[:space:]]|$)" "$HOSTS_FILE"; }; then
+if [ "$match_count" -gt 0 ]; then
     tmpfile=$(mktemp) || {
         echo "Error: could not create temporary file."
         exit 1
@@ -284,9 +284,6 @@ if ! { [ "$match_count" -eq 1 ] && grep -Eq "^[[:space:]]*$HOSTS_IP[[:space:]]+$
 
     # Remove all existing non-comment lines containing the domain
     grep -Ev "^[[:space:]]*[^#].*[[:space:]]$DOMAIN([[:space:]]|$)" "$HOSTS_FILE" > "$tmpfile"
-
-    # Add the correct entry once
-    echo "$ENTRY" >> "$tmpfile"
 
     # Clear HamClock cache before replacing hosts file
     if [ -d "$HAMCLOCK_DIR" ]; then
@@ -358,12 +355,10 @@ fi
 
 # Reporting
 if [ "$hosts_changed" -eq 1 ]; then
-    if [ "$match_count" -eq 0 ]; then
-        echo "Added entry: Your HamClock is now using $IP_NAME."
-    elif [ "$match_count" -eq 1 ]; then
-        echo "Updated entry: Your HamClock is now using $IP_NAME."
+    if [ "$match_count" -eq 1 ]; then
+        echo "Removed 1 entry for $DOMAIN."
     else
-        echo "Cleaned up duplicate entries and set $DOMAIN to $IP_NAME."
+        echo "Removed $match_count entries for $DOMAIN."
     fi
 fi
 
