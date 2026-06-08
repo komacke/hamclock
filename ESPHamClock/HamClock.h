@@ -414,7 +414,8 @@ typedef enum {
     X(PLOT_CH_AURORA,       "Aurora")           \
     X(PLOT_CH_DXPEDS,       "DXPeditions")      \
     X(PLOT_CH_DST,          "Disturbance")       \
-    X(PLOT_CH_STORMS,       "Storms")
+    X(PLOT_CH_STORMS,       "Storms")           \
+    X(PLOT_CH_ACTIVENETS,   "Active_Nets")
 
 #define X(a,b)  a,              // expands PLOTNAMES to each enum and comma
 typedef enum {
@@ -1236,6 +1237,16 @@ extern void runConfigManagement(void);
 extern bool updateContests (const SBox &box, bool fresh);
 extern bool checkContestsTouch (const SCoord &s, const SBox &box);
 extern int getContests (char **&titles, char **&dates);
+
+/*********************************************************************************************
+ *
+ * activenets.cpp
+ *
+ */
+
+#define ACTIVENETS_INTERVAL     (60)            // pane update interval, secs
+extern bool updateActiveNets (const SBox &box, bool fresh);
+extern bool checkActiveNetsTouch (const SCoord &s, const SBox &box);
 
 
 
@@ -2168,7 +2179,7 @@ extern uint32_t plot_rotset[PANE_N];       // bitmask of each pane's PlotChoice 
 
 // bit mask of plot choices suitable for PANE_0
 #define PANE_0_CH_MASK          ((1<<PLOT_CH_DXCLUSTER) | (1<<PLOT_CH_CONTESTS) | (1<<PLOT_CH_ADIF) \
-                                 | (1<<PLOT_CH_ONTA) | (1<<PLOT_CH_DXPEDS))
+                                 | (1<<PLOT_CH_ONTA) | (1<<PLOT_CH_DXPEDS) | (1<<PLOT_CH_ACTIVENETS))
 
 // compute number of bits set in PANE_0_CH_MASK at compile time :-)
 // https://stackoverflow.com/questions/109023/count-the-number-of-set-bits-in-a-32-bit-integer

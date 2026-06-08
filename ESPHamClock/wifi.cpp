@@ -2201,6 +2201,7 @@ void updateWiFi(void)
             if (pc == PLOT_CH_ADIF)      fresh_redraw[PLOT_CH_ADIF] = true;
             if (pc == PLOT_CH_ONTA)      fresh_redraw[PLOT_CH_ONTA] = true;
             if (pc == PLOT_CH_CONTESTS)  fresh_redraw[PLOT_CH_CONTESTS] = true;
+            if (pc == PLOT_CH_ACTIVENETS) fresh_redraw[PLOT_CH_ACTIVENETS] = true;
             if (pc == PLOT_CH_DXPEDS)    fresh_redraw[PLOT_CH_DXPEDS] = true;
             if (pc == PLOT_CH_STORMS)    fresh_redraw[PLOT_CH_STORMS] = true;
 
@@ -2355,6 +2356,16 @@ void updateWiFi(void)
             if (t0 >= next_update[pp]) {
                 if (updateContests(box, fresh_redraw[pc])) {
                     next_update[pp] = nextPaneUpdate (pc, CONTESTS_INTERVAL);
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
+        case PLOT_CH_ACTIVENETS:
+            if (t0 >= next_update[pp]) {
+                if (updateActiveNets(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, ACTIVENETS_INTERVAL);
                     fresh_redraw[pc] = false;
                 } else
                     next_update[pp] = nextWiFiRetry(pc);
