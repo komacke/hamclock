@@ -1,11 +1,2 @@
 Changes with latest release:
-- mobile dashboard on 8080:/dashboard.html
-- update dxcluster connection retry
-- center clicked on zoom map
-- lightning uses config units
-- fix DE format's OK button broken
-- fix web-3200x1920 in alpine docker
-- support sys admin messages
-- ensure sat tracks on top
-- support 4-char grid squares
-- prelim support for tropo maps
+- no changes at this time
