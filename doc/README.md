@@ -7,7 +7,7 @@ For information on how to install and use the HamClock client, see:
 * [Running the HamClock Client with Docker](../docker/)
 * [Running the HamClock Client on Raspberry Pi/Debian](../debian/)
 * [HamClock Client Command-line Interface](./cli/)
-* [HamClock Client User Manual (PDF)](./HamClockKey.pdf)
+* [HamClock Client User Manual (PDF)](./HamClockUserGuide.pdf)
 * [User Contributions](../hamclock-contrib/README.md)
 
 ## Development
