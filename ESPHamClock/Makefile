@@ -89,6 +89,7 @@ OBJS = \
 	P13.o \
 	adif.o \
 	adif_parser.o \
+	activenets.o \
     antenna_lookup.o \
 	antennas.o \
 	antennas-html.o \
