@@ -1,2 +1,3 @@
 Changes with latest release:
-- no changes at this time
+- starting the new beta series
+- no changes from 4.26, yet
