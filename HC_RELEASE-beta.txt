@@ -1,3 +1,2 @@
 Changes with latest release:
-- starting the new beta series
-- no changes from 4.26, yet
+- netlogger panel
