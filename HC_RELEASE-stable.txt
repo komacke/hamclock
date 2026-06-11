@@ -1,7 +1,11 @@
 Changes with latest release:
-- improve lightning icons
-- fix UA missing in lightning
-- tropical cyclone feature
-- support save configuration
-- allow unselect all
-- better missing satellite
+- mobile dashboard on 8080:/dashboard.html
+- update dxcluster connection retry
+- center clicked on zoom map
+- lightning uses config units
+- fix DE format's OK button broken
+- fix web-3200x1920 in alpine docker
+- support sys admin messages
+- ensure sat tracks on top
+- support 4-char grid squares
+- prelim support for tropo maps

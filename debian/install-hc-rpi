@@ -305,7 +305,7 @@ fi
 
 # User Guide?
 if [ -d ~/Desktop ] && [ $HC_WEBONLY -eq 0 ] ; then
-    UGFN=HamClockKey.pdf
+    UGFN=HamClockUserGuide.pdf
     DTFN="$HOME/Desktop/$UGFN"
 
     if ask "install User Guide on desktop" ; then
