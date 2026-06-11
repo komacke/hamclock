@@ -246,7 +246,7 @@ static void scrubToFit (char *line, const SBox &box)
 }
 
 /* build the supporting info line for one net from its CSV fields.
- * format: "<freq> <band> <mode> - NCS <ncs> - <n> ckins", omitting empty pieces.
+ * format: "<freq> <band> <mode> - <n> ckins", omitting empty pieces.
  * uses only ASCII so it renders correctly in the small CP437-based font.
  */
 static void buildInfoLine (char *out, size_t out_l, const char *freq, const char *band,
@@ -268,8 +268,8 @@ static void buildInfoLine (char *out, size_t out_l, const char *freq, const char
     AN_APP_SP (mode);
 
     // net control, set off with a dash
-    if (ncs && ncs[0] && used < out_l)
-        used += snprintf (out+used, out_l-used, "%sNCS %s", used ? " - " : "", ncs);
+    //if (ncs && ncs[0] && used < out_l)
+    //    used += snprintf (out+used, out_l-used, "%sNCS %s", used ? " - " : "", ncs);
 
     // check-in count
     if (chk && chk[0] && used < out_l)
