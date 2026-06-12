@@ -1523,15 +1523,29 @@ extern void restorePanZoom (const PanZoom &pz);
 
 typedef struct _sat_now {
     char name[NV_SATNAME_LEN];          // name
+    int norad;                          // NORAD catalog id, 0 if unknown
     float az, el;                       // az, el degs
     float range, rate;                  // km, m/s + receding
     float raz, saz;                     // rise and set az, degs; either may be SAT_NOAZ
     float rdt, sdt;                     // next rise and set, hrs from now; rdt < 0 if up now
-    _sat_now() { name[0] = '\0'; }      // constructor to insure name properly empty
+    _sat_now() { name[0] = '\0'; norad = 0; }   // constructor to insure name empty and norad clear
 } SatNow;
 #define SAT_NOAZ        (-999)          // error flag for raz or saz
 #define SAT_MIN_EL      -0.4F           // min elevation, rough approx for refraction
 #define TLE_LINEL       70              // TLE line length, including EOS
+
+// one satellite transmitter's frequency/mode info, from the server esats-freq.txt file
+typedef struct {
+    char status[12];                    // active / inactive / future
+    char type[20];                      // Transmitter / Transceiver / Transponder
+    char mode[24];                      // FM, AFSK, LSB, ...
+    char desc[64];                      // free-text description
+    long ul_lo, ul_hi;                  // uplink Hz; ul_hi 0 unless a passband
+    long dl_lo, dl_hi;                  // downlink Hz; dl_hi 0 unless a passband
+    float baud;                         // baud, 0 if not applicable
+    bool invert;                        // inverting transponder
+} SatFreq;
+extern int getSatFreqs (int norad, SatFreq **fpp);      // caller must free *fpp if return > 0
 
 extern void updateSatPath(void);
 extern void drawSatPathAndFoot(void);
