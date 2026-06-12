@@ -32,7 +32,7 @@
 // icon geometry: small mailbox in the upper-right of clock_b, just left of the UTC button
 #define MOTD_ICON_W             14
 #define MOTD_ICON_H             14
-#define MOTD_ICON_GAP           2               // gap between icon and UTC button
+#define MOTD_ICON_GAP           6               // gap between icon and UTC button
 
 // clickable box for the icon (also where it gets drawn)
 SBox motd_btn_b;
