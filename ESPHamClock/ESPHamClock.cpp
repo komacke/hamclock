@@ -816,6 +816,7 @@ void initScreen()
     initWiFiRetry();
     drawUptime(true);
     drawScreenLock();
+    drawMOTDIcon();
     drawDemoRunner();
 
     // always close so it will restart if open in any pane
