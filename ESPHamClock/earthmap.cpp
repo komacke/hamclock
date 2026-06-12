@@ -610,31 +610,21 @@ static void drawTropicsGrid()
     if (lw == 0)
         return;
 
-    if (map_proj != MAPP_MERCATOR) {
-
-        // just 2 lines at lat +- 23.5
-        SCoord s00, s01, s10, s11;
-        ll2sRaw (deg2rad(-23.5F), deg2rad(-180), s00, lw);
-        ll2sRaw (deg2rad(23.5F), deg2rad(-180), s10, lw);
-        for (float lng = -180; lng <= 180; lng += FINESTEP_GRID) {
-            ll2sRaw (deg2rad(-23.5), deg2rad(lng), s01, lw);
-            ll2sRaw (deg2rad(23.5), deg2rad(lng), s11, lw);
-            if (segmentSpanOkRaw (s00, s01, lw))
-                tft.drawLineRaw (s00.x, s00.y, s01.x, s01.y, lw, EARTH_GRIDC);
-            s00 = s01;
-            if (segmentSpanOkRaw (s10, s11, lw))
-                tft.drawLineRaw (s10.x, s10.y, s11.x, s11.y, lw, EARTH_GRIDC);
-            s10 = s11;
-        }
-
-    } else {
-
-        // easy! just 2 straight lines
-        uint16_t y = map_b.y + map_b.h/2 - 23.5F*map_b.h/180;
-        tft.drawLine (map_b.x, y, map_b.x+map_b.w-1, y, lw, EARTH_GRIDC);
-        y = map_b.y + map_b.h/2 + 23.5F*map_b.h/180;
-        tft.drawLine (map_b.x, y, map_b.x+map_b.w-1, y, lw, EARTH_GRIDC);
-
+    // draw 2 lines at lat +- 23.5.
+    // use loop for all projections to correctly handle pan and zoom.
+    // N.B. drawLineRaw avoids double-scaling the line width.
+    SCoord s00, s01, s10, s11;
+    ll2sRaw (deg2rad(-23.5F), deg2rad(-180), s00, lw);
+    ll2sRaw (deg2rad(23.5F), deg2rad(-180), s10, lw);
+    for (float lng = -180; lng <= 180; lng += FINESTEP_GRID) {
+        ll2sRaw (deg2rad(-23.5), deg2rad(lng), s01, lw);
+        ll2sRaw (deg2rad(23.5), deg2rad(lng), s11, lw);
+        if (segmentSpanOkRaw (s00, s01, lw))
+            tft.drawLineRaw (s00.x, s00.y, s01.x, s01.y, lw, EARTH_GRIDC);
+        s00 = s01;
+        if (segmentSpanOkRaw (s10, s11, lw))
+            tft.drawLineRaw (s10.x, s10.y, s11.x, s11.y, lw, EARTH_GRIDC);
+        s10 = s11;
     }
 }
 
