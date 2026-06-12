@@ -98,7 +98,10 @@ const char dashboard_html[] = R"HCDB(
   function renderBands(rows){
     const wanted = preferredBands.map(b => rows.find(r => r.band === b)).filter(Boolean);
     const show = wanted.length ? wanted : rows.slice(0,8);
-    $('bands').innerHTML = show.map(r => `<div class="band"><div class="bandname">${r.band}</div><div class="bar"><div class="fill" style="width:${Math.max(0,Math.min(100,r.now))}%"></div></div><div class="pct">${r.now}%</div></div>`).join('') || '<span class="sub">No VOACAP matrix</span>';
+    $('bands').innerHTML = show.map(r => {
+      const p = Math.max(0, Math.min(100, Math.round(r.now) || 0));
+      return `<div class="band"><div class="bandname">${r.band}</div><div class="bar"><div class="fill" style="width:${p}%"></div></div><div class="pct">${p}%</div></div>`;
+    }).join('') || '<span class="sub">No VOACAP matrix</span>';
   }
   function parseSpots(txt, limit){
     const rows=[];
