@@ -1,2 +1,5 @@
 Changes with latest release:
-- netlogger panel
+- new netlogger panel
+- mbox icon disappears sometimes
+- fix #189 tropics in zoom
+- fix #193 band value display

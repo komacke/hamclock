@@ -1,5 +1,5 @@
 Changes with latest release:
-- mobile dashboard on 8080:/dashboard.html
+- mobile dashboard on :8080/dashboard.html
 - update dxcluster connection retry
 - center clicked on zoom map
 - lightning uses config units
