@@ -1539,6 +1539,7 @@ typedef struct {
     char status[12];                    // active / inactive / future
     char type[20];                      // Transmitter / Transceiver / Transponder
     char mode[24];                      // FM, AFSK, LSB, ...
+    char ctcss[12];                     // FM access tone in Hz from backend (e.g. "67.0"), "" if none
     char desc[64];                      // free-text description
     long ul_lo, ul_hi;                  // uplink Hz; ul_hi 0 unless a passband
     long dl_lo, dl_hi;                  // downlink Hz; dl_hi 0 unless a passband
