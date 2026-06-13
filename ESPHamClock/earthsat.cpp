@@ -100,6 +100,7 @@ typedef struct {
     bool show_path;                                     // whether to pass as well as foot
     SBox name_b;                                        // canonical coords of name on map
     char name[NV_SATNAME_LEN];                          // name, spaces are underscores
+    int norad;                                          // NORAD catalog id, 0 if unknown
     NV_Name nv_name;                                    // NV property for persistent name
     NV_Name nv_flags;                                   // NV property for persistent option flags
     ColorSelection cs;                                  // path control
@@ -236,6 +237,7 @@ static void unsetSat (SatState &s)
 
     // reset name and flags here and in NV
     s.name[0] = '\0';
+    s.norad = 0;
     NVWriteString (s.nv_name, s.name);
 
     // no more sat if last one
@@ -418,18 +420,18 @@ static void findNextPass (Satellite *sat, const char *name, time_t t, SatRiseSet
 /* display next pass for sat in sky dome.
  * N.B. we assume findNextPass has been called to fill sat_rs
  */
-static void drawSatSkyDome (SatState &s)
+static void drawSatSkyDomeXY (SatState &s, const SatRiseSet &rs, const SCircle &dome_c, const SBox &erase_b)
 {
     // size and center of screen path
-    uint16_t r0 = satpass_c.r;
-    uint16_t xc = satpass_c.s.x;
-    uint16_t yc = satpass_c.s.y;
+    uint16_t r0 = dome_c.r;
+    uint16_t xc = dome_c.s.x;
+    uint16_t yc = dome_c.s.y;
 
     // erase sky dome
-    tft.fillRect (dx_info_b.x+1, dx_info_b.y+2*FONT_H+1, dx_info_b.w-2, dx_info_b.h-2*FONT_H-1, RA8875_BLACK);
+    tft.fillRect (erase_b.x, erase_b.y, erase_b.w, erase_b.h, RA8875_BLACK);
 
     // skip if no sat or never up
-    if (!s.sat || !obs || !s.rs.ever_up)
+    if (!s.sat || !obs || !rs.ever_up)
         return;
 
     // find n steps, step duration and starting time
@@ -438,18 +440,18 @@ static void drawSatSkyDome (SatState &s)
     float step_dt = 0;
     DateTime t;
 
-    if (s.rs.rise_ok && s.rs.set_ok) {
+    if (rs.rise_ok && rs.set_ok) {
 
         // find start and pass duration in days
-        float pass_duration = s.rs.set_time - s.rs.rise_time;
+        float pass_duration = rs.set_time - rs.rise_time;
         if (pass_duration < 0) {
             // rise after set means pass is underway so start now for remaining duration
             DateTime t_now = userDateTime(nowWO());
-            pass_duration = s.rs.set_time - t_now;
+            pass_duration = rs.set_time - t_now;
             t = t_now;
         } else {
             // full pass so start at next rise
-            t = s.rs.rise_time;
+            t = rs.rise_time;
             full_pass = true;
         }
 
@@ -494,7 +496,7 @@ static void drawSatSkyDome (SatState &s)
     tft.setCursor (xc + r0 - 12, yc + r0 - 8);
     tft.print ("SE");
 
-    // connect several points from t until s.rs.set_time, find max elevation for labeling
+    // connect several points from t until rs.set_time, find max elevation for labeling
     float max_el = 0;
     uint16_t max_el_x = 0, max_el_y = 0;
     uint16_t prev_x = 0, prev_y = 0;
@@ -556,7 +558,7 @@ static void drawSatSkyDome (SatState &s)
         tft.drawCircle (tft.getCursorX()+2, tft.getCursorY(), 1, BRGRAY);       // simple degree symbol
 
         // pass duration
-        int s_up = (s.rs.set_time - s.rs.rise_time)*SECSPERDAY;
+        int s_up = (rs.set_time - rs.rise_time)*SECSPERDAY;
         char tup_str[32];
         if (s_up >= 3600) {
             int h = s_up/3600;
@@ -575,6 +577,15 @@ static void drawSatSkyDome (SatState &s)
         tft.print(tup_str);
     }
 
+}
+
+static void drawSatSkyDome (SatState &s)
+{
+    // existing pass view: draw into the global satpass_c circle, erasing the dx_info dome area
+    SBox eb;
+    eb.x = dx_info_b.x+1; eb.y = dx_info_b.y+2*FONT_H+1;
+    eb.w = dx_info_b.w-2; eb.h = dx_info_b.h-2*FONT_H-1;
+    drawSatSkyDomeXY (s, s.rs, satpass_c, eb);
 }
 
 /* draw name of s IFF used in dx_info box
@@ -623,23 +634,26 @@ static void setSatMapNameLoc (SatState &s)
 
 /* mark current sat pass location 
  */
+static void drawSatPassMarkerXY (const SCircle &dome_c, float az, float el)
+{
+    uint16_t r0 = dome_c.r;
+    uint16_t xc = dome_c.s.x;
+    uint16_t yc = dome_c.s.y;
+
+    float r = r0*(90-el)/90;                                  // screen radius, zenith at center
+    uint16_t x = xc + r*sinf(deg2rad(az)) + 0.5F;             // want east right
+    uint16_t y = yc - r*cosf(deg2rad(az)) + 0.5F;             // want north up
+
+    if (y + SAT_UP_R < tft.height() - 1)                      // beware lower edge
+        tft.fillCircle (x, y, SAT_UP_R, SAT_COLOR);
+}
+
+/* mark current sat pass location */
 static void drawSatPassMarker()
 {
-
     SatNow satnow;
     getSatNow (satnow);
-
-    // size and center of screen path
-    uint16_t r0 = satpass_c.r;
-    uint16_t xc = satpass_c.s.x;
-    uint16_t yc = satpass_c.s.y;
-
-    float r = r0*(90-satnow.el)/90;                            // screen radius, zenith at center 
-    uint16_t x = xc + r*sinf(deg2rad(satnow.az)) + 0.5F;       // want east right
-    uint16_t y = yc - r*cosf(deg2rad(satnow.az)) + 0.5F;       // want north up
-
-    if (y + SAT_UP_R < tft.height() - 1)                       // beware lower edge
-        tft.fillCircle (x, y, SAT_UP_R, SAT_COLOR);
+    drawSatPassMarkerXY (satpass_c, satnow.az, satnow.el);
 }
 
 /* draw event label with time dt and current az/el in the dx_info box unless dt < 0 then just show label.
@@ -961,6 +975,7 @@ static bool satLookup (SatState &s)
     if (ok) {
         // TLE looks good: define new sat and clear any prior missing flag
         s.sat = new Satellite (t1, t2);
+        s.norad = atoi (t1+2);          // NORAD id is the digits right after the "1 " prefix
         clearMissingSat (s.name);
     } else {
         // NOT fatal: just log, remember the name as missing so the chooser can mark it,
@@ -1579,6 +1594,9 @@ bool getSatCir (Observer *snow_obs, time_t t0, SatNow &sat_at_t0)
 
     // public name
     strncpySubChar (sat_at_t0.name, s.name, ' ', '_', NV_SATNAME_LEN);
+
+    // catalog id for callers wanting transmitter lookups
+    sat_at_t0.norad = s.norad;
 
     // compute location now
     DateTime t_now = userDateTime(t0);
@@ -2374,6 +2392,677 @@ static void showNextSatEvents (SatState &s)
     drawStringInBox (button_name, ok_b, true, RA8875_GREEN);
 }
 
+/* ----- Satellite frequency / mode table (parallel server file esats-freq.txt) ----- */
+
+// server file with one transmitter per line, keyed by NORAD; see backend fetch_sat_freq.sh.
+// fields: norad,name,status,type,mode,uplink_low,uplink_high,downlink_low,downlink_high,baud,invert,description
+static const char esatfq_sfn[] = "esats-freq.txt";          // local cached file from server
+static const char esatfq_url[] = "/esats/esats-freq.txt";   // server file URL
+
+// SatFreq struct is declared in HamClock.h so other modules (e.g. webserver) can use it.
+
+/* load all transmitter rows for the given NORAD id from the cached freq file.
+ * returns count and, if > 0, sets *fpp to a malloc'd array the caller must free().
+ */
+/* return field idx from split row f[0..nf-1], or "" if absent/out of range */
+static const char *satFreqField (char **f, int nf, int idx)
+{
+    return (idx >= 0 && idx < nf) ? f[idx] : "";
+}
+
+/* load all transmitter rows for the given NORAD id from the cached freq file.
+ * The file's "# fields:" header line is parsed to map columns by name, so the
+ * column order may vary and an absent "status" column defaults to "active".
+ * returns count and, if > 0, sets *fpp to a malloc'd array the caller must free().
+ */
+int getSatFreqs (int norad, SatFreq **fpp)
+{
+    *fpp = NULL;
+    if (norad <= 0)
+        return (0);
+
+    FILE *fp = openCachedFile (esatfq_sfn, esatfq_url, MAX_CACHE_AGE, 0);    // ok if empty
+    if (!fp) {
+        Serial.printf ("SAT: no server freq file\n");
+        return (0);
+    }
+
+    // column positions resolved from the header; -1 means the column is absent
+    enum { F_NORAD, F_NAME, F_STATUS, F_TYPE, F_MODE, F_ULLO, F_ULHI, F_DLLO, F_DLHI,
+           F_BAUD, F_INVERT, F_CTCSS, F_DESC, F_NFIELDS };
+    int col[F_NFIELDS];
+    for (int i = 0; i < F_NFIELDS; i++)
+        col[i] = -1;
+    int ncols = 0;
+
+    enum { MAX_COLS = 16 };
+
+    SatFreq *list = NULL;
+    int n = 0;
+    char line[300];
+
+    while (fgets (line, sizeof(line), fp)) {
+        chompString (line);
+
+        if (line[0] == '#') {
+            // learn column layout from the "fields:" header line, if present
+            const char *fl = strstr (line, "fields:");
+            if (fl) {
+                char tmp[300];
+                quietStrncpy (tmp, fl + 7, sizeof(tmp));
+                int idx = 0;
+                for (char *tok = strtok (tmp, " ,\t"); tok; tok = strtok (NULL, " ,\t"), idx++) {
+                    if      (!strcasecmp (tok, "norad"))         col[F_NORAD]  = idx;
+                    else if (!strcasecmp (tok, "name"))          col[F_NAME]   = idx;
+                    else if (!strcasecmp (tok, "status"))        col[F_STATUS] = idx;
+                    else if (!strcasecmp (tok, "type"))          col[F_TYPE]   = idx;
+                    else if (!strcasecmp (tok, "mode"))          col[F_MODE]   = idx;
+                    else if (!strcasecmp (tok, "uplink_low"))    col[F_ULLO]   = idx;
+                    else if (!strcasecmp (tok, "uplink_high"))   col[F_ULHI]   = idx;
+                    else if (!strcasecmp (tok, "downlink_low"))  col[F_DLLO]   = idx;
+                    else if (!strcasecmp (tok, "downlink_high")) col[F_DLHI]   = idx;
+                    else if (!strcasecmp (tok, "baud"))          col[F_BAUD]   = idx;
+                    else if (!strcasecmp (tok, "invert"))        col[F_INVERT] = idx;
+                    else if (!strcasecmp (tok, "ctcss"))         col[F_CTCSS]  = idx;
+                    else if (!strcasecmp (tok, "description"))   col[F_DESC]   = idx;
+                }
+                ncols = idx;
+            }
+            continue;
+        }
+        if (line[0] == '\0')
+            continue;
+        if (ncols == 0 || col[F_NORAD] < 0)
+            continue;                       // no usable header seen yet
+
+        // split into exactly ncols fields; the final field keeps any remainder so
+        // commas inside a trailing free-text description are preserved.
+        char *f[MAX_COLS];
+        int want = ncols < MAX_COLS ? ncols : MAX_COLS;
+        int nf = 0;
+        char *p = line;
+        while (nf < want) {
+            f[nf++] = p;
+            char *c = strchr (p, ',');
+            if (!c || nf == want)
+                break;
+            *c = '\0';
+            p = c + 1;
+        }
+        if (nf < want)
+            continue;                       // short row
+
+        if (atoi (satFreqField (f, nf, col[F_NORAD])) != norad)
+            continue;
+
+        list = (SatFreq *) realloc (list, (n+1) * sizeof(SatFreq));
+        if (!list)
+            fatalError ("no memory for %d SatFreq", n+1);
+        SatFreq *sf = &list[n++];
+        memset (sf, 0, sizeof(*sf));
+
+        const char *st = satFreqField (f, nf, col[F_STATUS]);
+        quietStrncpy (sf->status, st[0] ? st : "active", sizeof(sf->status));
+        quietStrncpy (sf->type, satFreqField (f, nf, col[F_TYPE]), sizeof(sf->type));
+        quietStrncpy (sf->mode, satFreqField (f, nf, col[F_MODE]), sizeof(sf->mode));
+        sf->ul_lo  = atol (satFreqField (f, nf, col[F_ULLO]));
+        sf->ul_hi  = atol (satFreqField (f, nf, col[F_ULHI]));
+        sf->dl_lo  = atol (satFreqField (f, nf, col[F_DLLO]));
+        sf->dl_hi  = atol (satFreqField (f, nf, col[F_DLHI]));
+        sf->baud   = atof (satFreqField (f, nf, col[F_BAUD]));
+        sf->invert = (strcasecmp (satFreqField (f, nf, col[F_INVERT]), "true") == 0);
+        quietStrncpy (sf->ctcss, satFreqField (f, nf, col[F_CTCSS]), sizeof(sf->ctcss));
+        quietStrncpy (sf->desc, satFreqField (f, nf, col[F_DESC]), sizeof(sf->desc));
+    }
+    fclose (fp);
+
+    *fpp = list;
+    return (n);
+}
+
+/* format a Hz freq pair into b as MHz: "low-high" for a passband, single value
+ * otherwise, or "-" if none.
+ */
+static void fmtSatFreqMHz (char *b, size_t bl, long lo, long hi)
+{
+    if (lo <= 0)
+        quietStrncpy (b, "-", bl);
+    else if (hi > 0 && hi != lo)
+        snprintf (b, bl, "%.3f-%.3f", lo/1e6, hi/1e6);
+    else
+        snprintf (b, bl, "%.3f", lo/1e6);
+}
+
+/* full-screen table of the frequency/mode info for satellite s, dismissed with Ok.
+ * built to mirror showNextSatEvents().
+ */
+/* live, self-updating Doppler detail for ONE transmitter tx of satellite s.
+ * Recomputes from the satellite's current range rate ~once a second so the
+ * RX/TX tuning frequencies visibly track the pass. Dismissed with Ok.
+ */
+/* draw a small weather condition glyph in a box of size s at (x,y), chosen from the condition text.
+ * like the sun/moon, these are drawn from primitives -- there are no icon files.
+ */
+static void wxDrawCloud (uint16_t x, uint16_t y, uint16_t s, uint16_t col)
+{
+    uint16_t r = s/5;
+    uint16_t by = y + s*3/5;
+    tft.fillCircle (x + s*3/10, by, r, col);
+    tft.fillCircle (x + s*7/10, by, r, col);
+    tft.fillCircle (x + s/2,    by - r/2, r, col);
+    tft.fillRect   (x + s*3/10, by, s*2/5, r+1, col);
+}
+
+static void wxDrawSun (uint16_t cx, uint16_t cy, uint16_t r, uint16_t col)
+{
+    for (int a = 0; a < 8; a++) {
+        float ang = a*M_PIF/4;
+        tft.drawLine (cx + (r+2)*cosf(ang), cy + (r+2)*sinf(ang),
+                      cx + (r+5)*cosf(ang), cy + (r+5)*sinf(ang), col);
+    }
+    tft.fillCircle (cx, cy, r, col);
+}
+
+static void drawWXGlyph (uint16_t x, uint16_t y, uint16_t s, const char *cond)
+{
+    // case-insensitive copy for keyword matching
+    char c[40];
+    size_t i = 0;
+    for (; cond[i] && i < sizeof(c)-1; i++) {
+        char ch = cond[i];
+        c[i] = (ch >= 'A' && ch <= 'Z') ? ch + 32 : ch;
+    }
+    c[i] = 0;
+    #define WX_HAS(k) (strstr(c,(k)) != NULL)
+
+    const uint16_t cloud_col = BRGRAY;
+    const uint16_t rain_col  = RGB565(100,150,255);
+
+    if (WX_HAS("thunder") || WX_HAS("storm")) {
+        wxDrawCloud (x, y, s, cloud_col);
+        uint16_t bx = x + s/2, by = y + s*3/5 + s/6;
+        tft.drawLine (bx, by, bx - s/10, by + s/5, RA8875_YELLOW);
+        tft.drawLine (bx - s/10, by + s/5, bx + s/12, by + s/5, RA8875_YELLOW);
+        tft.drawLine (bx + s/12, by + s/5, bx - s/12, y + s, RA8875_YELLOW);
+    } else if (WX_HAS("snow") || WX_HAS("sleet")) {
+        wxDrawCloud (x, y, s, cloud_col);
+        for (int k = 0; k < 3; k++)
+            tft.fillCircle (x + s*(3+3*k)/10, y + s*9/10, 1, RA8875_WHITE);
+    } else if (WX_HAS("rain") || WX_HAS("drizzle") || WX_HAS("shower")) {
+        wxDrawCloud (x, y, s, cloud_col);
+        for (int k = 0; k < 3; k++) {
+            uint16_t dx = x + s*(3+3*k)/10;
+            tft.drawLine (dx, y + s*4/5, dx - s/12, y + s, rain_col);
+        }
+    } else if (WX_HAS("mist") || WX_HAS("fog") || WX_HAS("haze") || WX_HAS("smoke")) {
+        for (int k = 0; k < 4; k++)
+            tft.drawLine (x + 2, y + s*(3+2*k)/12, x + s - 2, y + s*(3+2*k)/12, cloud_col);
+    } else if (WX_HAS("few") || WX_HAS("scattered") || WX_HAS("partly")) {
+        wxDrawSun (x + s/3, y + s/3, s/6, RA8875_YELLOW);
+        wxDrawCloud (x + s/6, y + s/5, s*3/4, cloud_col);
+    } else if (WX_HAS("cloud") || WX_HAS("overcast") || WX_HAS("broken")) {
+        wxDrawCloud (x, y, s, cloud_col);
+    } else if (WX_HAS("clear") || WX_HAS("sun") || WX_HAS("fair")) {
+        wxDrawSun (x + s/2, y + s/2, s/4, RA8875_YELLOW);
+    } else {
+        wxDrawCloud (x, y, s, cloud_col);       // sensible default
+    }
+    #undef WX_HAS
+}
+
+
+static void showSatDoppler (SatState &s, const SatFreq &tx)
+{
+    hideClocks();
+    eraseScreen();
+
+    const uint16_t W = tft.width();
+    const uint16_t H = tft.height();
+    const uint16_t P = H/16;                            // proportional row pitch
+    const uint16_t LR = (W/80 < 6) ? 6 : W/80;          // left/right border
+    #define _SD_TIMEOUT 1000                            // ms between live refreshes
+    const double C_MPS = 2.99792458e8;                  // speed of light, m/s
+
+    // baseline y of text row i; (i+1)*P stays < H for i <= 14 on every build
+    #define ROWY(i)  ((uint16_t)(((i)+1)*P))
+
+    char user_name[NV_SATNAME_LEN];
+    strncpySubChar (user_name, s.name, ' ', '_', NV_SATNAME_LEN);
+
+    // Ok button, bottom right (clear of the dome, which sits top-right)
+    SBox ok_b;
+    ok_b.w = (W/8 < 70) ? 70 : W/8;
+    ok_b.h = P;
+    ok_b.x = W - ok_b.w - LR;
+    ok_b.y = ROWY(12) - P;
+    static const char ok_name[] = "Ok";
+    drawStringInBox (ok_name, ok_b, false, RA8875_GREEN);
+
+    // ---- sky dome geometry: right column, sized from the screen ----
+    uint16_t dome_top = P;                              // below the title band
+    uint16_t dome_bot = 8*P;                            // above the live zone (row 9)
+    uint16_t rv = (dome_bot - dome_top)/2;
+    uint16_t left_edge = (uint16_t)(W*3/5);             // text left of here, dome right of it
+    uint16_t rh = (W - LR - left_edge)/2;
+    uint16_t r0 = rv < rh ? rv : rh;
+    SCircle dome_c;
+    dome_c.r   = r0;
+    dome_c.s.x = W - LR - r0;
+    dome_c.s.y = dome_top + r0;
+    SBox dome_erase;
+    dome_erase.x = dome_c.s.x - r0 - 4;
+    dome_erase.y = dome_c.s.y - r0 - P/2;
+    dome_erase.w = 2*r0 + 8;
+    dome_erase.h = 2*r0 + P;
+
+    // ---- static left-column header (drawn once) ----
+    selectFontStyle (BOLD_FONT, SMALL_FONT);
+    tft.setTextColor (DE_COLOR);
+    tft.setCursor (LR, ROWY(0));
+    tft.printf ("%s Doppler", user_name);
+
+    selectFontStyle (LIGHT_FONT, SMALL_FONT);
+    char dbuf[80];
+    tft.setTextColor (RA8875_WHITE);
+    tft.setCursor (LR, ROWY(1));
+    tft.printf ("Mode %s   Type %s", tx.mode[0] ? tx.mode : "-", tx.type[0] ? tx.type : "-");
+    quietStrncpy (dbuf, tx.desc[0] ? tx.desc : "-", sizeof(dbuf));
+    (void) maxStringW (dbuf, left_edge - 2*LR);         // keep description clear of the dome
+    tft.setCursor (LR, ROWY(2));
+    tft.print (dbuf);
+
+    // local (DE) weather on the gap row: temperature in the user's units + a condition glyph.
+    // getFastWx is a non-blocking cache lookup; if cold we simply omit the line.
+    WXInfo wxi;
+    if (getFastWx (de_ll, wxi)) {
+        selectFontStyle (LIGHT_FONT, SMALL_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        tft.setCursor (LR, ROWY(3));
+        float t = showTempC() ? wxi.temperature_c : CEN2FAH(wxi.temperature_c);
+        tft.printf ("Wx %.0f %c", t, showTempC() ? 'C' : 'F');
+        uint16_t gx = tft.getCursorX() + LR;            // glyph just right of the temperature
+        uint16_t gs = P*3/4;
+        const char *cond = wxi.conditions[0] ? wxi.conditions : wxi.clouds;
+        drawWXGlyph (gx, ROWY(3) - gs + 2, gs, cond);
+        char cbuf[28];
+        quietStrncpy (cbuf, cond, sizeof(cbuf));
+        uint16_t tx0 = gx + gs + LR;
+        if (left_edge > tx0 + LR) {
+            (void) maxStringW (cbuf, left_edge - tx0 - LR);
+            tft.setTextColor (GRAY);
+            tft.setCursor (tx0, ROWY(3));
+            tft.print (cbuf);
+        }
+    }
+
+    char nb[48];
+    tft.setTextColor (GRAY);
+    tft.setCursor (LR, ROWY(4));
+    fmtSatFreqMHz (nb, sizeof(nb), tx.dl_lo, tx.dl_hi);
+    tft.printf ("Downlink nominal  %s MHz", nb);
+    tft.setCursor (LR, ROWY(5));
+    fmtSatFreqMHz (nb, sizeof(nb), tx.ul_lo, tx.ul_hi);
+    tft.printf ("Uplink   nominal  %s MHz", nb);
+
+    if (tx.ctcss[0]) {
+        tft.setTextColor (GRAY);
+        tft.setCursor (LR, ROWY(6));
+        tft.printf ("CTCSS tone  %s Hz", tx.ctcss);
+    }
+
+    // ---- next-pass summary (computed once); rs is also reused for the dome arc ----
+    time_t now = nowWO();
+    SatRiseSet rs;
+    findNextPass (s.sat, NULL, now, rs);
+    {
+        char ln[120];
+        if (!rs.rise_ok && !rs.set_ok) {
+            quietStrncpy (ln, rs.ever_up ? "Always up (no AOS/LOS)" : "No pass within 2 days",
+                          sizeof(ln));
+        } else {
+            DateTime dt_now = userDateTime (now);
+            bool up_now = (rs.set_ok && rs.rise_ok && rs.set_time < rs.rise_time)
+                                    || (rs.set_ok && !rs.rise_ok);
+            time_t aos_t = 0, los_t = 0;
+            if (rs.rise_ok) aos_t = now + (time_t)((rs.rise_time - dt_now)*SECSPERDAY + 0.5);
+            if (rs.set_ok)  los_t = now + (time_t)((rs.set_time  - dt_now)*SECSPERDAY + 0.5);
+            time_t wa = up_now ? now : aos_t;
+            time_t wb = los_t;
+            time_t tca_t = wa;
+            if (rs.set_ok && wb > wa) {
+                float best = 1e30f;
+                for (int i = 0; i <= 60; i++) {
+                    time_t tsm = wa + (time_t)((double)(wb - wa)*i/60);
+                    float el2, az2, rng2, rate2;
+                    s.sat->predict (userDateTime (tsm));
+                    s.sat->topo (obs, el2, az2, rng2, rate2);
+                    if (rng2 < best) { best = rng2; tca_t = tsm; }
+                }
+            }
+            int tz = getTZ (de_tz);
+            if (up_now) {
+                int q = snprintf (ln, sizeof(ln), "Up now");
+                if (rs.set_ok && wb > wa) {
+                    time_t c = tca_t + tz;
+                    q += snprintf (ln+q, sizeof(ln)-q, "   TCA %02d:%02d", hour(c), minute(c));
+                }
+                if (rs.set_ok) {
+                    time_t l = los_t + tz;
+                    int rem = (int)(los_t - now);
+                    q += snprintf (ln+q, sizeof(ln)-q, "   LOS %02d:%02d (in %dm)",
+                                   hour(l), minute(l), rem/60);
+                }
+            } else if (rs.rise_ok && rs.set_ok) {
+                time_t a = aos_t + tz, c = tca_t + tz, l = los_t + tz;
+                int dur = (int)(los_t - aos_t);
+                snprintf (ln, sizeof(ln),
+                          "AOS %02d:%02d   TCA %02d:%02d   LOS %02d:%02d   dur %dm%02ds",
+                          hour(a), minute(a), hour(c), minute(c), hour(l), minute(l), dur/60, dur%60);
+            } else {
+                time_t a = aos_t + tz;
+                snprintf (ln, sizeof(ln), "AOS %02d:%02d", hour(a), minute(a));
+            }
+        }
+        selectFontStyle (LIGHT_FONT, SMALL_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        (void) maxStringW (ln, left_edge - 2*LR);
+        tft.setCursor (LR, ROWY(7));
+        tft.print (ln);
+    }
+
+    // live-line baselines (full width, below the dome)
+    const uint16_t stat_y = ROWY(9);
+    const uint16_t rx_y   = ROWY(11);
+    const uint16_t tx_y   = ROWY(12);
+
+    SBox screen_b; screen_b.x = 0; screen_b.y = 0; screen_b.w = W; screen_b.h = H;
+    UserInput ui = {
+        screen_b, UI_UFuncNone, UF_UNUSED, _SD_TIMEOUT, UF_NOCLOCKS,
+        {0, 0}, TT_NONE, CHAR_NONE, false, false
+    };
+
+    for (;;) {
+
+        // live geometry for THIS sat (computed before the dome re-predicts)
+        float el = 0, az = 0, range = 0, rate = 0;
+        if (s.sat && obs) {
+            DateTime t = userDateTime (nowWO());
+            s.sat->predict (t);
+            s.sat->topo (obs, el, az, range, rate);
+        }
+        double dop = rate / C_MPS;
+
+        // dome + live now-dot (redrawn each tick; dome erases its own region)
+        drawSatSkyDomeXY (s, rs, dome_c, dome_erase);
+        if (el >= 0)
+            drawSatPassMarkerXY (dome_c, az, el);
+
+        selectFontStyle (LIGHT_FONT, SMALL_FONT);
+
+        // az/el/range/rate
+        tft.fillRect (0, stat_y - (P*4/5), ok_b.x - LR, P, RA8875_BLACK);   // stop left of Ok button
+        tft.setTextColor (el >= 0 ? RA8875_GREEN : GRAY);
+        tft.setCursor (LR, stat_y);
+        tft.printf ("Az %.1f  El %.1f  Range %.0f km  Rate %+.0f m/s %s",
+                    az, el, range, rate, rate >= 0 ? "(receding)" : "(approaching)");
+
+        // RX (downlink, lower when receding)
+        tft.fillRect (0, rx_y - (P*4/5), ok_b.x - LR, P, RA8875_BLACK);   // stop left of Ok button
+        if (tx.dl_lo > 0) {
+            tft.setTextColor (RA8875_WHITE);
+            tft.setCursor (LR, rx_y);
+            double rxlo = tx.dl_lo*(1-dop);
+            if (tx.dl_hi > 0 && tx.dl_hi != tx.dl_lo) {
+                double rxhi = tx.dl_hi*(1-dop);
+                tft.printf ("RX tune  %.5f - %.5f MHz", rxlo/1e6, rxhi/1e6);
+            } else
+                tft.printf ("RX tune  %.5f MHz   (%+.2f kHz)", rxlo/1e6, (rxlo - tx.dl_lo)/1e3);
+        }
+
+        // TX (uplink, higher when receding)
+        tft.fillRect (0, tx_y - (P*4/5), ok_b.x - LR, P, RA8875_BLACK);   // stop left of Ok button
+        if (tx.ul_lo > 0) {
+            tft.setTextColor (RA8875_WHITE);
+            tft.setCursor (LR, tx_y);
+            double txlo = tx.ul_lo*(1+dop);
+            if (tx.ul_hi > 0 && tx.ul_hi != tx.ul_lo) {
+                double txhi = tx.ul_hi*(1+dop);
+                tft.printf ("TX xmit  %.5f - %.5f MHz", txlo/1e6, txhi/1e6);
+            } else
+                tft.printf ("TX xmit  %.5f MHz   (%+.2f kHz)", txlo/1e6, (txlo - tx.ul_lo)/1e3);
+        }
+
+        if (waitForUser (ui)) {
+            if (ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL || ui.kb_char == CHAR_ESC
+                            || inBox (ui.tap, ok_b))
+                break;
+            ui.kb_char = CHAR_NONE;
+            ui.tap.x = ui.tap.y = 0;
+        }
+    }
+
+    drawStringInBox (ok_name, ok_b, true, RA8875_GREEN);
+}
+
+/* full-screen, paginated table of the frequency/mode info for satellite s.
+ * Tap a row to highlight it, then Ok to open a live Doppler view for that
+ * transmitter. With nothing highlighted, Ok (or Enter/Esc) dismisses.
+ * The highlight is temporary - it is never saved.
+ */
+static void showSatFreqs (SatState &s)
+{
+    hideClocks();
+
+    #define _SF_LR_B      10                    // left/right border
+    #define _SF_TIMEOUT   60000                 // ms
+    #define _SF_ROWH      30                    // data row height
+    #define _SF_TITLE_Y   8                     // title/button band y
+    #define _SF_HDR_Y     70                    // column header baseline
+    #define _SF_DATA_Y    100                   // first data row baseline
+
+    // column x positions (tuned for 800-wide; wider builds just extend Description)
+    #define _SF_MODE_X    (_SF_LR_B)
+    #define _SF_UP_X      120
+    #define _SF_DN_X      305
+    #define _SF_BAUD_X    490
+    #define _SF_STAT_X    548
+    #define _SF_DESC_X    660
+
+    // load transmitters for this sat
+    SatFreq *fl = NULL;
+    int n = getSatFreqs (s.norad, &fl);
+
+    // friendly name (underscores back to spaces)
+    char user_name[NV_SATNAME_LEN];
+    strncpySubChar (user_name, s.name, ' ', '_', NV_SATNAME_LEN);
+
+    // paging math
+    int rows_per_page = (tft.height() - _SF_DATA_Y) / _SF_ROWH;
+    if (rows_per_page < 1)
+        rows_per_page = 1;
+    int npages = (n > 0) ? (n + rows_per_page - 1) / rows_per_page : 1;
+    int page = 0;
+
+    // temporary (unsaved) highlighted transmitter, -1 = none
+    int sel = -1;
+
+    // Ok and (when paging) More buttons, top right
+    SBox ok_b;
+    ok_b.w = 90; ok_b.h = _SF_ROWH;
+    ok_b.x = tft.width() - ok_b.w - _SF_LR_B;
+    ok_b.y = _SF_TITLE_Y;
+    SBox more_b;
+    more_b.w = 90; more_b.h = _SF_ROWH;
+    more_b.x = ok_b.x - more_b.w - 10;
+    more_b.y = _SF_TITLE_Y;
+    static const char ok_name[] = "Ok";
+    static const char more_name[] = "More";
+
+    // input watches the whole screen so any button/row/key is caught
+    SBox screen_b;
+    screen_b.x = 0; screen_b.y = 0;
+    screen_b.w = tft.width(); screen_b.h = tft.height();
+    UserInput ui = {
+        screen_b, UI_UFuncNone, UF_UNUSED, _SF_TIMEOUT, UF_NOCLOCKS,
+        {0, 0}, TT_NONE, CHAR_NONE, false, false
+    };
+
+    bool need_draw = true;
+    for (;;) {
+
+        int i0 = page * rows_per_page;
+        int i1 = i0 + rows_per_page;
+        if (i1 > n)
+            i1 = n;
+
+        if (need_draw) {
+            eraseScreen();
+
+            // title
+            selectFontStyle (BOLD_FONT, SMALL_FONT);
+            tft.setTextColor (DE_COLOR);
+            tft.setCursor (_SF_LR_B, _SF_TITLE_Y + 22);
+            if (npages > 1)
+                tft.printf ("%s freq/modes  %d-%d of %d", user_name, i0+1, i1, n);
+            else
+                tft.printf ("%s frequencies & modes", user_name);
+
+            // buttons
+            drawStringInBox (ok_name, ok_b, false, RA8875_GREEN);
+            if (npages > 1)
+                drawStringInBox (more_name, more_b, false, RA8875_GREEN);
+
+            // column header
+            selectFontStyle (LIGHT_FONT, SMALL_FONT);
+            tft.setTextColor (DE_COLOR);
+            tft.setCursor (_SF_MODE_X, _SF_HDR_Y); tft.print ("Mode");
+            tft.setCursor (_SF_UP_X,   _SF_HDR_Y); tft.print ("Up MHz");
+            tft.setCursor (_SF_DN_X,   _SF_HDR_Y); tft.print ("Dn MHz");
+            tft.setCursor (_SF_BAUD_X, _SF_HDR_Y); tft.print ("Baud");
+            tft.setCursor (_SF_STAT_X, _SF_HDR_Y); tft.print ("Status");
+            tft.setCursor (_SF_DESC_X, _SF_HDR_Y); tft.print ("Description");
+
+            if (n == 0) {
+
+                tft.setTextColor (RA8875_WHITE);
+                tft.setCursor (_SF_LR_B, _SF_DATA_Y);
+                tft.print (s.norad <= 0 ? "No catalog id known for this satellite"
+                                        : "No frequency data available");
+
+            } else {
+
+                char buf[64];
+                uint16_t y = _SF_DATA_Y;
+
+                for (int i = i0; i < i1; i++) {
+                    SatFreq *sf = &fl[i];
+
+                    // color by status
+                    uint16_t tc = RA8875_WHITE;
+                    if (!strcmp (sf->status, "active"))        tc = RA8875_GREEN;
+                    else if (!strcmp (sf->status, "inactive")) tc = GRAY;
+                    else if (!strcmp (sf->status, "future"))   tc = RA8875_YELLOW;
+                    tft.setTextColor (tc);
+
+                    // mode, clipped to its column width so it can't bleed right
+                    char mbuf[28];
+                    quietStrncpy (mbuf, sf->mode[0] ? sf->mode : "-", sizeof(mbuf));
+                    (void) maxStringW (mbuf, _SF_UP_X - _SF_MODE_X - 8);
+                    tft.setCursor (_SF_MODE_X, y); tft.print (mbuf);
+
+                    // uplink
+                    fmtSatFreqMHz (buf, sizeof(buf), sf->ul_lo, sf->ul_hi);
+                    tft.setCursor (_SF_UP_X, y); tft.print (buf);
+
+                    // downlink (+ 'i' for inverting transponder)
+                    fmtSatFreqMHz (buf, sizeof(buf), sf->dl_lo, sf->dl_hi);
+                    tft.setCursor (_SF_DN_X, y); tft.print (buf);
+                    if (sf->invert)
+                        tft.print ('i');
+
+                    // baud, compact (9600 -> 9k6, 1200 -> 1k2)
+                    tft.setCursor (_SF_BAUD_X, y);
+                    if (sf->baud >= 1000) {
+                        int k = (int)(sf->baud/1000);
+                        int frac = (int)((sf->baud - k*1000)/100);
+                        if (frac)
+                            snprintf (buf, sizeof(buf), "%dk%d", k, frac);
+                        else
+                            snprintf (buf, sizeof(buf), "%dk", k);
+                        tft.print (buf);
+                    } else if (sf->baud > 0) {
+                        snprintf (buf, sizeof(buf), "%g", sf->baud);
+                        tft.print (buf);
+                    } else
+                        tft.print ("-");
+
+                    // status word
+                    tft.setCursor (_SF_STAT_X, y);
+                    tft.print (sf->status[0] ? sf->status : "-");
+
+                    // description, clipped to the remaining width so it cannot
+                    // wrap past the right edge and overprint the Mode column
+                    char dbuf[64];
+                    quietStrncpy (dbuf, sf->desc[0] ? sf->desc : "-", sizeof(dbuf));
+                    (void) maxStringW (dbuf, tft.width() - _SF_DESC_X - _SF_LR_B);
+                    tft.setCursor (_SF_DESC_X, y); tft.print (dbuf);
+
+                    // highlight box on the selected row
+                    if (i == sel)
+                        tft.drawRect (_SF_LR_B - 5, y - 22,
+                                      tft.width() - 2*(_SF_LR_B - 5), _SF_ROWH - 2, RA8875_WHITE);
+
+                    y += _SF_ROWH;
+                }
+            }
+
+            // bottom hint
+            selectFontStyle (LIGHT_FONT, SMALL_FONT);
+            tft.setTextColor (GRAY);
+            tft.setCursor (_SF_LR_B, tft.height() - tft.height()/32);   // leave room for descenders on any size
+            tft.print ("Tap a row, then Ok, for its live Doppler");
+
+            need_draw = false;
+        }
+
+        // wait for input (table is static, so a timeout just dismisses)
+        if (!waitForUser (ui))
+            break;
+
+        if (ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL || ui.kb_char == CHAR_ESC)
+            break;                                      // keyboard always exits
+
+        if (inBox (ui.tap, ok_b)) {
+            if (sel >= 0 && sel < n) {
+                showSatDoppler (s, fl[sel]);            // drill into live Doppler
+                need_draw = true;                       // then restore the table
+            } else
+                break;                                  // nothing selected -> exit
+        } else if (npages > 1 && inBox (ui.tap, more_b)) {
+            page = (page + 1) % npages;                 // next page, wrapping
+            sel = -1;                                   // clear selection on page change
+            need_draw = true;
+        } else if (n > 0 && ui.tap.y >= (uint16_t)(_SF_DATA_Y - 22)) {
+            // tap in the data area selects/toggles a row on this page
+            int rk = (ui.tap.y - (_SF_DATA_Y - 22)) / _SF_ROWH;
+            if (rk >= 0 && i0 + rk < i1) {
+                int abs_i = i0 + rk;
+                sel = (sel == abs_i) ? -1 : abs_i;      // toggle
+                need_draw = true;
+            }
+        }
+
+        // reset before next wait
+        ui.kb_char = CHAR_NONE;
+        ui.tap.x = ui.tap.y = 0;
+    }
+
+    // ack and clean up
+    drawStringInBox (ok_name, ok_b, true, RA8875_GREEN);
+    if (fl)
+        free (fl);
+}
+
 /* called when tap within dx_info_b while showing a sat to show menu of choices.
  * s is known to be within dx_info_b.
  */
@@ -2385,9 +3074,9 @@ void drawDXSatMenu (const SCoord &s)
         _SMI_CHOOSE,
         _SMI_INFO,
         _SMI_NAME1,
-        _SMI_PATH1, _SMI_PASS1, _SMI_TABLE1, _SMI_PLAN1,
+        _SMI_PATH1, _SMI_PASS1, _SMI_TABLE1, _SMI_FREQ1, _SMI_PLAN1,
         _SMI_NAME2,
-        _SMI_PATH2, _SMI_PASS2, _SMI_TABLE2, _SMI_PLAN2,
+        _SMI_PATH2, _SMI_PASS2, _SMI_TABLE2, _SMI_FREQ2, _SMI_PLAN2,
         _SMI_N,
     };
 
@@ -2428,12 +3117,14 @@ void drawDXSatMenu (const SCoord &s)
         {menu_path1,  path1, 2, _DXS_INDENT2,  "Show track also", NULL},
         {menu_pass1,  false, 1, _DXS_INDENT2,  "Show pass here", NULL},
         {menu_sat1,   false, 1, _DXS_INDENT2,  "Show rise/set table", NULL},
+        {menu_sat1,   false, 1, _DXS_INDENT2,  "Show freq/modes", NULL},
         {menu_sat1,   false, 1, _DXS_INDENT2,  "Show planning tool", NULL},
 
         {menu_name2,  false, 1, _DXS_INDENT1,  name2, NULL},
         {menu_path2,  path2, 3, _DXS_INDENT2,  "Show track also", NULL},
         {menu_pass2,  false, 1, _DXS_INDENT2,  "Show pass here", NULL},
         {menu_sat2,   false, 1, _DXS_INDENT2,  "Show rise/set table", NULL},
+        {menu_sat2,   false, 1, _DXS_INDENT2,  "Show freq/modes", NULL},
         {menu_sat2,   false, 1, _DXS_INDENT2,  "Show planning tool", NULL},
     };
 
@@ -2491,6 +3182,12 @@ void drawDXSatMenu (const SCoord &s)
                     showNextSatEvents (sat_state[0]);
                     initScreen();
                     break;
+                case _SMI_FREQ1:
+                    // show freq/mode table for sat 0
+                    dxpaneSat = 0;
+                    showSatFreqs (sat_state[0]);
+                    initScreen();
+                    break;
                 case _SMI_PLAN1:
                     // restore DX pane and show tool for sat 0 then restore normal map
                     dxpaneSat = 0;
@@ -2510,6 +3207,12 @@ void drawDXSatMenu (const SCoord &s)
                     // show rise/set table for sat 1
                     dxpaneSat = 1;
                     showNextSatEvents (sat_state[1]);
+                    initScreen();
+                    break;
+                case _SMI_FREQ2:
+                    // show freq/mode table for sat 1
+                    dxpaneSat = 1;
+                    showSatFreqs (sat_state[1]);
                     initScreen();
                     break;
                 case _SMI_PLAN2:

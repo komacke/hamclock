@@ -1366,6 +1366,55 @@ static bool getWiFiSatellite (WiFiClient &client, char *line, size_t ll)
     snprintf (line, ll, "1.3GHzDoppler %.6f kHz\n", -sn.rate*1.3e6/3e8);   client.print(line);
     snprintf (line, ll, "10GHzDoppler  %.6f kHz\n", -sn.rate*1e7/3e8);     client.print(line);
 
+    // real-frequency Doppler for the current satellite's active transmitters, if known.
+    // RX = where to tune to hear the downlink; TX = where to transmit so the bird receives
+    // its nominal uplink. Based on the live range rate (sn.rate, + = receding).
+    {
+        SatFreq *fl = NULL;
+        int nfl = getSatFreqs (sn.norad, &fl);
+        const double dop = sn.rate / 2.99792458e8;      // fractional Doppler, + = receding
+        int shown = 0;
+        for (int i = 0; i < nfl; i++) {
+            SatFreq *sf = &fl[i];
+            if (strcmp (sf->status, "active") != 0)     // operate active transmitters only
+                continue;
+            int t = ++shown;
+            char key[24];
+
+            snprintf (key, sizeof(key), "Tx%dMode", t);
+            snprintf (line, ll, "%-14s%s\n", key, sf->mode[0] ? sf->mode : "-");
+            client.print (line);
+
+            // downlink: observed lower when receding
+            if (sf->dl_lo > 0) {
+                if (sf->dl_hi > 0 && sf->dl_hi != sf->dl_lo) {
+                    snprintf (key, sizeof(key), "Tx%dRXloMHz", t);
+                    snprintf (line, ll, "%-14s%.6f\n", key, sf->dl_lo*(1-dop)/1e6); client.print (line);
+                    snprintf (key, sizeof(key), "Tx%dRXhiMHz", t);
+                    snprintf (line, ll, "%-14s%.6f\n", key, sf->dl_hi*(1-dop)/1e6); client.print (line);
+                } else {
+                    snprintf (key, sizeof(key), "Tx%dRXMHz", t);
+                    snprintf (line, ll, "%-14s%.6f\n", key, sf->dl_lo*(1-dop)/1e6); client.print (line);
+                }
+            }
+
+            // uplink: transmit higher when receding
+            if (sf->ul_lo > 0) {
+                if (sf->ul_hi > 0 && sf->ul_hi != sf->ul_lo) {
+                    snprintf (key, sizeof(key), "Tx%dTXloMHz", t);
+                    snprintf (line, ll, "%-14s%.6f\n", key, sf->ul_lo*(1+dop)/1e6); client.print (line);
+                    snprintf (key, sizeof(key), "Tx%dTXhiMHz", t);
+                    snprintf (line, ll, "%-14s%.6f\n", key, sf->ul_hi*(1+dop)/1e6); client.print (line);
+                } else {
+                    snprintf (key, sizeof(key), "Tx%dTXMHz", t);
+                    snprintf (line, ll, "%-14s%.6f\n", key, sf->ul_lo*(1+dop)/1e6); client.print (line);
+                }
+            }
+        }
+        if (fl)
+            free (fl);
+    }
+
     // add table of next several events, if any
     time_t *rises, *sets;
     float *razs, *sazs;
