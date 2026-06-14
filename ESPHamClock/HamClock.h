@@ -415,7 +415,8 @@ typedef enum {
     X(PLOT_CH_DXPEDS,       "DXPeditions")      \
     X(PLOT_CH_DST,          "Disturbance")       \
     X(PLOT_CH_STORMS,       "Storms")           \
-    X(PLOT_CH_ACTIVENETS,   "Active_Nets")
+    X(PLOT_CH_ACTIVENETS,   "Active_Nets")      \
+    X(PLOT_CH_LAUNCHES,     "Launches")
 
 #define X(a,b)  a,              // expands PLOTNAMES to each enum and comma
 typedef enum {
@@ -1248,6 +1249,7 @@ extern int getContests (char **&titles, char **&dates);
 extern bool updateActiveNets (const SBox &box, bool fresh);
 extern bool checkActiveNetsTouch (const SCoord &s, const SBox &box);
 
+#define LAUNCHES_INTERVAL (2)
 
 
 
@@ -2194,7 +2196,7 @@ extern uint32_t plot_rotset[PANE_N];       // bitmask of each pane's PlotChoice 
 
 // bit mask of plot choices suitable for PANE_0
 #define PANE_0_CH_MASK          ((1<<PLOT_CH_DXCLUSTER) | (1<<PLOT_CH_CONTESTS) | (1<<PLOT_CH_ADIF) \
-                                 | (1<<PLOT_CH_ONTA) | (1<<PLOT_CH_DXPEDS) | (1<<PLOT_CH_ACTIVENETS))
+                                 | (1<<PLOT_CH_ONTA) | (1<<PLOT_CH_DXPEDS) | (1<<PLOT_CH_ACTIVENETS) | (1<<PLOT_CH_LAUNCHES))
 
 // compute number of bits set in PANE_0_CH_MASK at compile time :-)
 // https://stackoverflow.com/questions/109023/count-the-number-of-set-bits-in-a-32-bit-integer
@@ -2430,7 +2432,12 @@ extern bool getStormMapMenuInfo (const LatLong &ll, char *line1, size_t line1_le
         char *line2, size_t line2_len, char *line3, size_t line3_len);
 extern uint16_t stormCategoryColor (uint8_t cat, uint16_t wind_kt);
 
+/* 
+ * launches.cpp
+ */
 
+extern bool updateLaunches     (const SBox &box, bool fresh);
+extern bool checkLaunchesTouch (const SCoord &s, const SBox &box);
 
 
 
