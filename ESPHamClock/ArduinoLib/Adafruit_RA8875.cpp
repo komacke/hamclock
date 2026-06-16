@@ -295,12 +295,14 @@ bool Adafruit_RA8875::begin (int not_used)
 
         // determine default or last-known geometry
         int win_x, win_y;
+        bool has_pos = false;
         if (ignore_x11geom) {
             win_x = win_y = 0;
             fb_si.xres = FB_XRES;
             fb_si.yres = FB_YRES;
+            has_pos = false;
         } else {
-            NVReadX11Geom (win_x, win_y, fb_si.xres, fb_si.yres);
+            has_pos = NVReadX11Geom (win_x, win_y, fb_si.xres, fb_si.yres);
         }
 
 	// set initial scale to match, FB_X/Y0 can change to stay centered if window size changes
@@ -351,7 +353,7 @@ bool Adafruit_RA8875::begin (int not_used)
 
 	// set initial size hints
         XSizeHints* win_size_hints = XAllocSizeHints();
-	win_size_hints->flags = USPosition | USSize | PPosition | PSize | PSize | PMinSize;
+	win_size_hints->flags = (has_pos ? USPosition : 0) | USSize | PSize | PMinSize;
         win_size_hints->x = win_x;
         win_size_hints->y = win_y;
         win_size_hints->width = fb_si.xres;
@@ -371,6 +373,22 @@ bool Adafruit_RA8875::begin (int not_used)
         XStringListToTextProperty(&window_name, 1, &icon_name_property);
         XSetWMName(display, win, &window_name_property);
         XSetWMIconName(display, win, &icon_name_property);
+
+        // set WM_CLASS so WM can recognize and apply rules (like avoiding panels)
+        XClassHint *class_hint = XAllocClassHint();
+        if (class_hint) {
+            class_hint->res_name = (char*)"hamclock";
+            class_hint->res_class = (char*)"HamClock";
+            XSetClassHint(display, win, class_hint);
+            XFree(class_hint);
+        }
+
+        // set _NET_WM_WINDOW_TYPE to NORMAL so WM handles decorations and layers properly
+        Atom type_atom = XInternAtom(display, "_NET_WM_WINDOW_TYPE", False);
+        Atom value_atom = XInternAtom(display, "_NET_WM_WINDOW_TYPE_NORMAL", False);
+        // use XInternAtom for ATOM to avoid requiring extra headers
+        Atom xatom_atom = XInternAtom(display, "ATOM", False);
+        XChangeProperty(display, win, type_atom, xatom_atom, 32, PropModeReplace, (unsigned char *)&value_atom, 1);
 
 	// enable desired X11 events
         XSelectInput (display, win, KeyPressMask | KeyReleaseMask | PointerMotionMask | LeaveWindowMask
@@ -2138,7 +2156,7 @@ void Adafruit_RA8875::fbThread ()
         XFreePixmap(display, mask_pm);
 
 	// first display!
-        XMapRaised(display,win);
+        XMapWindow(display,win);
         XDefineCursor (display, win, app_cursor);
 
         for(;;)

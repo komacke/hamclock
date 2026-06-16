@@ -418,7 +418,7 @@ void NVWriteColorTable (int tbl_AB, const uint8_t r[N_CSPR], const uint8_t g[N_C
 
 /* retrieve NV_X11GEOM_* or build size if not defined or smaller.
  */
-void NVReadX11Geom (int &x, int &y, int &w, int &h)
+bool NVReadX11Geom (int &x, int &y, int &w, int &h)
 {
     int16_t geom_x, geom_y, geom_w, geom_h;
     if (NVReadInt16 (NV_X11GEOM_X, &geom_x) && NVReadInt16 (NV_X11GEOM_Y, &geom_y)
@@ -428,11 +428,13 @@ void NVReadX11Geom (int &x, int &y, int &w, int &h)
         y = geom_y;
         w = geom_w;
         h = geom_h;
+        return (true);
     } else {
         x = 0;
         y = 0;
         w = BUILD_W;
         h = BUILD_H;
+        return (false);
     }
 }
 
