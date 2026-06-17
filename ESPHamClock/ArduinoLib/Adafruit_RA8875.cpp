@@ -2066,22 +2066,26 @@ void Adafruit_RA8875::saveWinGeom(void)
         if (options_fullscreen || ignore_x11geom)
             return;
 
+        XWindowAttributes xwa;  // account for decorations
+        XGetWindowAttributes (display, win, &xwa);
+        if (xwa.map_state != IsViewable)
+            return;
+
         Screen *screen = XDefaultScreenOfDisplay (display);
         int screen_num = XScreenNumberOfScreen(screen);
         Window root = RootWindow(display,screen_num);
 
         int x, y;
         Window child;
-        XWindowAttributes xwa;  // account for decorations
         XTranslateCoordinates (display, win, root, 0, 0, &x, &y, &child);
-        XGetWindowAttributes (display, win, &xwa);
-        int winpos_now_x = x - xwa.x;
-        int winpos_now_y = y - xwa.y;
+        int winpos_now_x = x;
+        int winpos_now_y = y;
         int winpos_now_w = xwa.width;
         int winpos_now_h = xwa.height;
 
         NVWriteX11Geom (winpos_now_x, winpos_now_y, winpos_now_w, winpos_now_h);
 }
+
 
 /* return Button code from event.
  * N.B. must be used both in ButtonPress and ButtonRelease
