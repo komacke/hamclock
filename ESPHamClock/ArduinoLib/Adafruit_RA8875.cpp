@@ -352,8 +352,19 @@ bool Adafruit_RA8875::begin (int not_used)
 	XFillRectangle (display, pixmap, black_gc, 0, 0, FB_XRES, FB_YRES);
 
 	// set initial size hints
-        XSizeHints* win_size_hints = XAllocSizeHints();
-	win_size_hints->flags = (has_pos ? USPosition : 0) | USSize | PSize | PMinSize;
+    XSizeHints* win_size_hints = XAllocSizeHints();
+	// --- CHANGE THIS FLAG LOGIC ---
+	if (has_pos) {
+    	// We have a real saved position, tell the OS to use it
+    	win_size_hints->flags = USPosition | USSize | PSize | PMinSize;
+    	win_size_hints->x = win_x;
+    	win_size_hints->y = win_y;
+	} else {
+		// NO saved position! Leave win_size_hints->x and y unassigned.
+		// By using ONLY size flags, the OS is forced to use smart window placement.
+		win_size_hints->flags = USSize | PSize | PMinSize;
+	}
+	// ------------------------------
         win_size_hints->x = win_x;
         win_size_hints->y = win_y;
         win_size_hints->width = fb_si.xres;
