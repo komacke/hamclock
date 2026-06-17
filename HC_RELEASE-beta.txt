@@ -5,3 +5,4 @@ Changes with latest release:
 - fix #193 band value display
 - freq, mode, doppler for sats
 - upcoming space launches pane
+- fix init/saved pos'n on some X

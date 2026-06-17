@@ -199,7 +199,7 @@ extern std::string our_dir;
 extern void doExit(void);
 extern bool testPassword (const char *category, const char *candidate_pw);
 extern const char *pw_file;
-extern void NVReadX11Geom (int &x, int &y, int &w, int &h);
+extern bool NVReadX11Geom (int &x, int &y, int &w, int &h);
 extern void NVWriteX11Geom (int x, int y, int w, int h);
 extern char *strTrimAll (char *str);
 
