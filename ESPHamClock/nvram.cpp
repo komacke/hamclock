@@ -423,7 +423,8 @@ bool NVReadX11Geom (int &x, int &y, int &w, int &h)
     int16_t geom_x, geom_y, geom_w, geom_h;
     if (NVReadInt16 (NV_X11GEOM_X, &geom_x) && NVReadInt16 (NV_X11GEOM_Y, &geom_y)
                         && NVReadInt16 (NV_X11GEOM_W, &geom_w) && NVReadInt16 (NV_X11GEOM_H, &geom_h)
-                        && geom_w >= BUILD_W && geom_h >= BUILD_H) {
+                        && geom_w >= BUILD_W && geom_h >= BUILD_H
+                        && (geom_x != 0 || geom_y != 0)) {
         x = geom_x;
         y = geom_y;
         w = geom_w;
