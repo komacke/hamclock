@@ -18,7 +18,7 @@
 // Configuration
 // ---------------------------------------------------------------------------
 
-#define STORM_MAXAGE        (3600*6)    // cache max age, secs
+#define STORM_MAXAGE        (60*10)     // cache max age, secs -- poll every 10 min for near-real-time updates
 #define STORM_MINSIZ        10          // min acceptable file size (empty = 0 storms)
 #define STORM_MAXSTORMS     20          // max simultaneous storms
 #define STORM_MAXPTS        12          // max track points per storm (current + forecast)
@@ -388,6 +388,64 @@ static void drawStormDot (const LatLong &ll, uint16_t color, bool current)
         tft.drawPixelRaw (s.x, s.y, RA8875_WHITE);      // mark the storm's current position
 }
 
+/* draw a directional arrow at the last forecast track point of a storm,
+ * pointing in the direction of travel derived from the last two track points.
+ * The arrowhead tip is projected forward from the edge of the last dot.
+ */
+static void drawStormDirectionArrow (const Storm &st)
+{
+    if (st.n_pts < 2)
+        return;                             // need at least two points for a direction
+
+    const StormPoint &p0 = st.pts[st.n_pts - 2];
+    const StormPoint &p1 = st.pts[st.n_pts - 1];
+
+    LatLong ll0, ll1;
+    ll0.lat_d = p0.lat;  ll0.lng_d = p0.lon;
+    ll1.lat_d = p1.lat;  ll1.lng_d = p1.lon;
+
+    SCoord a, b;
+    ll2s (ll0, a, 1);
+    ll2s (ll1, b, 1);
+    if (!overMap(a) || !overMap(b))
+        return;
+
+    ll2sRaw (ll0, a, 1);
+    ll2sRaw (ll1, b, 1);
+
+    float dx = (float)(b.x - a.x);
+    float dy = (float)(b.y - a.y);
+    float len = sqrtf (dx*dx + dy*dy);
+    if (len < 0.5f)
+        return;                             // points map too close together to derive direction
+    dx /= len;
+    dy /= len;
+
+    // arrow geometry: tip projects forward from the last dot's edge;
+    // base wings spread perpendicular at the dot's edge.
+    int r    = stormDotRadius();
+    int alen = r * 2 + stormTrackWidth();   // arrowhead height
+    int awid = r + 1;                       // arrowhead half-width at base
+
+    float bx = b.x + dx * r;               // base of arrowhead (at last-dot edge)
+    float by = b.y + dy * r;
+    float tx = bx + dx * alen;             // tip
+    float ty = by + dy * alen;
+    float px = -dy;                        // perpendicular unit vector
+    float py =  dx;
+
+    int16_t tip_x  = (int16_t)(tx);
+    int16_t tip_y  = (int16_t)(ty);
+    int16_t left_x = (int16_t)(bx + px * awid);
+    int16_t left_y = (int16_t)(by + py * awid);
+    int16_t rght_x = (int16_t)(bx - px * awid);
+    int16_t rght_y = (int16_t)(by - py * awid);
+
+    uint16_t color = stormCategoryColor (p1.category, p1.wind_kt);
+    tft.fillTriangleRaw (tip_x, tip_y, left_x, left_y, rght_x, rght_y, color);
+    tft.drawTriangleRaw  (tip_x, tip_y, left_x, left_y, rght_x, rght_y, RA8875_BLACK);
+}
+
 /* draw all active storm tracks on the map.
  * called from ESPHamClock.cpp after drawDXPedsOnMap().
  */
@@ -436,6 +494,9 @@ void drawStormsOnMap (void)
             uint16_t color = stormCategoryColor (pt.category, pt.wind_kt);
             drawStormDot (ll, color, pt.fcst_hour == 0);
         }
+
+        // 3. directional arrow at the last forecast track point
+        drawStormDirectionArrow (st);
     }
 }
 

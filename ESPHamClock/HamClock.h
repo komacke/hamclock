@@ -2419,7 +2419,7 @@ extern uint16_t ltg_radius_km;          // search radius when not worldwide
  * hurricane.cpp
  */
 
-#define STORM_INTERVAL      (3600*6)    // update interval, secs (6 hours = NHC cadence)
+#define STORM_INTERVAL      (2) 
 
 extern void initStorms (void);
 extern bool updateStorms (const SBox &box, bool fresh);
