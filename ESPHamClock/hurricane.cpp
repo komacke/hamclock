@@ -388,62 +388,128 @@ static void drawStormDot (const LatLong &ll, uint16_t color, bool current)
         tft.drawPixelRaw (s.x, s.y, RA8875_WHITE);      // mark the storm's current position
 }
 
-/* draw a directional arrow at the last forecast track point of a storm,
- * pointing in the direction of travel derived from the last two track points.
- * The arrowhead tip is projected forward from the edge of the last dot.
+/* draw a dramatic direction indicator at the last forecast track point:
+ *   - an extension line starting at the last dot's edge
+ *   - straight if only two track points are available
+ *   - curved (continuing the arc of the last two segments) if three or more
+ *     points are available; total curvature is capped at 90 degrees so the
+ *     arrow never spirals back on itself
+ *   - a filled arrowhead at the far end of the extension line
+ *
+ * All geometry is done in raw screen pixels after ll2sRaw() conversion.
  */
 static void drawStormDirectionArrow (const Storm &st)
 {
     if (st.n_pts < 2)
-        return;                             // need at least two points for a direction
-
-    const StormPoint &p0 = st.pts[st.n_pts - 2];
-    const StormPoint &p1 = st.pts[st.n_pts - 1];
-
-    LatLong ll0, ll1;
-    ll0.lat_d = p0.lat;  ll0.lng_d = p0.lon;
-    ll1.lat_d = p1.lat;  ll1.lng_d = p1.lon;
-
-    SCoord a, b;
-    ll2s (ll0, a, 1);
-    ll2s (ll1, b, 1);
-    if (!overMap(a) || !overMap(b))
         return;
 
-    ll2sRaw (ll0, a, 1);
-    ll2sRaw (ll1, b, 1);
+    // --- screen coords of the last two track points ---
+    const StormPoint &p_prev = st.pts[st.n_pts - 2];
+    const StormPoint &p_last = st.pts[st.n_pts - 1];
 
-    float dx = (float)(b.x - a.x);
-    float dy = (float)(b.y - a.y);
-    float len = sqrtf (dx*dx + dy*dy);
-    if (len < 0.5f)
-        return;                             // points map too close together to derive direction
-    dx /= len;
-    dy /= len;
+    LatLong ll_prev, ll_last;
+    ll_prev.lat_d = p_prev.lat;  ll_prev.lng_d = p_prev.lon;
+    ll_last.lat_d = p_last.lat;  ll_last.lng_d = p_last.lon;
 
-    // arrow geometry: tip projects forward from the last dot's edge;
-    // base wings spread perpendicular at the dot's edge.
-    int r    = stormDotRadius();
-    int alen = r * 2 + stormTrackWidth();   // arrowhead height
-    int awid = r + 1;                       // arrowhead half-width at base
+    SCoord sc_prev, sc_last;
+    ll2s (ll_prev, sc_prev, 1);
+    ll2s (ll_last, sc_last, 1);
+    if (!overMap(sc_prev) || !overMap(sc_last))
+        return;
+    ll2sRaw (ll_prev, sc_prev, 1);
+    ll2sRaw (ll_last, sc_last, 1);
 
-    float bx = b.x + dx * r;               // base of arrowhead (at last-dot edge)
-    float by = b.y + dy * r;
-    float tx = bx + dx * alen;             // tip
-    float ty = by + dy * alen;
-    float px = -dy;                        // perpendicular unit vector
-    float py =  dx;
+    // unit direction vector of the last track segment
+    float dx = (float)(sc_last.x - sc_prev.x);
+    float dy = (float)(sc_last.y - sc_prev.y);
+    float seg_len = sqrtf (dx*dx + dy*dy);
+    if (seg_len < 0.5f)
+        return;
+    dx /= seg_len;
+    dy /= seg_len;
 
-    int16_t tip_x  = (int16_t)(tx);
-    int16_t tip_y  = (int16_t)(ty);
-    int16_t left_x = (int16_t)(bx + px * awid);
-    int16_t left_y = (int16_t)(by + py * awid);
-    int16_t rght_x = (int16_t)(bx - px * awid);
-    int16_t rght_y = (int16_t)(by - py * awid);
+    // --- derive per-pixel angular turn rate from the penultimate segment ---
+    // positive = clockwise in screen coords (Y-down), negative = counter-clockwise
+    float turn_rate = 0.0f;
+    if (st.n_pts >= 3) {
+        const StormPoint &p_prev2 = st.pts[st.n_pts - 3];
+        LatLong ll_prev2;
+        ll_prev2.lat_d = p_prev2.lat;  ll_prev2.lng_d = p_prev2.lon;
+        SCoord sc_prev2;
+        ll2s (ll_prev2, sc_prev2, 1);
+        if (overMap(sc_prev2)) {
+            ll2sRaw (ll_prev2, sc_prev2, 1);
+            float dx1 = (float)(sc_prev.x - sc_prev2.x);
+            float dy1 = (float)(sc_prev.y - sc_prev2.y);
+            float len1 = sqrtf (dx1*dx1 + dy1*dy1);
+            if (len1 > 0.5f) {
+                dx1 /= len1;
+                dy1 /= len1;
+                // signed angle between consecutive segment directions
+                float angle_change = atan2f (dx1*dy - dy1*dx, dx1*dx + dy1*dy);
+                turn_rate = angle_change / seg_len;   // radians per screen-pixel
+                // cap total curvature at 90 degrees so the arrow cannot curl back
+                float ext_f  = (float)(stormSizeUnit() * 3);
+                float max_tr = 1.5707963f / ext_f;    // pi/2 spread over extension
+                if (turn_rate >  max_tr) turn_rate =  max_tr;
+                if (turn_rate < -max_tr) turn_rate = -max_tr;
+            }
+        }
+    }
 
-    uint16_t color = stormCategoryColor (p1.category, p1.wind_kt);
-    tft.fillTriangleRaw (tip_x, tip_y, left_x, left_y, rght_x, rght_y, color);
-    tft.drawTriangleRaw  (tip_x, tip_y, left_x, left_y, rght_x, rght_y, RA8875_BLACK);
+    // --- draw the extension line from the last dot's edge ---
+    int ext_len  = stormSizeUnit() * 3;     // extension length in screen pixels
+    int lw       = stormTrackWidth();
+    int step_px  = std::max (2, lw);        // one draw-call per step_px pixels
+    int r        = stormDotRadius();
+    uint16_t color = stormCategoryColor (p_last.category, p_last.wind_kt);
+
+    // precompute the per-step rotation (constant throughout the extension)
+    float angle_step = turn_rate * (float)step_px;
+    float cos_a = cosf (angle_step);
+    float sin_a = sinf (angle_step);
+
+    float cur_x  = sc_last.x + dx * (float)r;  // start just past the last dot
+    float cur_y  = sc_last.y + dy * (float)r;
+    float cur_dx = dx;
+    float cur_dy = dy;
+
+    for (int drawn = 0; drawn < ext_len; drawn += step_px) {
+        float nx = cur_x + cur_dx * (float)step_px;
+        float ny = cur_y + cur_dy * (float)step_px;
+        tft.drawLineRaw ((int16_t)cur_x, (int16_t)cur_y,
+                         (int16_t)nx,    (int16_t)ny, lw, color);
+        cur_x = nx;
+        cur_y = ny;
+        // rotate direction for the next step; renormalize to prevent float drift
+        float ndx  =  cur_dx * cos_a - cur_dy * sin_a;
+        float ndy  =  cur_dx * sin_a + cur_dy * cos_a;
+        float nlen = sqrtf (ndx*ndx + ndy*ndy);
+        if (nlen > 0.01f) { cur_dx = ndx / nlen;  cur_dy = ndy / nlen; }
+    }
+
+    // --- arrowhead at the end of the extension, in the final travel direction ---
+    int alen = r * 2 + lw;   // arrowhead height
+    int awid = r + 1;        // arrowhead half-width at base
+    float perp_x = -cur_dy;
+    float perp_y =  cur_dx;
+
+    tft.fillTriangleRaw (
+        (int16_t)(cur_x + cur_dx * alen),              // tip
+        (int16_t)(cur_y + cur_dy * alen),
+        (int16_t)(cur_x + perp_x * awid),              // left base wing
+        (int16_t)(cur_y + perp_y * awid),
+        (int16_t)(cur_x - perp_x * awid),              // right base wing
+        (int16_t)(cur_y - perp_y * awid),
+        color);
+    tft.drawTriangleRaw (
+        (int16_t)(cur_x + cur_dx * alen),
+        (int16_t)(cur_y + cur_dy * alen),
+        (int16_t)(cur_x + perp_x * awid),
+        (int16_t)(cur_y + perp_y * awid),
+        (int16_t)(cur_x - perp_x * awid),
+        (int16_t)(cur_y - perp_y * awid),
+        RA8875_BLACK);
 }
 
 /* draw all active storm tracks on the map.
@@ -705,6 +771,34 @@ bool updateStorms (const SBox &box, bool fresh)
 // Touch handling
 // ---------------------------------------------------------------------------
 
+/* run the storms pane-level popup menu (triggered by tapping the subtitle
+ * area above the storm list).  Mirrors the runDXPedPaneMenu() pattern.
+ */
+static void runStormsPaneMenu (const SBox &box)
+{
+    enum {
+        STM_TITLE,          // non-interactive label
+        STM_NHC,            // open NHC web page
+        STM_N
+    };
+
+    MenuItem mitems[STM_N];
+    mitems[STM_TITLE] = {MENU_LABEL,  false, 0, 2, "Tropical Wx", 0};
+    mitems[STM_NHC]   = {MENU_TOGGLE, false, 1, 2, "Open NHC page", 0};
+
+    uint16_t menu_x = BOX_IS_PANE_0(box) ? box.x + 3 : box.x + 10;
+    SBox menu_b = {menu_x, (uint16_t)(box.y + STORM_START_DY), 0, 0};
+    SBox ok_b;
+
+    MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 1, STM_N, mitems};
+    if (runMenu (menu)) {
+        if (mitems[STM_NHC].set) {
+            openURL ("https://www.nhc.noaa.gov/");
+            Serial.printf ("STORM: opened NHC web page\n");
+        }
+    }
+}
+
 /* handle touch within the storms pane.
  * returns true if touch was consumed.
  */
@@ -731,7 +825,8 @@ bool checkStormsTouch (const SCoord &s, const SBox &box)
 
     } else if (s.y < box.y + STORM_START_DY) {
 
-        // tapped subtitle/menu area -- nothing for now
+        // tapped subtitle area -- show pane options including NHC web page
+        runStormsPaneMenu (box);
         return true;
 
     } else {
