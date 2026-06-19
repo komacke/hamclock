@@ -35,8 +35,9 @@ static const char activenets_fn[] = "activenets.txt";
 
 // info about each active net
 typedef struct {
-    char *name;                                 // malloced net name (large line)
+    char *name;                                 // malloced net name (large line, may be scrubbed to fit)
     char *info;                                 // malloced supporting info (small line)
+    char *full_name;                            // malloced ORIGINAL net name, unscrubbed -- for web search URL
 } ActiveNetEntry;
 
 static ActiveNetEntry *anets;                   // malloced list, count in an_ss.n_data
@@ -50,6 +51,7 @@ static void freeActiveNets (void)
     for (int i = 0; i < an_ss.n_data; i++) {
         free (anets[i].name);
         free (anets[i].info);
+        free (anets[i].full_name);
     }
     free (anets);
     anets = NULL;
@@ -111,7 +113,7 @@ static void drawActiveNetsPane (const SBox &box)
     // title
     selectFontStyle (LIGHT_FONT, SMALL_FONT);
     tft.setTextColor (AN_COLOR);
-    static const char *title = "Active Nets";
+    static const char *title = "Nets";
     uint16_t tw = getTextWidth (title);
     tft.setCursor (box.x + (box.w-tw)/2, box.y + PANETITLE_H);
     tft.print (title);
@@ -361,6 +363,7 @@ static bool retrieveActiveNets (const SBox &box)
         ActiveNetEntry &an = anets[an_ss.n_data++];
         an.name = strdup (nbuf);
         an.info = strdup (info);
+        an.full_name = strdup (name);            // keep unscrubbed original for the URL
     }
 
     fclose (fp);
@@ -392,6 +395,52 @@ bool updateActiveNets (const SBox &box, bool fresh)
     return (ok);
 }
 
+/* build a Google search URL for the given net name: spaces -> '+', everything
+ * else URL-unsafe percent-encoded, "amateur radio" appended -- same scheme
+ * NetLogger's own website uses for its (www) links.
+ */
+static void buildNetSearchURL (const char *netname, char *out, size_t out_l)
+{
+    size_t used = snprintf (out, out_l, "%s", "https://www.google.com/search?q=");
+
+    for (const char *p = netname; *p && used + 4 < out_l; p++) {
+        char c = *p;
+        if (c == ' ')
+            out[used++] = '+';
+        else if (isalnum((unsigned char)c) || c=='-' || c=='_' || c=='.' || c=='~')
+            out[used++] = c;
+        else
+            used += snprintf (out+used, out_l-used, "%%%02X", (unsigned char)c);
+    }
+
+    used += snprintf (out+used, out_l-used, "+amateur+radio");
+    out[out_l-1] = '\0';
+}
+
+/* ask "Open webpage?" return whether user confirmed.
+ * mirrors the static RUSure() pattern in ESPHamClock.cpp, adapted locally
+ * since that one isn't exposed outside its file. kept deliberately short and
+ * fixed-size (no net name) so it never depends on, or is sized by, pane width.
+ */
+static bool confirmOpenNetWeb (const SBox &box)
+{
+    static const char *q = "Open webpage?";
+    #define AN_CONFIRM_INDENT  3                 // left-justified, matches other small menu indents
+
+    MenuItem mitems[] = {
+        {MENU_BLANK, false, 0, 0, NULL, 0},
+        {MENU_LABEL, false, 0, AN_CONFIRM_INDENT, q, 0},
+        {MENU_BLANK, false, 0, 0, NULL, 0},
+    };
+    const int n_m = NARRAY(mitems);
+
+    SBox menu_b = {box.x, box.y, 0, 0};         // shrink-wrap, anchored at pane origin
+    SBox ok_b;
+
+    MenuInfo menu = {menu_b, ok_b, UF_NOCLOCKS, M_CANCELOK, 1, n_m, mitems};
+    return (runMenu (menu));
+}
+
 /* return true if user is interacting with the active nets pane (scroll), false to let
  * the caller bring up the pane-choice menu.
  * N.B. we assume s is within box.
@@ -407,8 +456,31 @@ bool checkActiveNetsTouch (const SCoord &s, const SBox &box)
             scrollActiveNetsDown (box);
             return (true);
         }
+        // not ours -- caller will offer the pane-choice menu
+        return (false);
     }
 
-    // not ours -- caller will offer the pane-choice menu
+    // below the title -- check whether a net row was tapped
+    int block_dy, name_base_off, info_base_off, max_vis;
+    anGeometry (box, block_dy, name_base_off, info_base_off, max_vis);
+    (void) name_base_off;
+    (void) info_base_off;
+    (void) max_vis;
+
+    if (s.y < box.y + AN_START_DY)
+        return (false);                          // subtitle strip, not a row
+
+    int vis_row = (s.y - (box.y + AN_START_DY)) / block_dy;
+    int net_i;
+    if (an_ss.findDataIndex (vis_row, net_i) && net_i < an_ss.n_data) {
+        if (confirmOpenNetWeb (box)) {
+            char url[300];
+            buildNetSearchURL (anets[net_i].full_name, url, sizeof(url));
+            Serial.printf ("ANET: opening %s\n", url);
+            openURL (url);
+        }
+        return (true);
+    }
+
     return (false);
 }
