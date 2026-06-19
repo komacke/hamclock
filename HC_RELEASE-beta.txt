@@ -2,6 +2,7 @@ Changes with latest release:
 - new netlogger panel
 - mbox icon disappears sometimes
 - fix #189 tropics in zoom
+- update tropics more frequently
 - fix #193 band value display
 - freq, mode, doppler for sats
 - upcoming space launches pane
