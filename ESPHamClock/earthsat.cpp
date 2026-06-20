@@ -8,6 +8,7 @@
 
 
 #include "HamClock.h"
+#include "stars.h"     // 921 naked-eye stars V<=4.5
 
 #define MAX_ACTIVE_SATS 2               // increasing this works here but requires more colors
 
@@ -2636,6 +2637,7 @@ static void showSatDoppler (SatState &s, const SatFreq &tx)
     ok_b.x = W - ok_b.w - LR;
     ok_b.y = ROWY(12) - P;
     static const char ok_name[] = "Ok";
+    selectFontStyle (LIGHT_FONT, SMALL_FONT);
     drawStringInBox (ok_name, ok_b, false, RA8875_GREEN);
 
     // ---- sky dome geometry: right column, sized from the screen ----
@@ -2841,6 +2843,7 @@ static void showSatDoppler (SatState &s, const SatFreq &tx)
         }
     }
 
+    selectFontStyle (LIGHT_FONT, SMALL_FONT);
     drawStringInBox (ok_name, ok_b, true, RA8875_GREEN);
 }
 
@@ -2927,7 +2930,8 @@ static void showSatFreqs (SatState &s)
             else
                 tft.printf ("%s frequencies & modes", user_name);
 
-            // buttons
+            // buttons — use LIGHT/SMALL so Ok text fits inside the box
+            selectFontStyle (LIGHT_FONT, SMALL_FONT);
             drawStringInBox (ok_name, ok_b, false, RA8875_GREEN);
             if (npages > 1)
                 drawStringInBox (more_name, more_b, false, RA8875_GREEN);
@@ -3063,6 +3067,745 @@ static void showSatFreqs (SatState &s)
         free (fl);
 }
 
+static void showSatPassProg (SatState &s)
+{
+    #define _SPP_LABEL_W   50
+    #define _SPP_TITLE_H   (LISTING_Y0 + 8)   // 55px: title@PANETITLE_H, legend@SUBTITLE_Y0, ruler@LISTING_Y0
+    #define _SPP_N_DAYS    14
+    #define _SPP_MAX_PASS  (_SPP_N_DAYS*12)
+    #define _SPP_TIMEOUT   120000
+    #define _SPP_BAR_MINW  4
+    #define _SPP_SUNLIT_C  RGB565(50, 210, 80)
+    #define _SPP_ECLIP_C   RGB565(70, 120, 210)
+    #define _SPP_GRID_C    RGB565(35, 35, 50)
+    #define _SPP_NOON_C    RGB565(60, 60, 80)
+    #define _SPP_LBL_C     BRGRAY
+    #define _SPP_RULER_C   RGB565(80, 80, 100)
+    #define _SPP_TODAY_C   RA8875_WHITE
+
+    int row_h = (map_b.h - _SPP_TITLE_H) / _SPP_N_DAYS;
+    if (row_h < 10) row_h = 10;
+    int tl_x = map_b.x + _SPP_LABEL_W;
+    int tl_w = map_b.w - _SPP_LABEL_W - 2;
+    auto sod2x = [&](int sod) -> uint16_t {
+        return (uint16_t)(tl_x + (long)sod * tl_w / SECSPERDAY);
+    };
+
+    time_t now_t = nowWO();
+    time_t tz     = (time_t) getTZ (de_tz);  // DE UTC offset, secs
+
+    // Find start of current LOCAL day (midnight DE time) expressed as UTC
+    time_t now_local  = now_t + tz;
+    struct tm *tm_l   = gmtime (&now_local);
+    struct tm tm_mid  = *tm_l;
+    tm_mid.tm_hour = tm_mid.tm_min = tm_mid.tm_sec = 0;
+    time_t t_midnight = timegm (&tm_mid) - tz;  // UTC of local midnight
+    time_t t_end_all  = t_midnight + (time_t)_SPP_N_DAYS * SECSPERDAY;
+
+    struct SPEntry { time_t aos, los, tca; float max_el; bool sunlit; };
+    SPEntry *passes = (SPEntry *) malloc (_SPP_MAX_PASS * sizeof(SPEntry));
+    if (!passes) { plotMessage (map_b, RA8875_RED, "Out of memory"); return; }
+    int n_passes = 0;
+
+    if (!satEpochOk (s.sat, s.name, t_midnight)) {
+        plotMessage (map_b, RA8875_RED, "TLE expired - update TLEs");
+        free (passes);
+        return;
+    }
+    {
+        DateTime t0dt = userDateTime (t_midnight);
+        time_t t      = t_midnight;
+        Sun sun;
+        while (t < t_end_all && n_passes < _SPP_MAX_PASS) {
+            SatRiseSet rs;
+            findNextPass (s.sat, NULL, t, rs);
+            if (!rs.rise_ok || !rs.set_ok) break;
+            time_t rt = t_midnight + (time_t)(SECSPERDAY*(rs.rise_time - t0dt) + 0.5F);
+            time_t st = t_midnight + (time_t)(SECSPERDAY*(rs.set_time  - t0dt) + 0.5F);
+            if (rt >= t_end_all) break;
+            if (st <= rt) st = rt + 300;
+            float    max_el   = 0;
+            DateTime t_max_dt = rs.rise_time;
+            {
+                float el, az, range, rate;
+                DateTime t_ep = rs.set_time < rs.rise_time
+                              ? rs.rise_time + 10.0F/1440.0F : rs.set_time;
+                for (DateTime ts = rs.rise_time; ts < t_ep; ts += 20.0F/SECSPERDAY) {
+                    s.sat->predict (ts);
+                    s.sat->topo (obs, el, az, range, rate);
+                    if (el > max_el) { max_el = el; t_max_dt = ts; }
+                }
+            }
+            if (max_el >= SAT_MIN_EL) {
+                sun.predict    (t_max_dt);
+                s.sat->predict (t_max_dt);
+                time_t tca_t = t_midnight
+                             + (time_t)(SECSPERDAY*(t_max_dt - t0dt) + 0.5F);
+                passes[n_passes++] = { rt, st, tca_t, max_el, !s.sat->eclipsed(&sun) };
+            }
+            t = st + (time_t)(s.sat->period() * SECSPERDAY / 2);
+            updateClocks (false);
+        }
+    }
+
+    char user_name[NV_SATNAME_LEN];
+    strncpySubChar (user_name, s.name, ' ', '_', NV_SATNAME_LEN);
+    char title[48];
+    snprintf (title, sizeof(title), "%s Pass Progression", user_name);
+
+    SBox resume_b;
+    resume_b.w = 78; resume_b.h = 20;
+    resume_b.x = map_b.x + map_b.w - resume_b.w - 3;
+    resume_b.y = map_b.y + 3;              // top-right corner
+    // Helper: draw all bars and labels into map_b (called on init and popup dismiss)
+    auto drawAll = [&]() {
+        fillSBox (map_b, RA8875_BLACK);
+        // Resume button — top-right, small, drawn first
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        drawStringInBox ("Resume", resume_b, false, RA8875_GREEN);
+        // Title on its own line using standard HC font-metric height
+        selectFontStyle (LIGHT_FONT, SMALL_FONT);
+        tft.setTextColor (DE_COLOR);
+        tft.setCursor (map_b.x + 2, map_b.y + PANETITLE_H);
+        tft.print (title);
+        // Legend: on same row as Resume, directly left of it
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        { uint16_t lx=(uint16_t)(resume_b.x-192), ly=(uint16_t)(resume_b.y+2);
+          tft.fillRect(lx,ly,9,7,_SPP_SUNLIT_C); tft.setTextColor(_SPP_SUNLIT_C);
+          tft.setCursor(lx+12,ly); tft.print("Sunlit");
+          tft.fillRect(lx+66,ly,9,7,_SPP_ECLIP_C); tft.setTextColor(_SPP_ECLIP_C);
+          tft.setCursor(lx+79,ly); tft.print("Eclipse"); }
+        // Hour ruler on the listing line — labels just above ticks
+        selectFontStyle (LIGHT_FONT, FAST_FONT); tft.setTextColor (_SPP_RULER_C);
+        {
+            // Show timezone offset at left of ruler
+            char tz_lbl[10];
+            int tz_h = (int)(tz / 3600);
+            snprintf (tz_lbl, sizeof(tz_lbl), "UTC%+d", tz_h);
+            tft.setCursor (map_b.x + 2, map_b.y + LISTING_Y0 - LISTING_DY);
+            tft.print (tz_lbl);
+        }
+        uint16_t ry0 = map_b.y + LISTING_Y0 + 2;   // tick bottom
+        for (int h=0; h<=24; h+=3) {
+            uint16_t rx=sod2x(h*3600);
+            tft.drawLine(rx,ry0-5,rx,ry0,1,_SPP_RULER_C);  // tick upward
+            if (h%6==0 && h<24) { char lb[4]; snprintf(lb,sizeof(lb),"%02d",h);
+              tft.setCursor(rx+2, map_b.y + LISTING_Y0 - LISTING_DY); tft.print(lb); } }
+        // day rows
+        for (int d=0; d<_SPP_N_DAYS; d++) {
+            time_t t_ds=t_midnight+(time_t)d*SECSPERDAY, t_de=t_ds+SECSPERDAY;
+            uint16_t ry=map_b.y+_SPP_TITLE_H+d*row_h;
+            time_t t_ds_local = t_ds + tz;               // local midnight
+            struct tm *tm_d=gmtime(&t_ds_local); char lbl[12];
+            snprintf(lbl,sizeof(lbl),"%s %02d/%02d",
+                     dayShortStr(tm_d->tm_wday+1),tm_d->tm_mon+1,tm_d->tm_mday);
+            selectFontStyle(LIGHT_FONT,FAST_FONT);
+            tft.setTextColor(d==0 ? _SPP_TODAY_C : _SPP_LBL_C);
+            tft.setCursor(map_b.x+1,ry+row_h/2-4); tft.print(lbl);
+            for (int h=6;h<24;h+=6) {
+                uint16_t gx=sod2x(h*3600);
+                tft.drawLine(gx,ry,gx,ry+row_h-1,1,h==12?_SPP_NOON_C:_SPP_GRID_C); }
+            int n_today=0;
+            for (int i=0;i<n_passes;i++) {
+                if (passes[i].aos>=t_de||passes[i].los<=t_ds) continue;
+                n_today++;
+                int aos_sod=(int)(passes[i].aos-t_ds); if(aos_sod<0)aos_sod=0;
+                int los_sod=(int)(passes[i].los-t_ds); if(los_sod>SECSPERDAY)los_sod=SECSPERDAY;
+                uint16_t x1=sod2x(aos_sod),x2=sod2x(los_sod);
+                uint16_t bw=(x2>x1+_SPP_BAR_MINW)?x2-x1:_SPP_BAR_MINW;
+                uint16_t bh=(uint16_t)(passes[i].max_el/45.0F*(row_h-2));
+                if(bh>(uint16_t)(row_h-1))bh=(uint16_t)(row_h-1);
+                if(bh<4)bh=4;
+                tft.fillRect(x1,ry+row_h-bh,bw,bh,
+                             passes[i].sunlit?_SPP_SUNLIT_C:_SPP_ECLIP_C); }
+            if (n_today==0) {
+                selectFontStyle(LIGHT_FONT,FAST_FONT);
+                tft.setTextColor(RGB565(50,50,65));
+                tft.setCursor(tl_x+tl_w/2-20,ry+row_h/2-4); tft.print("no passes"); }
+            tft.drawLine(map_b.x+1,ry+row_h-1,map_b.x+map_b.w-2,ry+row_h-1,
+                         1,RGB565(30,30,45)); }
+        // "You are here" — dashed yellow line at current local time
+        {
+            time_t now_local = nowWO() + tz;
+            int now_sod = (int)(now_local % SECSPERDAY);
+            if (now_sod < 0) now_sod += SECSPERDAY;
+            uint16_t nx = sod2x(now_sod);
+            if (nx >= (uint16_t)tl_x && nx < map_b.x + map_b.w) {
+                // Dashed line across all 14 rows
+                for (int d2=0; d2<_SPP_N_DAYS; d2++) {
+                    uint16_t ry2 = map_b.y + _SPP_TITLE_H + d2*row_h;
+                    for (uint16_t y2=ry2+2; y2<ry2+row_h-2; y2+=5)
+                        tft.drawLine(nx,y2,nx,y2+2,1,RGB565(255,220,0));
+                }
+                // Downward triangle at ruler
+                uint16_t ry0 = map_b.y + LISTING_Y0 + 2;
+                tft.fillTriangle(nx-3,ry0-8,nx+3,ry0-8,nx,ry0-2,RGB565(255,220,0));
+            }
+        }
+        tft.drawPR();
+    };
+
+    SBox   popup_b = {0,0,0,0};
+    bool   popup_up = false;
+    char   popup_line1[50] = {};
+    char   popup_line2[50] = {};
+
+    // Draw once up front, then refresh every 2 s so the sky dome
+    // and "you are here" line stay live without blocking the left pane.
+    drawAll();
+
+    time_t expire_t = nowWO() + _SPP_TIMEOUT / 1000;
+
+    for (;;) {
+        // Refresh "you are here" + keep left-pane sky dome live
+        drawAll();
+        if (popup_up) {
+            tft.fillRect(popup_b.x,popup_b.y,popup_b.w,popup_b.h,RGB565(15,15,30));
+            tft.drawRect(popup_b.x,popup_b.y,popup_b.w,popup_b.h,DE_COLOR);
+            selectFontStyle(LIGHT_FONT,FAST_FONT);
+            tft.setTextColor(RA8875_WHITE);
+            tft.setCursor(popup_b.x+5,popup_b.y+6);  tft.print(popup_line1);
+            tft.setCursor(popup_b.x+5,popup_b.y+20); tft.print(popup_line2);
+        }
+        tft.drawPR();
+        drawSatPass ();           // update sky dome in left pane
+
+        if (nowWO() >= expire_t) break;
+
+        UserInput ui = { map_b, UI_UFuncNone, UF_UNUSED, 2000, UF_CLOCKSOK,
+                         {0,0}, TT_NONE, '\0', false, false };
+        bool _got = waitForUser (ui);
+        if (!_got) continue;   // 2-second tick — loop and redraw
+
+        if (ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL || ui.kb_char == CHAR_ESC
+                || inBox (ui.tap, resume_b)
+                || (ui.kb_char == CHAR_NONE && !inBox (ui.tap, map_b)))
+            break;
+
+        if (ui.tap.x > (uint16_t)tl_x && ui.tap.y > map_b.y + _SPP_TITLE_H) {
+            int d = (ui.tap.y - map_b.y - _SPP_TITLE_H) / row_h;
+            if (d >= 0 && d < _SPP_N_DAYS) {
+                time_t t_ds = t_midnight + (time_t)d * SECSPERDAY;
+                time_t t_de = t_ds + SECSPERDAY;
+                SPEntry *hit = NULL; int best_dx = INT_MAX;
+                for (int i = 0; i < n_passes; i++) {
+                    if (passes[i].aos >= t_de || passes[i].los <= t_ds) continue;
+                    int a=(int)(passes[i].aos-t_ds); if(a<0)a=0;
+                    int l=(int)(passes[i].los-t_ds); if(l>SECSPERDAY)l=SECSPERDAY;
+                    uint16_t x1=sod2x(a),x2=sod2x(l);
+                    if((int)ui.tap.x>=x1-6&&(int)ui.tap.x<=x2+6) {
+                        int dx=abs((int)ui.tap.x-(x1+x2)/2);
+                        if(dx<best_dx){best_dx=dx;hit=&passes[i];} }
+                }
+                if (hit) {
+                    // Build popup — copy gmtime structs before second call
+                    // (gmtime returns pointer to static buf; two calls overwrite each other)
+                    char aos_s[10],tca_s[10],los_s[10],dur_s[12];
+                    time_t aos_l = hit->aos + tz;
+                    time_t tca_l = hit->tca + tz;
+                    time_t los_l = hit->los + tz;
+                    struct tm tm_aos = *gmtime(&aos_l);
+                    struct tm tm_tca = *gmtime(&tca_l);
+                    struct tm tm_los = *gmtime(&los_l);
+                    snprintf(aos_s,sizeof(aos_s),"%02d:%02d",tm_aos.tm_hour,tm_aos.tm_min);
+                    snprintf(tca_s,sizeof(tca_s),"%02d:%02d",tm_tca.tm_hour,tm_tca.tm_min);
+                    snprintf(los_s,sizeof(los_s),"%02d:%02d",tm_los.tm_hour,tm_los.tm_min);
+                    int dur=(int)(hit->los-hit->aos); if(dur<0)dur=0;
+                    if(dur<3600) snprintf(dur_s,sizeof(dur_s),"%dm%02ds",(int)(dur/60),(int)(dur%60));
+                    else snprintf(dur_s,sizeof(dur_s),"%dh%02dm",(int)(dur/3600),(int)((dur%3600)/60));
+                    snprintf(popup_line1,sizeof(popup_line1),
+                             "AOS %s  TCA %s  LOS %s",aos_s,tca_s,los_s);
+                    snprintf(popup_line2,sizeof(popup_line2),"Max %.0f\xc2\xb0   Up %s   %s",
+                             hit->max_el,dur_s,hit->sunlit?"Sunlit":"Eclipse");
+                    uint16_t pw=280,ph=36;
+                    uint16_t px=(uint16_t)(ui.tap.x+8);
+                    uint16_t py=(uint16_t)(ui.tap.y-ph-6);
+                    if(px+pw>map_b.x+map_b.w) px=(uint16_t)(ui.tap.x-pw-2);
+                    if(py<map_b.y) py=(uint16_t)(ui.tap.y+4);
+                    popup_b={px,py,pw,ph};
+                    tft.fillRect(px,py,pw,ph,RGB565(15,15,30));
+                    tft.drawRect(px,py,pw,ph,DE_COLOR);
+                    selectFontStyle(LIGHT_FONT,FAST_FONT);
+                    tft.setTextColor(RA8875_WHITE);
+                    tft.setCursor(px+5,py+6);  tft.print(popup_line1);
+                    tft.setCursor(px+5,py+20); tft.print(popup_line2);
+                    popup_up=true;
+                    tft.drawPR();
+                } else if (popup_up) {
+                    // Tapped empty space — dismiss popup
+                    popup_up = false;
+                    drawAll();
+                }
+            }
+        } else if (popup_up && inBox(ui.tap, map_b)) {
+            // Tapped title/ruler area with popup showing — dismiss
+            popup_up = false;
+            drawAll();
+        }
+    }
+
+    // Flash Resume for tactile feedback, brief pause so user sees it
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
+    drawStringInBox ("Resume", resume_b, true, RA8875_GREEN);
+    tft.drawPR();
+    delay (250);
+    free (passes);
+
+    #undef _SPP_LABEL_W
+    #undef _SPP_TITLE_H
+    #undef _SPP_N_DAYS
+    #undef _SPP_MAX_PASS
+    #undef _SPP_TIMEOUT
+    #undef _SPP_BAR_MINW
+    #undef _SPP_SUNLIT_C
+    #undef _SPP_ECLIP_C
+    #undef _SPP_GRID_C
+    #undef _SPP_NOON_C
+    #undef _SPP_LBL_C
+    #undef _SPP_RULER_C
+    #undef _SPP_TODAY_C
+}
+
+
+static float starLST (time_t utc)
+{
+    double jd   = (double)utc / 86400.0 + 2440587.5;
+    double d    = jd - 2451545.0;
+    double gmst = fmod (280.46061837 + 360.98564736629*d
+                        + 0.000387933*(d/36525.0)*(d/36525.0), 360.0);
+    double lst  = fmod (gmst + (double)de_ll.lng_d, 360.0);
+    if (lst < 0) lst += 360.0;
+    return (float)lst;
+}
+
+static void showSkyView (SatState &s)
+{
+    const uint16_t TITLE_H = PANETITLE_H;
+    const uint16_t INFO_H  = 36;
+    uint16_t sky_x = map_b.x, sky_y = map_b.y + TITLE_H;
+    uint16_t sky_w = map_b.w, sky_h = map_b.h - TITLE_H - INFO_H;
+    uint16_t hz_y  = sky_y + (uint16_t)(sky_h * 0.62F);
+    float px_per_el = (hz_y - sky_y) / 90.0F;
+    float px_per_az = sky_w / 360.0F;
+
+    SBox resume_b;
+    resume_b.w = 78; resume_b.h = 20;
+    resume_b.x = map_b.x + map_b.w - resume_b.w - 3;
+    resume_b.y = map_b.y + 3;
+
+    // az_offset is updated before every drawAll() so satellite stays centred.
+    float az_offset = 0.0F;
+
+    auto az2x = [&](float az) -> int {
+        float daz = az - az_offset;
+        while (daz >  180) daz -= 360;
+        while (daz < -180) daz += 360;
+        return (int)(sky_x + sky_w/2 + daz * px_per_az + 0.5F);
+    };
+    auto el2y = [&](float el) -> int {
+        return (int)(hz_y - el * px_per_el + 0.5F);
+    };
+
+    // Trailing track — record last _SKY_TRAIL_MAX positions (az/el/sunlit)
+    // Updated each tick; drawn inside drawAll before the crosshair.
+    #define _SKY_TRAIL_MAX  90              // ~3 min at 2s/tick
+    float trail_az[_SKY_TRAIL_MAX] = {};
+    float trail_el[_SKY_TRAIL_MAX] = {};
+    bool  trail_sl[_SKY_TRAIL_MAX] = {};
+    int   trail_n  = 0;
+
+    auto drawAll = [&](float sat_az, float sat_el, bool sat_sunlit, float sat_range) {
+        fillSBox (map_b, RA8875_BLACK);
+        tft.fillRect (sky_x, hz_y+1, sky_w, (sky_y+sky_h)-(hz_y+1), RGB565(8,18,8));
+
+        float lst=starLST(myNow()), lat_r=de_ll.lat_d*(float)M_PIF/180.0F;
+        float sinlat=sinf(lat_r), coslat=cosf(lat_r);
+        for (int si=0; si<N_STARS; si++) {
+            const StarEntry &se=stars_bsc5[si];
+            float ra_deg=se.ra_cd/100.0F, dec_r=se.dec_cd/100.0F*(float)M_PIF/180.0F;
+            float sindec=sinf(dec_r), cosdec=cosf(dec_r);
+            float H_r=(lst-ra_deg)*(float)M_PIF/180.0F, cosH=cosf(H_r), sinH=sinf(H_r);
+            float sinEl=sindec*sinlat+cosdec*coslat*cosH;
+            if (sinEl<sinf(-6.0F*(float)M_PIF/180.0F)) continue;
+            float el_d=asinf(sinEl)*180.0F/(float)M_PIF, cosEl=cosf(asinf(sinEl));
+            float cosAz=(sindec-sinlat*sinEl)/(coslat*cosEl+1e-9F);
+            if(cosAz>1)cosAz=1; if(cosAz<-1)cosAz=-1;
+            float az_d=acosf(cosAz)*180.0F/(float)M_PIF;
+            if(sinH>0) az_d=360.0F-az_d;
+            int sy=el2y(el_d);
+            if(sy<(int)sky_y-4||sy>(int)(sky_y+sky_h)) continue;
+            {
+                int sx=az2x(az_d);
+                if(sx>=(int)sky_x && sx<(int)(sky_x+sky_w)){
+                    uint16_t col=(el_d<0)?RGB565(55,55,75):(el_d<12)?RGB565(140,140,155):RA8875_WHITE;
+                    if(se.vmag_t<=10){tft.drawPixel(sx,sy,col);tft.drawPixel(sx+1,sy,col);
+                                     tft.drawPixel(sx,sy+1,col);tft.drawPixel(sx+1,sy+1,col);}
+                    else if(se.vmag_t<=25) tft.fillCircle(sx,sy,1,col);
+                    else tft.drawPixel(sx,sy,col);
+                }
+            }
+        }
+
+        selectFontStyle(LIGHT_FONT,FAST_FONT);
+        for(int eg=30;eg<=60;eg+=30){
+            int gy=el2y(eg);
+            if(gy<(int)sky_y||gy>(int)hz_y) continue;
+            for(uint16_t gx=sky_x;gx<sky_x+sky_w;gx+=12)
+                tft.drawLine(gx,gy,gx+6,gy,1,RGB565(35,35,60));
+            tft.setTextColor(RGB565(55,55,90));
+            char lb[6]; snprintf(lb,sizeof(lb),"%d\xc2\xb0",eg);
+            tft.setCursor(sky_x+3,gy-8); tft.print(lb);
+        }
+
+        tft.drawLine(sky_x,hz_y,sky_x+sky_w-1,hz_y,1,RGB565(255,140,0));
+        for(int at=0;at<360;at+=10){
+            int tx=az2x(at); bool major=(at%45==0);
+            if(tx<(int)sky_x||tx>=(int)(sky_x+sky_w)) continue;
+            tft.drawLine(tx,hz_y-(major?5:2),tx,hz_y+(major?5:2),
+                         1,major?RGB565(255,200,80):RGB565(100,75,30));
+        }
+        const struct{float az;const char*lbl;}dirs[]={
+            {0,"N"},{45,"NE"},{90,"E"},{135,"SE"},
+            {180,"S"},{225,"SW"},{270,"W"},{315,"NW"}};
+        for(auto &d:dirs){
+            int cx=az2x(d.az);
+            if(cx<(int)sky_x+2||cx>=(int)(sky_x+sky_w)-10) continue;
+            tft.setTextColor(RGB565(220,170,60));
+            tft.setCursor((uint16_t)(cx-4),hz_y+7); tft.print(d.lbl);
+        }
+
+        // Trailing track — fade from invisible at tail to full at head
+        if (trail_n > 1) {
+            for (int ti = 1; ti < trail_n; ti++) {
+                // Skip segments that cross the az=0/360 wrap
+                float daz = fabsf (trail_az[ti] - trail_az[ti-1]);
+                if (daz > 180.0F) continue;
+                // Brightness: 0 at oldest, 200 near head
+                float frac = (float)(ti-1) / (float)(trail_n > 1 ? trail_n-1 : 1);
+                uint8_t v  = (uint8_t)(frac * 200.0F);
+                uint16_t tcol = trail_sl[ti]
+                    ? RGB565(0, v, 0)         // green — sunlit
+                    : RGB565(v, v/2, 0);      // orange — eclipse
+                int tx1=az2x(trail_az[ti-1]), tx2=az2x(trail_az[ti]);
+                if(tx1>=(int)sky_x && tx1<(int)(sky_x+sky_w) &&
+                   tx2>=(int)sky_x && tx2<(int)(sky_x+sky_w))
+                    tft.drawLine (tx1, el2y(trail_el[ti-1]),
+                                  tx2, el2y(trail_el[ti]), 1, tcol);
+            }
+        }
+
+        int sat_sx=az2x(sat_az), sat_sy=el2y(sat_el), csy=sat_sy;
+        // Clamp crosshair to the correct zone:
+        //   above horizon (el >= 0) → sky area  [sky_y+4 .. hz_y-4]
+        //   below horizon (el <  0) → ground area [hz_y+4 .. sky_y+sky_h-4]
+        if (sat_el >= 0) {
+            if (csy < (int)sky_y+4)   csy = sky_y+4;
+            if (csy > (int)hz_y-4)    csy = hz_y-4;
+        } else {
+            if (csy < (int)hz_y+4)    csy = hz_y+4;
+            if (csy > (int)(sky_y+sky_h-4)) csy = sky_y+sky_h-4;
+        }
+        // Full brightness when visible; dim when underground
+        uint16_t scol = sat_el >= 0
+            ? (sat_sunlit ? RGB565(50,230,50) : RGB565(255,110,0))
+            : RGB565(60,60,60);
+        tft.drawLine(sat_sx-8,csy,sat_sx+8,csy,1,scol);
+        tft.drawLine(sat_sx,csy-8,sat_sx,csy+8,1,scol);
+        tft.fillCircle(sat_sx,csy,3,scol);
+        // Dashed guide line from crosshair down to horizon (above-horizon only)
+        if (sat_el >= 0 && sat_sy < (int)hz_y)
+            for(int gy=csy+10;gy<(int)hz_y;gy+=8)
+                tft.drawLine(sat_sx,gy,sat_sx,gy+4,1,RGB565(40,80,40));
+
+        selectFontStyle(LIGHT_FONT,SMALL_FONT);
+        tft.setTextColor(DE_COLOR);
+        char ttl[48]; snprintf(ttl,sizeof(ttl),"%s \xe2\x80\x94 Sky View",s.name);
+        maxStringW(ttl,map_b.w-resume_b.w-12);
+        tft.setCursor(map_b.x+2,map_b.y+PANETITLE_H); tft.print(ttl);
+        selectFontStyle(LIGHT_FONT,FAST_FONT);
+        drawStringInBox("Resume",resume_b,false,RA8875_GREEN);
+
+        tft.setTextColor(BRGRAY);
+        char info[90];
+        if(sat_el>=-1)
+            snprintf(info,sizeof(info),"Az %5.1f\xc2\xb0   El %+5.1f\xc2\xb0   Range %6.0f km   %s",
+                     sat_az,sat_el,sat_range,sat_sunlit?"Sunlit":"Eclipse");
+        else
+            snprintf(info,sizeof(info),"Az %5.1f\xc2\xb0   El %+5.1f\xc2\xb0   (Below horizon)",
+                     sat_az,sat_el);
+        uint16_t iw=getTextWidth(info);
+        tft.setCursor(map_b.x+(map_b.w-iw)/2,map_b.y+map_b.h-INFO_H+14); tft.print(info);
+    };
+
+    // Named star lookup table
+    // Named star lookup table — IAU proper names + key Bayer designations
+// Matched against stars_bsc5[] by RA/Dec proximity (within 0.5 degrees).
+static const struct {
+    uint16_t   ra_cd;
+    int16_t    dec_cd;
+    const char *name;
+} star_names[] = {
+    {  1090,  -1799, "Diphda"},
+    {  1474,   6052, "Schedar"},
+    {  1620,   2905, "Alpheratz"},
+    {  2443,  -5724, "Achernar"},
+    {  2501,   8926, "Polaris"},
+    {  3174,   4090, "Algol"},
+    {  3180,   2346, "Hamal"},
+    {  3374,   2407, "Mirach"},
+    {  3914,  -1356, "Cursa"},
+    {  4305,  -5338, "Ankaa"},
+    {  5108,   4986, "Mirfak"},
+    {  5706,  -1796, "Phakt"},
+    {  6047,   4498, "Menkalinan"},
+    {  6399,  -5270, "Canopus"},
+    {  6898,   1651, "Aldebaran"},
+    {  7864,   -820, "Rigel"},
+    {  7917,   4600, "Capella"},
+    {  8007,  -4001, "Naos"},
+    {  8063,     -3, "Mintaka"},
+    {  8128,    635, "Bellatrix"},
+    {  8157,   2861, "Elnath"},
+    {  8405,   -120, "Alnilam"},
+    {  8519,   -194, "Alnitak"},
+    {  8879,    741, "Betelgeuse"},
+    {  9360,  -5950, "Tureis"},
+    {  9567,  -1796, "Mirzam"},
+    {  9943,   1640, "Alhena"},
+    { 10128,  -1672, "Sirius"},
+    { 10466,  -2897, "Adhara"},
+    { 10710,  -2639, "Wezen"},
+    { 11310,  -1758, "Aludra"},
+    { 11365,   3189, "Castor"},
+    { 11483,    522, "Procyon"},
+    { 11633,   2803, "Pollux"},
+    { 12184,  -5796, "Aspidiske"},
+    { 12239,  -4734, "Gamma Vel."},
+    { 12563,  -5951, "Avior"},
+    { 13117,  -5471, "Delta Vel."},
+    { 13249,   5496, "Mizar"},
+    { 13830,  -6972, "Miaplacidus"},
+    { 14039,  -3638, "Gienah"},
+    { 14190,   -865, "Alphard"},
+    { 15017,   1154, "Coxa"},
+    { 15209,   1197, "Regulus"},
+    { 15499,   1984, "Algieba"},
+    { 15884,   1215, "Denebola"},
+    { 16087,   1961, "Zosma"},
+    { 16524,   6175, "Merak"},
+    { 16593,   6175, "Dubhe"},
+    { 17252,  -3628, "Menkent"},
+    { 17847,   2843, "Alphecca"},
+    { 17860,   5367, "Phecda"},
+    { 18665,  -6310, "Acrux"},
+    { 18779,  -5711, "Gacrux"},
+    { 19192,  -5969, "Mimosa"},
+    { 19351,   5596, "Alioth"},
+    { 19629,   1429, "Rasalgethi"},
+    { 20052,   3086, "Eltanin"},
+    { 20130,  -1116, "Spica"},
+    { 20543,   4553, "Sadr 2"},
+    { 20688,   4931, "Alkaid"},
+    { 21096,  -6037, "Hadar"},
+    { 21391,   1918, "Arcturus"},
+    { 21990,  -6083, "Rigil Kent."},
+    { 22230,   7415, "Kochab"},
+    { 22523,   -384, "Sadalsuud"},
+    { 22796,  -3864, "Kaus Bor."},
+    { 23552,   7763, "Alderamin"},
+    { 24735,  -2643, "Antares"},
+    { 25012,  -1958, "Dschubba"},
+    { 25218,  -6903, "Atria"},
+    { 26168,  -3763, "Wei"},
+    { 26266,   -978, "Rasalhague"},
+    { 26340,  -3710, "Shaula"},
+    { 26433,  -4300, "Sargas"},
+    { 26528,  -3707, "Lesath"},
+    { 26792,  -3406, "Girtab"},
+    { 27531,  -3438, "Kaus Aust."},
+    { 27856,   4528, "Sadr"},
+    { 27923,   3878, "Vega"},
+    { 27930,   2774, "Albireo"},
+    { 28382,  -2630, "Nunki"},
+    { 28830,  -2678, "Ascella"},
+    { 29110,  -2101, "Kaus Med."},
+    { 29770,    887, "Altair"},
+    { 30360,    -16, "Enif"},
+    { 30506,   2778, "Gienah Cyg."},
+    { 30641,  -5674, "Peacock"},
+    { 31036,   4528, "Deneb"},
+    { 32081,   1521, "Sadalmelik"},
+    { 33131,  -4696, "Al Nair"},
+    { 33671,   1521, "Markab"},
+    { 33993,   2817, "Scheat"},
+    { 34441,  -2962, "Fomalhaut"},
+};
+#define N_STAR_NAMES 94
+
+    SBox   star_popup_b = {0,0,0,0};
+    bool   star_popup_up = false;
+    char   star_popup_line1[32] = {};
+    char   star_popup_line2[24] = {};
+    Sun    sun;
+
+    for(;;){
+        DateTime t=userDateTime(myNow());
+        s.sat->predict(t);
+        float el,az,range,rate;
+        s.sat->topo(obs,el,az,range,rate);
+        sun.predict(t); s.sat->predict(t);
+        bool sunlit=!s.sat->eclipsed(&sun);
+        // Center panorama on current satellite azimuth
+        az_offset = az;
+
+        // Centre panorama on satellite before drawing
+        az_offset = az;
+
+        // Append position to trail (shift-down when full)
+        if (trail_n < _SKY_TRAIL_MAX) {
+            trail_az[trail_n] = az;
+            trail_el[trail_n] = el;
+            trail_sl[trail_n] = sunlit;
+            trail_n++;
+        } else {
+            memmove (trail_az, trail_az+1, (trail_n-1)*sizeof(float));
+            memmove (trail_el, trail_el+1, (trail_n-1)*sizeof(float));
+            memmove (trail_sl, trail_sl+1, (trail_n-1)*sizeof(bool));
+            trail_az[trail_n-1] = az;
+            trail_el[trail_n-1] = el;
+            trail_sl[trail_n-1] = sunlit;
+        }
+
+        drawAll(az,el,sunlit,range);
+
+        // Redraw star popup on top after each full redraw
+        if (star_popup_up) {
+            tft.fillRect(star_popup_b.x,star_popup_b.y,
+                         star_popup_b.w,star_popup_b.h,RGB565(15,15,35));
+            tft.drawRect(star_popup_b.x,star_popup_b.y,
+                         star_popup_b.w,star_popup_b.h,DE_COLOR);
+            selectFontStyle(LIGHT_FONT,FAST_FONT);
+            tft.setTextColor(RA8875_WHITE);
+            tft.setCursor(star_popup_b.x+5, star_popup_b.y+5);
+            tft.print(star_popup_line1);
+            tft.setTextColor(BRGRAY);
+            tft.setCursor(star_popup_b.x+5, star_popup_b.y+17);
+            tft.print(star_popup_line2);
+        }
+        tft.drawPR();
+        drawSatPass ();           // keep left-pane sky dome live
+
+        UserInput ui={map_b,UI_UFuncNone,UF_UNUSED,2000,UF_CLOCKSOK,
+                      {0,0},TT_NONE,'\0',false,false};
+        bool got=waitForUser(ui);
+
+        if (!got) continue;   // 2s timeout — loop and redraw satellite position
+
+        // Exit
+        if (inBox(ui.tap,resume_b)||ui.kb_char==CHAR_ESC||
+            ui.kb_char==CHAR_CR||ui.kb_char==CHAR_NL||
+            (!inBox(ui.tap,map_b)&&ui.kb_char==CHAR_NONE)) break;
+
+        // Star tap — find nearest star within 14px of tap
+        if (ui.tap.x > 0 && inBox(ui.tap,map_b) &&
+            ui.tap.y > (uint16_t)(map_b.y+PANETITLE_H) &&
+            ui.tap.y < (uint16_t)(map_b.y+map_b.h-INFO_H)) {
+
+            float lst2=starLST(myNow());
+            float lat2=de_ll.lat_d*(float)M_PIF/180.0F;
+            float sl2=sinf(lat2), cl2=cosf(lat2);
+            float best_d=14.0F; int best_i=-1;
+
+            for (int si=0; si<N_STARS; si++) {
+                const StarEntry &se=stars_bsc5[si];
+                float ra_d=se.ra_cd/100.0F;
+                float dec_r=se.dec_cd/100.0F*(float)M_PIF/180.0F;
+                float sd=sinf(dec_r), cd=cosf(dec_r);
+                float H_r=(lst2-ra_d)*(float)M_PIF/180.0F;
+                float sinEl2=sd*sl2+cd*cl2*cosf(H_r);
+                if(sinEl2<sinf(-6.0F*(float)M_PIF/180.0F)) continue;
+                float el_s=asinf(sinEl2)*180.0F/(float)M_PIF;
+                float cosEl2=cosf(asinf(sinEl2));
+                float cAz=(sd-sl2*sinEl2)/(cl2*cosEl2+1e-9F);
+                if(cAz>1)cAz=1; if(cAz<-1)cAz=-1;
+                float az_s=acosf(cAz)*180.0F/(float)M_PIF;
+                if(sinf(H_r)>0) az_s=360.0F-az_s;
+                int sx=az2x(az_s), sy=el2y(el_s);
+                float d=hypotf(sx-(int)ui.tap.x, sy-(int)ui.tap.y);
+                if(d<best_d){best_d=d; best_i=si;}
+            }
+
+            star_popup_up = false;
+
+            if (best_i >= 0) {
+                const StarEntry &bs=stars_bsc5[best_i];
+                const char *sname=NULL;
+                for (int ni=0; ni<N_STAR_NAMES; ni++) {
+                    if (abs((int)bs.ra_cd-(int)star_names[ni].ra_cd)<60 &&
+                        abs((int)bs.dec_cd-(int)star_names[ni].dec_cd)<60) {
+                        sname=star_names[ni].name; break;
+                    }
+                }
+                snprintf(star_popup_line1, sizeof(star_popup_line1),
+                         "%s", sname ? sname : "Star");
+                snprintf(star_popup_line2, sizeof(star_popup_line2),
+                         "Magnitude %.1f", bs.vmag_t/10.0F);
+
+                uint16_t pw=150, ph=28;
+                uint16_t px=(uint16_t)(ui.tap.x+10);
+                uint16_t py=(uint16_t)(ui.tap.y-ph-4);
+                if(px+pw>map_b.x+map_b.w) px=(uint16_t)(ui.tap.x-pw-4);
+                if(py<(uint16_t)(map_b.y+PANETITLE_H)) py=(uint16_t)(ui.tap.y+6);
+                star_popup_b={px,py,pw,ph};
+                tft.fillRect(px,py,pw,ph,RGB565(15,15,35));
+                tft.drawRect(px,py,pw,ph,DE_COLOR);
+                selectFontStyle(LIGHT_FONT,FAST_FONT);
+                tft.setTextColor(RA8875_WHITE);
+                tft.setCursor(px+5,py+5);  tft.print(star_popup_line1);
+                tft.setTextColor(BRGRAY);
+                tft.setCursor(px+5,py+17); tft.print(star_popup_line2);
+                star_popup_up=true;
+                tft.drawPR();
+            }
+        }
+    }
+    selectFontStyle(LIGHT_FONT,FAST_FONT);
+    drawStringInBox("Resume",resume_b,true,RA8875_GREEN);
+    tft.drawPR(); delay(250);
+}
+
+/* Build OrbTrack URL for this satellite.
+ * Uses NORAD catalog ID (satSCN) when known, falls back to URL-encoded name.
+ */
+static void buildOrbTrackURL (const SatState &s, char *buf, int bufsz)
+{
+    if (s.norad > 0) {
+        snprintf (buf, bufsz, "https://www.orbtrack.org/#/?satSCN=%d", s.norad);
+    } else {
+        // HC stores spaces as underscores; encode for URL
+        char enc[128] = {};
+        int  ei = 0;
+        for (const char *p = s.name; *p && ei < (int)sizeof(enc) - 4; p++) {
+            char c = (*p == '_') ? ' ' : *p;
+            if      (c == ' ')  { enc[ei++] = '%'; enc[ei++] = '2'; enc[ei++] = '0'; }
+            else if (c == '(')  { enc[ei++] = '%'; enc[ei++] = '2'; enc[ei++] = '8'; }
+            else if (c == ')')  { enc[ei++] = '%'; enc[ei++] = '2'; enc[ei++] = '9'; }
+            else                  enc[ei++] = c;
+        }
+        snprintf (buf, bufsz, "https://www.orbtrack.org/#/?satName=%s", enc);
+    }
+}
+
+/* Build SatNogs URL for this satellite (requires NORAD ID). */
+static void buildSatNogsURL (const SatState &s, char *buf, int bufsz)
+{
+    if (s.norad > 0)
+        snprintf (buf, bufsz,
+                  "https://db.satnogs.org/satellite/%d/#mapcontent", s.norad);
+    else
+        snprintf (buf, bufsz, "https://db.satnogs.org/");
+}
+
 /* called when tap within dx_info_b while showing a sat to show menu of choices.
  * s is known to be within dx_info_b.
  */
@@ -3075,8 +3818,17 @@ void drawDXSatMenu (const SCoord &s)
         _SMI_INFO,
         _SMI_NAME1,
         _SMI_PATH1, _SMI_PASS1, _SMI_TABLE1, _SMI_FREQ1, _SMI_PLAN1,
+        _SMI_MPROG1,
+        _SMI_SKYVIEW1,
+        _SMI_ORBTRACK1,
+        _SMI_SATNOGS1,
         _SMI_NAME2,
         _SMI_PATH2, _SMI_PASS2, _SMI_TABLE2, _SMI_FREQ2, _SMI_PLAN2,
+        _SMI_MPROG2,
+        _SMI_SKYVIEW2,
+        _SMI_ORBTRACK2,
+        _SMI_SATNOGS2,
+        _SMI_AMSAT_STATUS,
         _SMI_N,
     };
 
@@ -3119,6 +3871,10 @@ void drawDXSatMenu (const SCoord &s)
         {menu_sat1,   false, 1, _DXS_INDENT2,  "Show rise/set table", NULL},
         {menu_sat1,   false, 1, _DXS_INDENT2,  "Show freq/modes", NULL},
         {menu_sat1,   false, 1, _DXS_INDENT2,  "Show planning tool", NULL},
+        {menu_sat1,   false, 1, _DXS_INDENT2,  "Show pass progression", NULL},
+        {menu_sat1,   false, 1, _DXS_INDENT2,  "Show sky view", NULL},
+        {menu_sat1,   false, 1, _DXS_INDENT2,  "Show OrbTrack", NULL},
+        {menu_sat1,   false, 1, _DXS_INDENT2,  "Show SatNogs",  NULL},
 
         {menu_name2,  false, 1, _DXS_INDENT1,  name2, NULL},
         {menu_path2,  path2, 3, _DXS_INDENT2,  "Show track also", NULL},
@@ -3126,6 +3882,11 @@ void drawDXSatMenu (const SCoord &s)
         {menu_sat2,   false, 1, _DXS_INDENT2,  "Show rise/set table", NULL},
         {menu_sat2,   false, 1, _DXS_INDENT2,  "Show freq/modes", NULL},
         {menu_sat2,   false, 1, _DXS_INDENT2,  "Show planning tool", NULL},
+        {menu_sat2,   false, 1, _DXS_INDENT2,  "Show pass progression", NULL},
+        {menu_sat2,   false, 1, _DXS_INDENT2,  "Show sky view", NULL},
+        {menu_sat2,   false, 1, _DXS_INDENT2,  "Show OrbTrack", NULL},
+        {menu_sat2,   false, 1, _DXS_INDENT2,  "Show SatNogs",  NULL},
+        {MENU_1OFN,   false, 1, _DXS_INDENT1,  "Show Status",   NULL},
     };
 
     // box for menu
@@ -3221,6 +3982,55 @@ void drawDXSatMenu (const SCoord &s)
                     drawSatPass();
                     drawSatTool();
                     initEarthMap();
+                    break;
+                case _SMI_MPROG1:
+                    // show multi-day pass progression for sat 0
+                    dxpaneSat = 0;
+                    showSatPassProg (sat_state[0]);
+                    initEarthMap();
+                    break;
+                case _SMI_MPROG2:
+                    // show multi-day pass progression for sat 1
+                    dxpaneSat = 1;
+                    showSatPassProg (sat_state[1]);
+                    initEarthMap();
+                    break;
+                case _SMI_SKYVIEW1:
+                    dxpaneSat = 0;
+                    showSkyView (sat_state[0]);
+                    initEarthMap();
+                    break;
+                case _SMI_SKYVIEW2:
+                    dxpaneSat = 1;
+                    showSkyView (sat_state[1]);
+                    initEarthMap();
+                    break;
+                case _SMI_ORBTRACK1: {
+                    char url[128];
+                    buildOrbTrackURL (sat_state[0], url, sizeof(url));
+                    openURL (url);
+                    break;
+                }
+                case _SMI_ORBTRACK2: {
+                    char url[128];
+                    buildOrbTrackURL (sat_state[1], url, sizeof(url));
+                    openURL (url);
+                    break;
+                }
+                case _SMI_SATNOGS1: {
+                    char url[128];
+                    buildSatNogsURL (sat_state[0], url, sizeof(url));
+                    openURL (url);
+                    break;
+                }
+                case _SMI_SATNOGS2: {
+                    char url[128];
+                    buildSatNogsURL (sat_state[1], url, sizeof(url));
+                    openURL (url);
+                    break;
+                }
+                case _SMI_AMSAT_STATUS:
+                    openURL ("https://www.amsat.org/status/");
                     break;
                 case _SMI_N:
                     // lint
