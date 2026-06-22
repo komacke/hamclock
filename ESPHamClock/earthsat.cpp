@@ -3196,7 +3196,7 @@ static void showSatPassProg (SatState &s)
             time_t t_ds=t_midnight+(time_t)d*SECSPERDAY, t_de=t_ds+SECSPERDAY;
             uint16_t ry=map_b.y+_SPP_TITLE_H+d*row_h;
             time_t t_ds_local = t_ds + tz;               // local midnight
-            struct tm *tm_d=gmtime(&t_ds_local); char lbl[12];
+            struct tm *tm_d=gmtime(&t_ds_local); char lbl[16];
             snprintf(lbl,sizeof(lbl),"%s %02d/%02d",
                      dayShortStr(tm_d->tm_wday+1),tm_d->tm_mon+1,tm_d->tm_mday);
             selectFontStyle(LIGHT_FONT,FAST_FONT);
@@ -3429,7 +3429,8 @@ static void showSkyView (SatState &s)
             if (sinEl<sinf(-6.0F*(float)M_PIF/180.0F)) continue;
             float el_d=asinf(sinEl)*180.0F/(float)M_PIF, cosEl=cosf(asinf(sinEl));
             float cosAz=(sindec-sinlat*sinEl)/(coslat*cosEl+1e-9F);
-            if(cosAz>1)cosAz=1; if(cosAz<-1)cosAz=-1;
+            if(cosAz>1)cosAz=1;
+            if(cosAz<-1)cosAz=-1;
             float az_d=acosf(cosAz)*180.0F/(float)M_PIF;
             if(sinH>0) az_d=360.0F-az_d;
             int sy=el2y(el_d);
@@ -3727,7 +3728,8 @@ static const struct {
                 float el_s=asinf(sinEl2)*180.0F/(float)M_PIF;
                 float cosEl2=cosf(asinf(sinEl2));
                 float cAz=(sd-sl2*sinEl2)/(cl2*cosEl2+1e-9F);
-                if(cAz>1)cAz=1; if(cAz<-1)cAz=-1;
+                if(cAz>1)cAz=1;
+                if(cAz<-1)cAz=-1;
                 float az_s=acosf(cAz)*180.0F/(float)M_PIF;
                 if(sinf(H_r)>0) az_s=360.0F-az_s;
                 int sx=az2x(az_s), sy=el2y(el_s);
