@@ -117,7 +117,7 @@ warn_local_edits() {
             echo
             echo "ERROR: There are local edits. stash or reset them before pushing"
             echo "       images to Docker Hub."
-            #exit 3
+            exit 3
         else
             echo
             echo "WARNING: there are local edits. If you didn't intend that, stash"
