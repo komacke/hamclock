@@ -7,3 +7,4 @@ Changes with latest release:
 - freq, mode, doppler for sats
 - upcoming space launches pane
 - fix init/saved pos'n on some X
+- satellite skyview with stars
