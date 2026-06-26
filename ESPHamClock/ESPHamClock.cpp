@@ -1713,6 +1713,7 @@ void drawAllSymbols()
     drawADIFSpotsOnMap();
     drawDXPedsOnMap();
     drawStormsOnMap();
+    drawLaunchesOnMap();
     drawDEMarker(false);
     drawDXMarker(false);
     drawFarthestPSKSpots();
