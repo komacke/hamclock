@@ -2438,6 +2438,11 @@ extern uint16_t stormCategoryColor (uint8_t cat, uint16_t wind_kt);
 
 extern bool updateLaunches     (const SBox &box, bool fresh);
 extern bool checkLaunchesTouch (const SCoord &s, const SBox &box);
+extern void drawLaunchesOnMap  (void);
+extern const char *getLaunchHoverLabel (const LatLong &ll);
+extern bool getLaunchPaneHover (const SCoord &ms, LatLong *ll, char *label, size_t label_len);
+extern bool getLaunchMapMenuInfo (const LatLong &ll, char *l1, size_t l1n, char *l2, size_t l2n,
+        char *l3, size_t l3n, const char **wiki_url);
 
 
 

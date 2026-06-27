@@ -394,13 +394,32 @@ static void drawMapPopup(void)
     bool have_storm = getStormMapMenuInfo (map_popup.ll,
                     storm_l1, sizeof(storm_l1), storm_l2, sizeof(storm_l2), storm_l3, sizeof(storm_l3));
 
-    MenuItem mitems[14];
+    // launch-site POI info, if the tap landed near a launch pad
+    char launch_l1[52], launch_l2[52], launch_l3[36];
+    const char *launch_wiki = NULL;
+    bool have_launch = getLaunchMapMenuInfo (map_popup.ll,
+                    launch_l1, sizeof(launch_l1), launch_l2, sizeof(launch_l2),
+                    launch_l3, sizeof(launch_l3), &launch_wiki);
+
+    MenuItem mitems[20];
     int n_menu = 0;
+    int mi_wiki = -1;                                           // set below iff a Wikipedia item is added
 
     if (have_storm) {
         mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, storm_l1, 0};
         mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, storm_l2, 0};
         mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, storm_l3, 0};
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, "-------------", 0};
+    }
+
+    if (have_launch) {
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, launch_l1, 0};
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, launch_l2, 0};
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, launch_l3, 0};
+        if (launch_wiki) {
+            mi_wiki = n_menu;
+            mitems[n_menu++] = {MENU_TOGGLE, false, 3, ZINDENT, "Open Launch Complex Wikipedia", 0};
+        }
         mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, "-------------", 0};
     }
 
@@ -437,6 +456,10 @@ static void drawMapPopup(void)
             newDX (map_popup.ll, NULL, NULL);
         if (mitems[mi_setde].set)
             newDE (map_popup.ll, NULL);
+
+        // open the launch site's Wikipedia page if requested
+        if (mi_wiki >= 0 && mitems[mi_wiki].set && launch_wiki)
+            openURL (launch_wiki);
 
         // reset else other stuff
         if (mitems[mi_rst].set) {

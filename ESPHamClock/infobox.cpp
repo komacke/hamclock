@@ -518,6 +518,9 @@ void drawInfoBox()
     char storm_pane_label[40];
     bool over_storm_pane = over_app && !over_map && !over_dxped && !over_pane
                                 && getStormPaneHover (ms, &dxc_ll, storm_pane_label, sizeof(storm_pane_label));
+    char launch_pane_label[80];
+    bool over_launch_pane = over_app && !over_map && !over_dxped && !over_pane && !over_storm_pane
+                                && getLaunchPaneHover (ms, &dxc_ll, launch_pane_label, sizeof(launch_pane_label));
     bool over_sdo = over_app && !over_map && (pp = findPaneChoiceNow(PLOT_CH_SDO)) != PANE_NONE
                         && inBox (ms, plot_b[pp]);
     bool over_moon = over_app && !over_map && (pp = findPaneChoiceNow(PLOT_CH_MOON)) != PANE_NONE
@@ -567,6 +570,18 @@ void drawInfoBox()
         was_city = true;
     }
 
+    // hovering a launch listing in the Launches pane: ring the launch site on the
+    // map and name it in the bar, same idea as the Storms pane above
+    if (over_launch_pane) {
+        drawIB_MapMarker (dxc_ll, minfo_b, true);
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        names_w = getTextWidth (launch_pane_label);
+        tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+        tft.print (launch_pane_label);
+        was_city = true;
+    }
+
     // that's all folks if no menu
     if (!draw_info)
         return;
@@ -594,11 +609,19 @@ void drawInfoBox()
 
         // storm hover wins over city name when cursor is close to a current storm position
         const char *storm_label = getStormHoverLabel (ll);
+        const char *launch_label = storm_label ? NULL : getLaunchHoverLabel (ll);
         if (storm_label) {
             tft.fillCircle (ms.x, ms.y, CDOT_R, RA8875_RED);
             names_w = getTextWidth (storm_label);
             tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
             tft.print (storm_label);
+            was_city = true;
+        } else if (launch_label) {
+            // cursor is over a launch-site marker: name it in the bar
+            tft.fillCircle (ms.x, ms.y, CDOT_R, RA8875_RED);
+            names_w = getTextWidth (launch_label);
+            tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+            tft.print (launch_label);
             was_city = true;
         } else {
             // move ll to city and draw if interested
