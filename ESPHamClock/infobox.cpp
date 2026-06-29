@@ -415,6 +415,59 @@ static void drawIB_DX (const SBox &minfo_b, const DXSpot &dx_s, const LatLong &d
     drawSBox (minfo_b, getBandColor(dx_s.kHz));
 }
 
+/* draw info for an Active Net, centered on its Net Control Station.
+ */
+static void drawIB_Net (const SBox &minfo_b, const ActiveNetInfo &ni)
+{
+    char buf[IB_MAXCHARS+1];
+    uint16_t tx = minfo_b.x;
+    uint16_t ty = minfo_b.y + 2;
+    uint16_t tw;
+    tft.setTextColor (RA8875_WHITE);
+
+    // NCS callsign on the first row
+    snprintf (buf, sizeof(buf), "%.*s", IB_MAXCHARS, ni.ncs[0] ? ni.ncs : "(net)");
+    tw = getTextWidth (buf);
+    tft.setCursor (tx + (view_btn_b.w-tw)/2, ty);
+    tft.printf (buf);
+
+    // "NCS" tag directly under the callsign
+    static const char ncs_tag[] = "NCS";
+    tw = getTextWidth (ncs_tag);
+    tft.setCursor (tx + (view_btn_b.w-tw)/2, ty += IB_LINEDY);
+    tft.printf (ncs_tag);
+
+    // grid under that, if known
+    if (ni.grid[0]) {
+        snprintf (buf, sizeof(buf), "%.4s", ni.grid);
+        tw = getTextWidth (buf);
+        tft.setCursor (tx + (view_btn_b.w-tw)/2, ty += IB_LINEDY);
+        tft.printf (buf);
+    } else
+        ty += IB_LINEDY;
+
+    // mode if known
+    if (!drawIB_Mode (ni.mode, tx+IB_INDENT, IB_LINEDY, ty))
+        ty += IB_LINEDY;
+
+    // frequency
+    drawIB_Freq ((long)(ni.kHz*1000), tx+IB_INDENT, IB_LINEDY, ty);
+
+    // check-in count
+    if (ni.chk[0]) {
+        tft.setCursor (tx+IB_INDENT, ty += IB_LINEDY);
+        tft.printf ("Ck %6.6s", ni.chk);
+    }
+
+    // local time, distance/bearing and weather at the NCS
+    drawIB_LMT (ni.ll, tx+IB_INDENT, IB_LINEDY, ty);
+    drawIB_DB  (ni.ll, tx+IB_INDENT, IB_LINEDY, ty);
+    drawIB_WX  (ni.ll, tx+IB_INDENT, IB_LINEDY, minfo_b.y+minfo_b.h-IB_LINEDY, ty);
+
+    // border in band color
+    drawSBox (minfo_b, getBandColor (ni.kHz));
+}
+
 /* draw info box for an arbitrary cursor location, not a spot
  */
 static void drawIB_Loc (const SBox &minfo_b, const LatLong &ll, const SCoord &ms)
@@ -521,11 +574,19 @@ void drawInfoBox()
     char launch_pane_label[80];
     bool over_launch_pane = over_app && !over_map && !over_dxped && !over_pane && !over_storm_pane
                                 && getLaunchPaneHover (ms, &dxc_ll, launch_pane_label, sizeof(launch_pane_label));
+    ActiveNetInfo net_info;
+    LatLong net_ll;
+    bool over_net_map  = over_map && !over_psk && !over_dxped && !over_spot
+                                && getClosestActiveNet (ll, &net_ll, &net_info);
+    bool over_net_pane = over_app && !over_map && !over_dxped && !over_pane
+                                && !over_storm_pane && !over_launch_pane
+                                && getActiveNetsPaneInfo (ms, &net_ll, &net_info);
+    bool over_net = over_net_map || over_net_pane;
     bool over_sdo = over_app && !over_map && (pp = findPaneChoiceNow(PLOT_CH_SDO)) != PANE_NONE
                         && inBox (ms, plot_b[pp]);
     bool over_moon = over_app && !over_map && (pp = findPaneChoiceNow(PLOT_CH_MOON)) != PANE_NONE
                         && inBox (ms, plot_b[pp]);
-    bool draw_info = over_map || over_psk || over_spot || over_pane || over_dxped;
+    bool draw_info = over_map || over_psk || over_spot || over_pane || over_dxped || over_net;
 
     // erase any previous city then reset was_city as flag for next time
     if (was_city) {
@@ -557,6 +618,8 @@ void drawInfoBox()
         drawIB_MapMarker (dxc_ll, minfo_b, false);
     else if (dxp)
         drawIB_MapMarker (dxp->ll, minfo_b, true);
+    else if (over_net)
+        drawIB_MapMarker (net_ll, minfo_b, over_net_pane);   // pane-hover always rings; map-hover skips if under box
 
     // hovering a storm name in the Storms pane: just ring it on the map and name it in the bar,
     // no info dropdown (there is no map location under the cursor to describe)
@@ -582,6 +645,18 @@ void drawInfoBox()
         was_city = true;
     }
 
+    // hovering a net (its dot on the map or its row in the pane): show the FULL net
+    // name in the bar -- the pane truncates it. Ring (above) and detail popup (below)
+    // still draw too.
+    if (over_net) {
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        names_w = getTextWidth (net_info.name);
+        tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+        tft.print (net_info.name);
+        was_city = true;
+    }
+
     // that's all folks if no menu
     if (!draw_info)
         return;
@@ -601,6 +676,9 @@ void drawInfoBox()
 
     else if (dxp)
         drawIB_DXPed (minfo_b, dxp, ms);
+
+    else if (over_net)
+        drawIB_Net (minfo_b, net_info);
 
     else if (over_spot || over_pane)
         drawIB_DX (minfo_b, dx_s, dxc_ll);

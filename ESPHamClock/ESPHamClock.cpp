@@ -1714,6 +1714,7 @@ void drawAllSymbols()
     drawDXPedsOnMap();
     drawStormsOnMap();
     drawLaunchesOnMap();
+    drawActiveNetsOnMap();
     drawDEMarker(false);
     drawDXMarker(false);
     drawFarthestPSKSpots();

@@ -38,6 +38,13 @@ typedef struct {
     char *name;                                 // malloced net name (large line, may be scrubbed to fit)
     char *info;                                 // malloced supporting info (small line)
     char *full_name;                            // malloced ORIGINAL net name, unscrubbed -- for web search URL
+    char *ncs;                                  // malloced NetControl callsign ("" if none) -- popup + map label
+    char  grid[MAID_CHARLEN];                   // NCS Maidenhead grid if backend supplied it ("" if not)
+    char  mode[MAX_SPOTMODE_LEN];               // operating mode -- popup
+    char  chk[8];                               // check-in count as text -- popup
+    float kHz;                                  // frequency in kHz -- band color + popup
+    LatLong ll;                                 // NCS location (from grid or call2LL)
+    bool  ll_ok;                                // whether ll/ncs resolved to a usable location
 } ActiveNetEntry;
 
 static ActiveNetEntry *anets;                   // malloced list, count in an_ss.n_data
@@ -52,10 +59,28 @@ static void freeActiveNets (void)
         free (anets[i].name);
         free (anets[i].info);
         free (anets[i].full_name);
+        free (anets[i].ncs);
     }
     free (anets);
     anets = NULL;
     an_ss.n_data = 0;
+}
+
+/* parse a NetLogger frequency string to kHz, for band-color lookup.
+ * Values arrive inconsistently as MHz ("7.153", "146.68") or bare kHz ("7140"),
+ * with or without a unit suffix; the backend normalizes them but either form
+ * may still appear. Disambiguate by magnitude: the lowest ham band is ~1.8 MHz,
+ * so a value < 1000 was entered as MHz and >= 1000 is already kHz. atof() reads
+ * the leading number and ignores any " kHz"/" MHz" suffix.
+ */
+static float anFreq2kHz (const char *s)
+{
+    if (!s || !s[0])
+        return 0.0F;
+    float v = (float) atof (s);
+    if (v <= 0)
+        return 0.0F;
+    return v < 1000.0F ? v*1000.0F : v;
 }
 
 /* measure the currently selected font's ascent (pixels above baseline) and full
@@ -320,7 +345,7 @@ static bool retrieveActiveNets (const SBox &box)
             continue;
 
         // split into fields
-        char *f[8];
+        char *f[9];
         int nf = splitCSV (line, f, NARRAY(f));
         if (nf < 5)
             continue;                           // not a usable data row
@@ -329,13 +354,14 @@ static bool retrieveActiveNets (const SBox &box)
         if (strcmp (f[0], "NetName") == 0)
             continue;
 
-        // map columns: 0 name, 1 freq, 2 band, 3 mode, 4 ncs, 5 checkins (6 logger, 7 started)
+        // map columns: 0 name, 1 freq, 2 band, 3 mode, 4 ncs, 5 checkins, 6 logger, 7 started, 8 grid
         const char *name = f[0];
         const char *freq = nf > 1 ? f[1] : "";
         const char *band = nf > 2 ? f[2] : "";
         const char *mode = nf > 3 ? f[3] : "";
         const char *ncs  = nf > 4 ? f[4] : "";
         const char *chk  = nf > 5 ? f[5] : "";
+        const char *grid = nf > 8 ? f[8] : "";  // backend-supplied NCS grid (Path B), may be ""
 
         if (name[0] == '\0')
             continue;                           // need at least a name
@@ -364,6 +390,21 @@ static bool retrieveActiveNets (const SBox &box)
         an.name = strdup (nbuf);
         an.info = strdup (info);
         an.full_name = strdup (name);            // keep unscrubbed original for the URL
+        an.ncs = strdup (ncs);
+
+        // popup fields
+        quietStrncpy (an.mode, mode, sizeof(an.mode));
+        quietStrncpy (an.chk,  chk,  sizeof(an.chk));
+        quietStrncpy (an.grid, grid, sizeof(an.grid));
+        an.kHz = anFreq2kHz (freq);
+
+        // resolve the NCS location: prefer the backend-supplied grid (Path B),
+        // else fall back to a cty.dat lookup of the NCS callsign (Path A).
+        an.ll_ok = false;
+        if (an.grid[0] && maidenhead2ll (an.ll, an.grid))
+            an.ll_ok = true;
+        else if (an.ncs[0] && call2LL (an.ncs, an.ll))   // call2LL normalizes ll for us
+            an.ll_ok = true;
     }
 
     fclose (fp);
@@ -483,4 +524,120 @@ bool checkActiveNetsTouch (const SCoord &s, const SBox &box)
     }
 
     return (false);
+}
+
+
+/* ---------------------------------------------------------------------------
+ * Map plotting and hover support.
+ *
+ * Each active net is plotted on the map at its Net Control Station location
+ * using the standard band-colored spot dot/label. Hovering a net -- either its
+ * row in the pane or its dot on the map -- rings it in red and pops up an info
+ * box (see infobox.cpp) showing the NCS call, "NCS" tag, freq, mode, etc.
+ * --------------------------------------------------------------------------- */
+
+/* fill a public ActiveNetInfo from one internal entry (for the info popup). */
+static void anFillInfo (const ActiveNetEntry &an, ActiveNetInfo *info)
+{
+    quietStrncpy (info->name, an.full_name, sizeof(info->name));   // full, untruncated name
+    quietStrncpy (info->ncs,  an.ncs,  sizeof(info->ncs));
+    quietStrncpy (info->grid, an.grid, sizeof(info->grid));
+    quietStrncpy (info->mode, an.mode, sizeof(info->mode));
+    quietStrncpy (info->chk,  an.chk,  sizeof(info->chk));
+    info->kHz = an.kHz;
+    info->ll  = an.ll;
+}
+
+/* build a minimal DXSpot from one net so we can reuse the standard spot drawer.
+ * single-ended: rx == tx so no path is implied (we never call the path drawer).
+ */
+static void anToSpot (const ActiveNetEntry &an, DXSpot &sp)
+{
+    sp = DXSpot{};                                       // value-init (DXSpot is non-trivial: has LatLong members)
+    quietStrncpy (sp.tx_call, an.ncs[0] ? an.ncs : an.full_name, sizeof(sp.tx_call));
+    quietStrncpy (sp.tx_grid, an.grid, sizeof(sp.tx_grid));
+    quietStrncpy (sp.mode,    an.mode, sizeof(sp.mode));
+    sp.tx_ll = an.ll;
+    sp.rx_ll = an.ll;
+    sp.kHz   = an.kHz;
+    sp.spotted = 0;
+}
+
+/* draw every located net on the map as a band-colored spot dot/label.
+ * called from drawMainPageMap() regardless of hover. No-op unless the pane is up.
+ */
+void drawActiveNetsOnMap (void)
+{
+    if (findPaneChoiceNow (PLOT_CH_ACTIVENETS) == PANE_NONE)
+        return;                                  // only when the pane is actually on screen
+
+    for (int i = 0; i < an_ss.n_data; i++) {
+        if (!anets[i].ll_ok)
+            continue;
+        DXSpot sp;
+        anToSpot (anets[i], sp);
+        drawSpotLabelOnMap (sp, LOME_TXEND, LOMD_ALL);   // band-colored dot + optional call label
+    }
+}
+
+/* if from_ll is within MAX_CSR_DIST of a net's NCS location, return that net's
+ * mark location and popup info. Used for hovering the dot on the map.
+ */
+bool getClosestActiveNet (LatLong &from_ll, LatLong *mark_ll, ActiveNetInfo *info)
+{
+    if (findPaneChoiceNow (PLOT_CH_ACTIVENETS) == PANE_NONE)
+        return (false);                          // only when the pane is actually on screen
+
+    int best = -1;
+    float best_d = 1e10F;
+    for (int i = 0; i < an_ss.n_data; i++) {
+        if (!anets[i].ll_ok)
+            continue;
+        float d = anets[i].ll.GSD (from_ll);
+        if (d < best_d) {
+            best_d = d;
+            best = i;
+        }
+    }
+
+    if (best < 0 || best_d*ERAD_M >= MAX_CSR_DIST)
+        return (false);
+
+    *mark_ll = anets[best].ll;
+    anFillInfo (anets[best], info);
+    return (true);
+}
+
+/* if ms is hovering over a net row in the Active Nets pane, return that net's
+ * mark location and popup info. Used for hovering a row in the list.
+ */
+bool getActiveNetsPaneInfo (const SCoord &ms, LatLong *mark_ll, ActiveNetInfo *info)
+{
+    if (an_ss.n_data == 0)
+        return (false);
+
+    PlotPane pp = findPaneChoiceNow (PLOT_CH_ACTIVENETS);
+    if (pp == PANE_NONE)
+        return (false);
+    const SBox &box = plot_b[pp];
+    if (!inBox (ms, box) || ms.y < box.y + AN_START_DY)
+        return (false);
+
+    // same row geometry the draw and touch paths use
+    int block_dy, name_base_off, info_base_off, max_vis;
+    anGeometry (box, block_dy, name_base_off, info_base_off, max_vis);
+    (void) name_base_off;
+    (void) info_base_off;
+    (void) max_vis;
+
+    int vis_row = (ms.y - (box.y + AN_START_DY)) / block_dy;
+    int net_i;
+    if (!an_ss.findDataIndex (vis_row, net_i) || net_i < 0 || net_i >= an_ss.n_data)
+        return (false);
+    if (!anets[net_i].ll_ok)
+        return (false);                          // nothing to ring/pop without a location
+
+    *mark_ll = anets[net_i].ll;
+    anFillInfo (anets[net_i], info);
+    return (true);
 }
