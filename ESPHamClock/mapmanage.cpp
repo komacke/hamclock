@@ -346,6 +346,7 @@ long max_age)
             noteVOACAPAttempt(now);
 
             WiFiClient client;
+            client.setTimeout(VOACAP_TIMEOUT_MS);
             if (client.connect(backend_host, backend_port)) {
                 mapMsg (0, "%s", msg);
                 char url[2*QBUFLEN];

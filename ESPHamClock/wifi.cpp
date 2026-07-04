@@ -877,7 +877,7 @@ static bool retrieveBandConditions (char *config)
     snprintf (cache_fn, sizeof(cache_fn), "bc-%010u.txt", stringHash(query)); // N.B. see cleanCache() above
 
     // open cache or get fresh
-    FILE *fp = openCachedFile (cache_fn, query, 12*3600L, 100);
+    FILE *fp = openCachedFile (cache_fn, query, 12*3600L, 100, VOACAP_TIMEOUT_MS);
     if (fp) {
 
         char buf[100];
