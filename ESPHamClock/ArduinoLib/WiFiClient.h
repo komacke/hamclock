@@ -62,6 +62,7 @@ public:
     void println (float f, int n);
     void flush(void){};
     IPAddress remoteIP(void);
+    void setTimeout(uint16_t ms) { read_pending_ms = ms; }
 
 private:
 

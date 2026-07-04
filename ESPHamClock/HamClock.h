@@ -1114,8 +1114,9 @@ extern void doNCDXFBoxTouch (TouchType tt, const SCoord &s);
 // special cleanCache ages
 #define CACHE_FOREVER 0                         // never remove matching files
 #define CACHE_NONE    1                         // remove all files older than 1 second
+#define VOACAP_TIMEOUT_MS 15000                 // timeout for VOACAP and band conditions endpoints
 
-extern FILE *openCachedFile (const char *fn, const char *url, int max_age, int min_size);
+extern FILE *openCachedFile (const char *fn, const char *url, int max_age, int min_size, int to_ms = 0);
 extern bool cleanCache (const char *contains, int max_age);
 
 
