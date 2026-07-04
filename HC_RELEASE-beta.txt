@@ -8,3 +8,4 @@ Changes with latest release:
 - upcoming space launches pane
 - fix init/saved pos'n on some X
 - satellite skyview with stars
+- voacap timeout increase to 15s
