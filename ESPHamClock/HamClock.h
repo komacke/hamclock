@@ -1250,6 +1250,20 @@ extern int getContests (char **&titles, char **&dates);
 extern bool updateActiveNets (const SBox &box, bool fresh);
 extern bool checkActiveNetsTouch (const SCoord &s, const SBox &box);
 
+// active net map plotting + hover info
+typedef struct {
+    char name[NV_TITLE_LEN];            // full, untruncated net name (for hover banner)
+    char ncs[MAX_SPOTCALL_LEN];         // Net Control callsign
+    char grid[MAX_SPOTGRID_LEN];        // NCS grid, may be ""
+    char mode[MAX_SPOTMODE_LEN];        // operating mode
+    char chk[8];                        // check-in count as text
+    float kHz;                          // frequency
+    LatLong ll;                         // NCS location
+} ActiveNetInfo;
+extern void drawActiveNetsOnMap (void);
+extern bool getClosestActiveNet (LatLong &from_ll, LatLong *mark_ll, ActiveNetInfo *info);
+extern bool getActiveNetsPaneInfo (const SCoord &ms, LatLong *mark_ll, ActiveNetInfo *info);
+
 #define LAUNCHES_INTERVAL (2)
 
 
