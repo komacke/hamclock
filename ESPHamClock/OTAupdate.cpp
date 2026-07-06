@@ -321,7 +321,7 @@ bool askOTAupdate(char *new_ver, bool show_pending, bool def_yes)
     // Check if beta version exists
     char beta_ver[32];
     bool beta_exists = false;
-    SBox beta_b = {650, 25, 100, 35};
+    SBox beta_b = {650, C_Y, 100, YNBOX_H};
     if (!show_pending && strchr(hc_version, 'b') == NULL) {
         beta_exists = getBetaVersion (beta_ver, sizeof(beta_ver));
         if (beta_exists) {
