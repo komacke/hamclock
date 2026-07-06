@@ -183,7 +183,7 @@ static bool getBetaVersion (char *beta_ver, uint16_t beta_verl)
                 snprintf (expected_prefix, sizeof(expected_prefix), "%d.%d", major, minor + 1);
                 if (strncmp (line, expected_prefix, strlen(expected_prefix)) == 0) {
                     found_beta = true;
-                    strncpy (beta_ver, line, beta_verl);
+                    snprintf (beta_ver, beta_verl, "%.*s", (int)(beta_verl - 1), line);
                 }
             }
         }
@@ -406,7 +406,7 @@ bool askOTAupdate(char *new_ver, bool show_pending, bool def_yes)
                         show_pending = true;
                         active_yes = true;
                         is_beta_flow = true;
-                        strncpy (new_ver, beta_ver, 20);
+                        snprintf (new_ver, 20, "%.19s", beta_ver);
 
                         int major, minor;
                         char spoof_ver[32];
