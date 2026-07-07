@@ -133,6 +133,134 @@ out:
     return (found_newer);
 }
 
+/* check if a beta version exists by spoofing next version in the User-Agent.
+ * return whether a beta exists, and if so copy its name to beta_ver.
+ */
+static bool getBetaVersion (char *beta_ver, uint16_t beta_verl)
+{
+    // check if we are on a stable version (no 'b')
+    if (strchr (hc_version, 'b') != NULL)
+        return false;
+
+    // construct spoof version
+    int major, minor;
+    if (sscanf (hc_version, "%d.%d", &major, &minor) != 2)
+        return false;
+
+    static char spoof_ver[32];
+    snprintf (spoof_ver, sizeof(spoof_ver), "%d.%db00", major, minor + 1);
+
+    // save current version pointer
+    const char *orig_version = hc_version;
+    hc_version = spoof_ver;
+
+    // query version.pl
+    WiFiClient v_client;
+    char line[100];
+    bool found_beta = false;
+    bool connected;
+
+    if (version_https) {
+        connected = connecthttpsHCGET (v_client, software_host, v_page);
+    }
+    else {
+        connected = v_client.connect (backend_host, backend_port);
+    }
+
+    if (connected) {
+        if (version_https == false) {
+            httpHCGET (v_client, backend_host, v_page);
+            if (!httpSkipHeader (v_client)) {
+                goto out;
+            }
+        }
+
+        if (getTCPLine (v_client, line, sizeof(line), NULL)) {
+            // Check if the returned version contains 'b'
+            if (strchr (line, 'b') != NULL) {
+                // Also verify it starts with major.minor+1 (e.g. 4.27)
+                char expected_prefix[32];
+                snprintf (expected_prefix, sizeof(expected_prefix), "%d.%d", major, minor + 1);
+                if (strncmp (line, expected_prefix, strlen(expected_prefix)) == 0) {
+                    found_beta = true;
+                    snprintf (beta_ver, beta_verl, "%.*s", (int)(beta_verl - 1), line);
+                }
+            }
+        }
+    }
+
+out:
+    v_client.stop();
+    hc_version = orig_version; // restore
+    return found_beta;
+}
+
+/* fetch release notes for the version corresponding to the spoofed UA version (or normal version if spoof_ua_ver is NULL)
+ */
+static bool fetchReleaseNotes (char ***lines_ptr, int *n_lines_ptr, const char *spoof_ua_ver)
+{
+    // free existing lines
+    char **lines = *lines_ptr;
+    int n_lines = *n_lines_ptr;
+    while (--n_lines >= 0)
+        free (lines[n_lines]);
+    free (lines);
+    *lines_ptr = NULL;
+    *n_lines_ptr = 0;
+
+    const char *orig_version = hc_version;
+    if (spoof_ua_ver)
+        hc_version = spoof_ua_ver;
+
+    WiFiClient v_client;
+    char line[128];
+    bool connected = false;
+    bool ok = false;
+
+    if (version_https) {
+        connected = connecthttpsHCGET (v_client, software_host, v_page);
+    }
+    else {
+        connected = v_client.connect (backend_host, backend_port);
+    }
+
+    if (connected) {
+        if (version_https == false) {
+            // query page
+            httpHCGET (v_client, backend_host, v_page);
+            if (!httpSkipHeader (v_client)) {
+                Serial.println ("Version query header is short");
+                goto out;
+            }
+        }
+
+        // skip next line which is new version number
+        if (!getTCPLine (v_client, line, sizeof(line), NULL)) {
+            Serial.println ("Info timed out");
+            goto out;
+        }
+
+        // remaining lines are changes, add to lines[]
+        char **new_lines = NULL;
+        int count = 0;
+        while (getTCPLine (v_client, line, sizeof(line), NULL)) {
+            maxStringW (line, SCR_X-SCR_M-LINDENT-1);       // insure fit
+            new_lines = (char **) realloc (new_lines, (count+1) * sizeof(char*));
+            if (!new_lines)
+                fatalError ("no memory for %d version changes", count+1);
+            new_lines[count++] = strdup (line);
+        }
+        *lines_ptr = new_lines;
+        *n_lines_ptr = count;
+        ok = true;
+    }
+  out:
+    v_client.stop();
+    hc_version = orig_version;
+    return ok;
+}
+
+
 /* draw as many of the given lines starting with top_line as will fit
  */
 static void drawChangeList (char **line, int top_line, int n_lines)
@@ -190,50 +318,26 @@ bool askOTAupdate(char *new_ver, bool show_pending, bool def_yes)
         drawStringInBox ("Ok", no_b, false, RA8875_WHITE);
     }
 
+    // Check if beta version exists
+    char beta_ver[32];
+    bool beta_exists = false;
+    SBox beta_b = {650, C_Y, 100, YNBOX_H};
+    if (!show_pending && strchr(hc_version, 'b') == NULL) {
+        beta_exists = getBetaVersion (beta_ver, sizeof(beta_ver));
+        if (beta_exists) {
+            drawStringInBox ("Beta", beta_b, false, RA8875_WHITE);
+        }
+    }
+
     // prep for potentially long wait
     closeGimbal();
     closeDXCluster();
 
     // read list of changes
     selectFontStyle (LIGHT_FONT, SMALL_FONT);
-    WiFiClient v_client;
     char **lines = NULL;                        // malloced list of malloced strings -- N.B. free!
     int n_lines = 0;
-    bool connected;
-    if (version_https) {
-        connected = connecthttpsHCGET (v_client, software_host, v_page);
-    }
-    else {
-        connected = v_client.connect (backend_host, backend_port);
-    }
-
-    if (connected) {
-        if (version_https == false) {
-            // query page
-            httpHCGET (v_client, backend_host, v_page);
-            if (!httpSkipHeader (v_client)) {
-                Serial.println ("Version query header is short");
-                goto out;
-            }
-        }
-
-        // skip next line which is new version number
-        if (!getTCPLine (v_client, line, sizeof(line), NULL)) {
-            Serial.println ("Info timed out");
-            goto out;
-        }
-
-        // remaining lines are changes, add to lines[]
-        while (getTCPLine (v_client, line, sizeof(line), NULL)) {
-            maxStringW (line, SCR_X-SCR_M-LINDENT-1);       // insure fit
-            lines = (char **) realloc (lines, (n_lines+1) * sizeof(char*));
-            if (!lines)
-                fatalError ("no memory for %d version changes", n_lines+1);
-            lines[n_lines++] = strdup (line);
-        }
-    }
-  out:
-    v_client.stop();
+    fetchReleaseNotes (&lines, &n_lines, NULL);
 
     // how many will fit
     const int max_lines = (tft.height() - FD - INFO_Y)/LH;
@@ -261,6 +365,7 @@ bool askOTAupdate(char *new_ver, bool show_pending, bool def_yes)
     drainTouch();
     Serial.println ("Waiting for update y/n ...");
     bool finished = false;
+    bool is_beta_flow = false;
     while (!finished && count_s > 0) {
 
         // wait for any user action
@@ -296,6 +401,39 @@ bool askOTAupdate(char *new_ver, bool show_pending, bool def_yes)
 
                 case CHAR_NONE:
                     // click?
+                    if (!show_pending && beta_exists && inBox (ui.tap, beta_b)) {
+                        // Switch to beta upgrade flow!
+                        show_pending = true;
+                        active_yes = true;
+                        is_beta_flow = true;
+                        snprintf (new_ver, 20, "%.19s", beta_ver);
+
+                        int major, minor;
+                        char spoof_ver[32];
+                        if (sscanf (hc_version, "%d.%d", &major, &minor) == 2) {
+                            snprintf (spoof_ver, sizeof(spoof_ver), "%d.%db00", major, minor + 1);
+                            fetchReleaseNotes (&lines, &n_lines, spoof_ver);
+                        }
+
+                        tft.fillRect (0, 0, tft.width(), INFO_Y, RA8875_BLACK);
+                        tft.setTextColor (RA8875_WHITE);
+                        selectFontStyle (BOLD_FONT, SMALL_FONT);
+                        tft.setCursor (LINDENT, Q_Y);
+                        snprintf (line, sizeof(line), "New version %s is available. Update now?  ... ", new_ver);
+                        tft.print (line);
+
+                        count_x = tft.getCursorX();
+                        count_y = tft.getCursorY();
+                        count_s = ASK_TO;
+                        tft.print(count_s);
+
+                        drawStringInBox ("No", no_b, !active_yes, RA8875_WHITE);
+                        drawStringInBox ("Yes", yes_b, active_yes, RA8875_WHITE);
+
+                        drawChangeList (lines, 0, n_lines);
+                        sb.init (max_lines, n_lines, sb_b);
+                        break;
+                    }
                     if (show_pending && inBox (ui.tap, yes_b)) {
                         drawStringInBox ("Yes", yes_b, true, RA8875_WHITE);
                         drawStringInBox ("No", no_b, false, RA8875_WHITE);
@@ -326,6 +464,10 @@ bool askOTAupdate(char *new_ver, bool show_pending, bool def_yes)
         tft.setCursor (count_x, count_y);
         tft.print(--count_s);
 
+    }
+
+    if (count_s == 0 && is_beta_flow) {
+        active_yes = false;
     }
 
     // clean up

@@ -971,7 +971,8 @@ static void checkTouch()
             if (askOTAupdate (new_version, true, false) && askPasswd ("upgrade", false))
                 doOTAupdate(new_version);
         } else {
-            (void) askOTAupdate (new_version, false, false);
+            if (askOTAupdate (new_version, false, false) && askPasswd ("upgrade", false))
+                doOTAupdate(new_version);
         }
         initScreen();
 #endif // NO_UPGRADE
