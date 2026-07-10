@@ -315,6 +315,21 @@ static void motdShowPopup()
                 int ulen = 0;
                 while (c+ulen < ll && !isspace((unsigned char)ls[c+ulen]))
                     ulen++;
+
+                // trim trailing sentence punctuation that isn't really part of the URL,
+                // e.g. the period ending "...check status at https://example.com/status."
+                // -- otherwise it gets swept in since it's not whitespace.
+                while (ulen > 0 && strchr (".,;:!?)]}'\"", ls[c+ulen-1]))
+                    ulen--;
+
+                // degenerate: trimming left nothing but the scheme itself (or less) --
+                // not a usable link, skip it rather than register a bogus entry.
+                int scheme_len = is_https ? 8 : 7;
+                if (ulen <= scheme_len) {
+                    c += ulen > 0 ? ulen - 1 : 0;
+                    continue;
+                }
+
                 snprintf (link_urls[n_links], sizeof(link_urls[0]), "%.*s", ulen, ls+c);
                 n_links++;
                 c += ulen - 1;              // skip past what we just matched
