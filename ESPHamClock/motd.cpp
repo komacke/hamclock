@@ -9,22 +9,26 @@
  */
 
 #include "HamClock.h"
+#include <ctype.h>
 
 // poll interval in seconds (how often we ask the server)
 #define MOTD_POLL_INTERVAL      (5*60)
 
 // popup geometry and behavior
-#define MOTD_POPUP_W            400             // popup width, pixels
-#define MOTD_POPUP_TIMEOUT      (30*1000)       // auto-close after this many ms
-#define MOTD_BORDER             6               // popup border, pixels
-#define MOTD_ROWH               14              // text row height, pixels
-#define MOTD_FONTW              6               // FAST_FONT character width, pixels
-#define MOTD_MAXLINES           24              // max lines we'll render
-#define MOTD_MAX_BYTES          8192            // max bytes we'll keep from the server
-#define MOTD_BG                 RGB565(40,40,200)  // popup background color
-#define MOTD_FG                 RA8875_WHITE       // popup text and border color
-#define MOTD_OK_W               40              // OK button width, pixels
-#define MOTD_OK_H               16              // OK button height, pixels
+//
+// N.B. this used to hand-roll its own popup box (fixed size/position, custom draw, custom
+// backing-store save/restore, custom OK button, custom input loop). That duplicated the
+// generic modal dialog machinery in menu.cpp (MenuItem/MenuInfo/runMenu()), which every
+// other confirmation/settings dialog in HamClock already uses -- including the near-identical
+// "Open webpage?" confirmation in activenets.cpp. This version builds one MenuItem per
+// wrapped line and calls runMenu(), which owns sizing, positioning, backing-store, the Ok
+// button, and the 30s timeout (MENU_TO in HamClock.h) centrally.
+#define MOTD_WRAP_W              400             // word-wrap target width, pixels (not a fixed box size)
+#define MOTD_FONTW               6               // FAST_FONT character width, pixels
+#define MOTD_MAXLINES            24              // max lines we'll render
+#define MOTD_MAX_BYTES           8192            // max bytes we'll keep from the server
+#define MOTD_MAX_URLS            4               // most http(s):// links we'll offer as "Open link" rows
+#define MOTD_INDENT              2               // row indent, pixels -- matches other small menus
 
 // filename to persist the hash of the last read message
 #define MOTD_HASH_FN            "motd_hash.txt"
@@ -233,8 +237,11 @@ void drawMOTDIcon()
 }
 
 
-/* render the MOTD text into a popup box. wait for the user to click anywhere in
- * the popup or for the timeout to elapse, then restore the underlying pixels.
+/* render the MOTD text as rows in the shared modal dialog engine (menu.cpp). Any detected
+ * http(s):// URL becomes its own "Open link" toggle row -- check it and press Ok to open it
+ * via openURL(), same mechanism used throughout the rest of HamClock (a new browser tab if
+ * this came from a live-web touch, else the local system browser). runMenu() owns sizing,
+ * positioning, backing-store save/restore, and the timeout (MENU_TO, currently 30s).
  */
 static void motdShowPopup()
 {
@@ -245,15 +252,13 @@ static void motdShowPopup()
     FontWeight saved_fw;
     FontSize saved_fs;
     getFontStyle (&saved_fw, &saved_fs);
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
 
-    // break the message into lines. break on existing newlines first, then word-wrap any
-    // line that is too wide to fit in the popup.
-    const int max_chars_per_line = (MOTD_POPUP_W - 2*MOTD_BORDER) / MOTD_FONTW;
-    typedef struct {
-        const char *start;
-        int len;
-    } LineRef;
-    LineRef lines[MOTD_MAXLINES];
+    // break the message into lines: existing newlines first, then word-wrap any line that's
+    // too wide. Each finished line becomes one MENU_LABEL row below, so it must be its own
+    // NUL-terminated string (MenuItem.label is const char *, not a length-bounded slice).
+    const int max_chars_per_line = (MOTD_WRAP_W - 2*MOTD_INDENT) / MOTD_FONTW;
+    static char line_bufs[MOTD_MAXLINES][MOTD_WRAP_W/MOTD_FONTW + 1];
     int n_lines = 0;
 
     const char *p = motd_text;
@@ -271,8 +276,7 @@ static void motdShowPopup()
                 brk--;
             if (brk == 0)
                 brk = max_chars_per_line;  // no space found -- hard break
-            lines[n_lines].start = p;
-            lines[n_lines].len = brk;
+            snprintf (line_bufs[n_lines], sizeof(line_bufs[0]), "%.*s", brk, p);
             n_lines++;
             p += brk;
             line_len -= brk;
@@ -284,8 +288,7 @@ static void motdShowPopup()
         }
 
         if (n_lines < MOTD_MAXLINES) {
-            lines[n_lines].start = p;
-            lines[n_lines].len = line_len;
+            snprintf (line_bufs[n_lines], sizeof(line_bufs[0]), "%.*s", line_len, p);
             n_lines++;
         }
 
@@ -297,96 +300,81 @@ static void motdShowPopup()
         return;
     }
 
-    // compute popup box size and position (centered on screen)
-    SBox popup_b;
-    popup_b.w = MOTD_POPUP_W;
-    popup_b.h = 2*MOTD_BORDER + n_lines*MOTD_ROWH + MOTD_BORDER + MOTD_OK_H + MOTD_BORDER;
-    popup_b.x = (tft.width()  - popup_b.w) / 2;
-    popup_b.y = (tft.height() - popup_b.h) / 2;
-
-    // save what was on screen underneath
-    uint8_t *backing_store = NULL;
-    if (!tft.getBackingStore (backing_store, popup_b.x, popup_b.y, popup_b.w, popup_b.h)) {
-        Serial.printf ("MOTD: failed to capture pixels for popup\n");
-        selectFontStyle (saved_fw, saved_fs);
-        return;
+    // find up to MOTD_MAX_URLS http(s):// links among the wrapped lines. Each becomes its
+    // own toggle row below the message text, same idiom as e.g. the "Show web page" toggle
+    // in contests.cpp: check it, press Ok, and we open it afterward.
+    static char link_urls[MOTD_MAX_URLS][300];
+    int n_links = 0;
+    for (int i = 0; i < n_lines && n_links < MOTD_MAX_URLS; i++) {
+        char *ls = line_bufs[i];
+        int ll = strlen (ls);
+        for (int c = 0; c < ll && n_links < MOTD_MAX_URLS; c++) {
+            bool is_http  = (ll - c >= 7 && strncmp (ls+c, "http://", 7) == 0);
+            bool is_https = (ll - c >= 8 && strncmp (ls+c, "https://", 8) == 0);
+            if (is_http || is_https) {
+                int ulen = 0;
+                while (c+ulen < ll && !isspace((unsigned char)ls[c+ulen]))
+                    ulen++;
+                snprintf (link_urls[n_links], sizeof(link_urls[0]), "%.*s", ulen, ls+c);
+                n_links++;
+                c += ulen - 1;              // skip past what we just matched
+            }
+        }
     }
 
-    // draw popup background + border
-    fillSBox (popup_b, MOTD_BG);
-    drawSBox (popup_b, MOTD_FG);
-
-    // draw text
-    selectFontStyle (LIGHT_FONT, FAST_FONT);
-    tft.setTextColor (MOTD_FG);
-    uint16_t text_x = popup_b.x + MOTD_BORDER;
-    uint16_t text_y = popup_b.y + MOTD_BORDER;
-    for (int i = 0; i < n_lines; i++) {
-        tft.setCursor (text_x, text_y);
-        tft.printf ("%.*s", lines[i].len, lines[i].start);
-        text_y += MOTD_ROWH;
+    // build a self-explanatory caption for each link's toggle row instead of just
+    // repeating the raw URL text -- it already appears once in the message above,
+    // so showing it again unlabeled just looks like a stray duplicate rather than
+    // an action. This also makes the check-box-then-Ok action obvious at a glance.
+    static char link_labels[MOTD_MAX_URLS][40];
+    for (int i = 0; i < n_links; i++) {
+        if (n_links == 1)
+            snprintf (link_labels[i], sizeof(link_labels[0]), "Open link in browser");
+        else
+            snprintf (link_labels[i], sizeof(link_labels[0]), "Open link #%d in browser", i+1);
     }
 
-    // draw OK button centered horizontally at the bottom of the popup
+    // build one insensitive label row per wrapped line, a blank separator if there are
+    // any links, then one toggle row per detected link
+    const int n_items = n_lines + (n_links > 0 ? 1 : 0) + n_links;
+    static MenuItem mitems[MOTD_MAXLINES + 1 + MOTD_MAX_URLS];
+    int mi = 0;
+    for (int i = 0; i < n_lines; i++)
+        mitems[mi++] = {MENU_LABEL, false, 0, MOTD_INDENT, line_bufs[i], NULL};
+    if (n_links > 0)
+        mitems[mi++] = {MENU_BLANK, false, 0, 0, NULL, NULL};
+    const int link_item0 = mi;
+    for (int i = 0; i < n_links; i++)
+        mitems[mi++] = {MENU_TOGGLE, false, (uint8_t)(1+i), MOTD_INDENT, link_labels[i], NULL};
+
+    // let runMenu() pick the exact size; just seed a reasonable starting position
+    SBox menu_b;
+    // Centered on the map (not the whole screen) so this reliably overlaps map_b --
+    // that's what makes runMenu()'s boxesOverlap(menu_b, map_b) -> tft.drawPR() check
+    // fire, a synchronous "flush and wait" that our previous side-panel position
+    // likely never triggered at all. runMenu() still clamps back on-screen if needed.
+    menu_b.x = map_b.x + (map_b.w - MOTD_WRAP_W) / 2;
+    menu_b.y = map_b.y + map_b.h / 4;
+    menu_b.w = 0;
+    menu_b.h = 0;
     SBox ok_b;
-    ok_b.w = MOTD_OK_W;
-    ok_b.h = MOTD_OK_H;
-    ok_b.x = popup_b.x + (popup_b.w - ok_b.w) / 2;
-    ok_b.y = popup_b.y + popup_b.h - MOTD_BORDER - ok_b.h;
-    fillSBox (ok_b, RA8875_BLACK);
-    drawSBox (ok_b, MOTD_FG);
-    static const char ok_str[] = "OK";
-    uint16_t ok_str_w = getTextWidth (ok_str);
-    uint16_t ok_text_x = ok_b.x + (ok_b.w - ok_str_w)/2;
-    uint16_t ok_text_y = ok_b.y + (ok_b.h - 7)/2;
-    tft.setCursor (ok_text_x, ok_text_y);
-    tft.print (ok_str);
 
-    // wait for input. We loop so we can give the OK button visible "got it" feedback
-    // before closing -- otherwise the popup just vanishes and users wonder if they hit
-    // the button or just any random pixel. Any tap or key inside the popup will close.
-    UserInput ui = {
-        popup_b,
-        UI_UFuncNone,
-        UF_UNUSED,
-        MOTD_POPUP_TIMEOUT,
-        UF_CLOCKSOK,
-        {0,0}, TT_NONE, '\0', false, false
-    };
-    while (waitForUser (ui)) {
-        // closing event: ESC, CR, or any tap inside the popup
-        bool tap_in_ok = (ui.kb_char == CHAR_NONE) && inBox (ui.tap, ok_b);
-        bool tap_in_popup = (ui.kb_char == CHAR_NONE) && inBox (ui.tap, popup_b);
-        bool key_close = ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL || ui.kb_char == CHAR_ESC;
-
-        if (tap_in_ok || key_close) {
-            // flash the OK button yellow so the user knows we registered the click
-            fillSBox (ok_b, RA8875_YELLOW);
-            drawSBox (ok_b, MOTD_FG);
-            tft.setTextColor (RA8875_BLACK);
-            tft.setCursor (ok_text_x, ok_text_y);
-            tft.print (ok_str);
-            if (boxesOverlap (popup_b, map_b))
-                tft.drawPR();
-            wdDelay (120);
-            break;
+    // Back to UF_CLOCKSOK: now that the popup is centered on the map (see menu_b setup
+    // above) rather than the screen corner where the clock pane lives, they shouldn't
+    // overlap, so there's no need to freeze the clock while this is up.
+    MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_NOCANCEL, 1, n_items, mitems};
+    if (runMenu (menu)) {
+        for (int i = 0; i < n_links; i++) {
+            if (mitems[link_item0+i].set) {
+                Serial.printf ("MOTD: opening link %s\n", link_urls[i]);
+                openURL (link_urls[i]);
+            }
         }
-
-        if (tap_in_popup) {
-            // click anywhere else in popup also closes, but without the flash
-            break;
-        }
-
-        // tap was outside the popup -- ignore and keep waiting
     }
-    drainTouch();
-
-    // restore screen contents underneath the popup
-    if (!tft.setBackingStore (backing_store, popup_b.x, popup_b.y, popup_b.w, popup_b.h))
-        Serial.printf ("MOTD: failed to restore pixels beneath popup\n");
 
     selectFontStyle (saved_fw, saved_fs);
 }
+
 
 
 /* called by the central click dispatcher when the user taps the mailbox icon.

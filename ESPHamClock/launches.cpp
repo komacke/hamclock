@@ -384,6 +384,24 @@ static bool prunePastLaunches (void)
     return (any_pruned);
 }
 
+/* qsort comparator: order by NET time descending, ie furthest-away launch first.
+ * ScrollState treats the data array as oldest-first / newest-last and, via
+ * scrollToNewest(), always anchors the initial view on the *last* entries in the
+ * array (see scrollstate.cpp). Storing the soonest launch last -- instead of the
+ * Launch Library API's native soonest-first order -- is what makes the pane open
+ * showing the next launch on top instead of the one furthest in the future.
+ */
+static int launchNetDescCompar (const void *a, const void *b)
+{
+    const LaunchEntry *la = (const LaunchEntry *) a;
+    const LaunchEntry *lb = (const LaunchEntry *) b;
+    if (la->net_t > lb->net_t)
+        return (-1);
+    if (la->net_t < lb->net_t)
+        return (1);
+    return (0);
+}
+
 /* Fetch and parse launches.txt from OHB cache.
  * Returns true if successful.
  */
@@ -504,6 +522,11 @@ static bool retrieveLaunches (const SBox &box)
                        ls_ss.n_data, le.status, le.name, le.url,
                        le.has_loc ? " (mapped)" : "");
     }
+
+    // API returns launches soonest-first; re-sort furthest-first (see
+    // launchNetDescCompar) so scrollToNewest() lands on the soonest launch.
+    if (ls_ss.n_data > 1)
+        qsort (launches, ls_ss.n_data, sizeof(LaunchEntry), launchNetDescCompar);
 
 out:
     fclose (fp);
