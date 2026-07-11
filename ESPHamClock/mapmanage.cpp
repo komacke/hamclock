@@ -880,18 +880,18 @@ void drawMapScale()
         {100,  0x44CC44, 0},
     };
 
-    // CM_TROPO — surface refractivity N-units.  Low N = dry/cold (dark blue),
-    // high N = warm/humid (red).  Ducting becomes likely above ~370 N-units.
     static const MapScalePoint tropo_scale[] = {
-        {280, 0x00005A, 0},   // near-black — very dry, no ducting
-        {295, 0x001E8C, 0},   // dark blue
-        {310, 0x0050C8, 0},   // blue — below normal
-        {325, 0x00A0D2, 1},   // cyan — normal
-        {340, 0x50D250, 1},   // green — slightly enhanced
-        {355, 0xA0E132, 1},   // yellow-green — superrefractive
-        {370, 0xF0C800, 1},   // yellow — ducting possible
-        {395, 0xFF8200, 1},   // orange — ducting probable
-        {420, 0xE61E00, 1},   // red — strong ducting
+        {0,  0x444444, 0},  
+        {1,  0x8603F1, 0},   
+        {2,  0x01B4EF, 1},   
+        {3,  0x02D083, 1},   
+        {4,  0xA5EB01, 1},  
+        {5,  0xEFDE05, 1},   
+        {6,  0xE9B10C, 1},   
+        {7,  0xFF8000, 1},   
+        {8,  0xFF0000, 0},   
+        {9,  0xFF80C0, 1},   
+        {10, 0xFFB4DC, 1},   
     };
 
     // set these depending on map
@@ -925,8 +925,8 @@ void drawMapScale()
     case CM_TROPO:
         msp = tropo_scale;
         n_scale = NARRAY(tropo_scale);
-        n_labels = 9;
-        title = "N-units";
+        n_labels = 11;
+        title = "Index";
         break;
     case CM_WX:
         msp = w_scale;
@@ -1002,6 +1002,55 @@ void drawMapScale()
             v = space_wx[SPCWX_AURORA].value;
             v_ok = true;
         }
+    } else if (core_map == CM_TROPO) {
+        // N.B. unlike DRAP/Aurora above, there's no independent "current value" feed to poll --
+        // Hepburn doesn't publish one and neither do we. Instead read whatever pixel is actually
+        // on screen under the cursor right now (getPixelRaw already reflects the correct
+        // projection/zoom/pan and day-night blend, so none of that needs re-deriving here) and
+        // nearest-match it against the same 11 colours the legend itself is drawn from, so this
+        // stays correct automatically if tropo_scale[] is ever retuned.
+        //
+        // The raw tropo_scale colour never actually appears on screen unblended -- the rendered
+        // map is always tinted (see update_tropo_maps.sh's make_bmp_v4_rgb565_topdown: 20% blend
+        // toward 205/220/205 by day, brightness x0.15 by night), so match against BOTH tinted
+        // candidates, derived here from the same table, and take whichever is closer. Verified
+        // this is exact away from the day/night terminator; in the narrow blended band right at
+        // the terminator itself, compositing two different colours can produce a third colour
+        // that's genuinely closer to some OTHER band's tinted variant -- that's an inherent limit
+        // of colour-matching a blended pixel, not something fixable here.
+        uint16_t mx, my;
+        if (tft.getMouse (&mx, &my)) {
+            SCoord ms = {mx, my};
+            uint8_t pr, pg, pb;
+            if (overMap(ms) && tft.getPixelRaw (mx, my, &pr, &pg, &pb)) {
+                int best_i = -1;
+                long best_d2 = 0;
+                for (unsigned i = 0; i < n_scale; i++) {
+                    uint8_t cr = _MS_PTC(i) >> 16, cg = (_MS_PTC(i) >> 8) & 0xFF, cb = _MS_PTC(i) & 0xFF;
+                    long ddr = (long)pr - (long)(cr*0.8F + 205*0.2F);
+                    long ddg = (long)pg - (long)(cg*0.8F + 220*0.2F);
+                    long ddb = (long)pb - (long)(cb*0.8F + 205*0.2F);
+                    long dday2 = ddr*ddr + ddg*ddg + ddb*ddb;
+                    long dnr = (long)pr - (long)(cr*0.15F);
+                    long dng = (long)pg - (long)(cg*0.15F);
+                    long dnb = (long)pb - (long)(cb*0.15F);
+                    long dnight2 = dnr*dnr + dng*dng + dnb*dnb;
+                    long d2 = dday2 < dnight2 ? dday2 : dnight2;
+                    if (best_i < 0 || d2 < best_d2) {
+                        best_d2 = d2;
+                        best_i = (int)i;
+                    }
+                }
+                if (best_i >= 0) {
+                    v = _MS_PTV(best_i);
+                    v_ok = true;
+                }
+            }
+        }
+        // v_ok simply stays false whenever the cursor isn't over the map (or app), which is exactly
+        // what makes the marker disappear next redraw -- drawMapScale() repaints the whole gradient
+        // bar unconditionally every call (see the loop above), so there is nothing to explicitly
+        // erase; an absent marker this time overwrites a present one from last time for free.
     }
     if (v_ok) {
         // find marker but beware range overflow and leave room for full width
