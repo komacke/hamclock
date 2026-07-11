@@ -846,6 +846,24 @@ bool Adafruit_RA8875::getRawPix(uint8_t *rgb24, int npix)
         return (true);
 }
 
+/* return the 8-bit RGB of the single pixel currently rendered at app coords x,y (already reflects
+ * whatever projection, zoom/pan and day/night blend is presently on screen -- no need to re-derive
+ * any of that here). x,y are in app coords, same units as getMouse()/getBackingStore().
+ * return false if out of bounds.
+ */
+bool Adafruit_RA8875::getPixelRaw (uint16_t x, uint16_t y, uint8_t *r, uint8_t *g, uint8_t *b)
+{
+        int fx = x * SCALESZ;
+        int fy = y * SCALESZ;
+        if (fx < 0 || fy < 0 || fx >= FB_XRES || fy >= FB_YRES)
+            return (false);
+        uint32_t p32 = FBPIXTORGB32(fb_canvas[fy*FB_XRES + fx]);
+        *r = (p32 >> 16) & 0xFF;
+        *g = (p32 >> 8) & 0xFF;
+        *b = p32 & 0xFF;
+        return (true);
+}
+
 void Adafruit_RA8875::setFont (const GFXfont *f)
 {
 	if (f)
