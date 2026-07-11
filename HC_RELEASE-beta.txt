@@ -9,3 +9,4 @@ Changes with latest release:
 - fix init/saved pos'n on some X
 - satellite skyview with stars
 - voacap timeout increase to 15s
+- url support in motd
