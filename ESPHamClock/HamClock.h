@@ -416,7 +416,9 @@ typedef enum {
     X(PLOT_CH_DST,          "Disturbance")       \
     X(PLOT_CH_STORMS,       "Storms")           \
     X(PLOT_CH_ACTIVENETS,   "Active_Nets")      \
-    X(PLOT_CH_LAUNCHES,     "Launches")
+    X(PLOT_CH_LAUNCHES,     "Launches")          \
+    X(PLOT_CH_HFCOND,       "HF_Bands")           \
+    X(PLOT_CH_VHFCOND,      "VHF_Cond")
 
 #define X(a,b)  a,              // expands PLOTNAMES to each enum and comma
 typedef enum {
@@ -2161,6 +2163,10 @@ typedef struct {
 
 extern bool installBMPBox (GenReader &gr, const SBox &box, ImageRefit fit, Message &ynot);
 extern void plotBandConditions (const SBox &box, int busy, const BandCdtnMatrix *bmp, char *config_str);
+extern void plotHFConditions (const SBox &box);         // hamqsl.cpp
+extern void plotVHFConditions (const SBox &box);        // hamqsl.cpp
+extern bool updateHFConditions (const SBox &box);       // hamqsl.cpp
+extern bool updateVHFConditions (const SBox &box);      // hamqsl.cpp
 extern bool plotXY (const SBox &box, float x[], float y[], int nxy, const char *xlabel,
         const char *ylabel, uint16_t color, float y_min, float y_max, float big_value);
 extern bool plotXYstr (const SBox &box, float x[], float y[], int nxy, const char *xlabel,
@@ -2873,6 +2879,7 @@ extern void drawDigit (const SBox &b, int digit, uint16_t lt, uint16_t bg, uint1
 
 // aurora info
 #define AURORA_INTERVAL         (1700)                  // interval, seconds
+#define HQ_INTERVAL             (60)                    // HamQSL HF/VHF pane refresh, secs
 #define AURORA_COLOR            RGB565(100,200,150)     // plot color
 #define AURORA_MAXPTS           (48)                    // every 30 minutes for 24 hours
 #define AURORA_MAXAGE           (24.0F)                 // max age to plot, hours

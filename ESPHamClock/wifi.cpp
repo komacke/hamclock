@@ -2419,6 +2419,24 @@ void updateWiFi(void)
             }
             break;
 
+        case PLOT_CH_HFCOND:
+            if (t0 >= next_update[pp]) {
+                if (updateHFConditions(box))
+                    next_update[pp] = nextPaneUpdate (pc, HQ_INTERVAL);
+                else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
+        case PLOT_CH_VHFCOND:
+            if (t0 >= next_update[pp]) {
+                if (updateVHFConditions(box))
+                    next_update[pp] = nextPaneUpdate (pc, HQ_INTERVAL);
+                else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
         case PLOT_CH_DXPEDS:
             if (t0 >= next_update[pp]) {
                 if (updateDXPeds(box, fresh_redraw[pc])) {
