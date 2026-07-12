@@ -411,7 +411,7 @@ static uint16_t vhfColor (const char *v)
 static void vhfShort (const char *in, char *out, size_t out_len)
 {
     if (!in[0] || strcasestr (in, "Band Closed")) {
-        strncpy (out, "Closed", out_len); out[out_len-1] = 0; return;
+        quietStrncpy (out, "Closed", out_len); return;
     }
     // "<freq>MHz ES" -> "<freq> ES"  (e.g. "50MHz ES" -> "50 ES", "50/70/144MHz ES" -> "50/70/144 ES")
     const char *m = strstr (in, "MHz");
@@ -422,7 +422,7 @@ static void vhfShort (const char *in, char *out, size_t out_len)
         snprintf (out + n, out_len - n, " ES");
         return;
     }
-    strncpy (out, in, out_len); out[out_len-1] = 0;
+    quietStrncpy (out, in, out_len);
 }
 
 void plotVHFConditions (const SBox &box)
