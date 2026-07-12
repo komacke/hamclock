@@ -2757,10 +2757,12 @@ void Adafruit_RA8875::mouseThread (void)
                         mouse_y += iev.value;
                         fb_dirty = true;
                     } else if (iev.type == EV_KEY && (iev.code == BTN_TOUCH || iev.code == BTN_LEFT)) {
-                        if (iev.value > 0)
+                        if (iev.value > 0) {
                             mouse_downs++;
-                        else
+                            mouse_button = 1;
+                        } else {
                             mouse_ups++;
+                        }
                         fb_dirty = true;
                     }
 
