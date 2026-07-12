@@ -1009,11 +1009,14 @@ bool updateDXCluster (const SBox &box, bool fresh)
 
     if (dxc_ss.atNewest()) {
         // rebuild displayed spots list when master list changes or oldest spot ages out
-        if (dxc_spots_changed || (n_dxspots > 0 && dxc_spots[0].spotted < myNow() - MAXKEEP_DT)) {
+        bool map_spots_changed = dxc_spots_changed;
+        if (map_spots_changed || (n_dxspots > 0 && dxc_spots[0].spotted < myNow() - MAXKEEP_DT)) {
             rebuildDXWatchList();
             dxc_spots_changed = false;
             dxc_ss.drawNewSpotsSymbol (false, false);           // insure off
             scrolledaway_tm = 0;
+            if (findPaneForChoice(PLOT_CH_DXCLUSTER) != PANE_NONE)
+                scheduleMapRedraw();
         }
         ROTHOLD_CLR(PLOT_CH_DXCLUSTER);                         // resume rotation
     } else {
