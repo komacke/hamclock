@@ -366,11 +366,8 @@ void drawNCDXFLightningStats (void)
  */
 void resetLightning (void)
 {
-    bool had_strikes = n_strikes > 0;
     n_strikes  = 0;
     next_fetch = 0;
-    if (had_strikes || lightning_on)
-        scheduleMapRedraw();
 }
 
 /* Restore NV state at startup.
@@ -418,10 +415,9 @@ void updateLightning (void)
     if (now < next_fetch)
         return;
 
-    if (fetchLightning()) {
+    if (fetchLightning())
         next_fetch = now + LIGHTNING_INTERVAL;
-        scheduleMapRedraw();
-    } else
+    else
         next_fetch = now + LIGHTNING_RETRY_SECS;
 }
 

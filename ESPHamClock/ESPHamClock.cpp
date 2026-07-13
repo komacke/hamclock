@@ -1042,7 +1042,6 @@ void newDX (LatLong &ll, const char grid[MAID_CHARLEN], const char *ovprefix)
 
     // enable great path unless very close to DE
     dxpath_time = ERAD_M * dx_ll.GSD(de_ll) > DEDX_MINPATH ? millis() : 0;
-    scheduleMapRedraw();
 
     // just call initEarthMap??
     drawDXInfo ();

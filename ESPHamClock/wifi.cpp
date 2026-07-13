@@ -2663,7 +2663,6 @@ void scheduleFreshMap (void)
         return;
     }
     next_map = 0;
-    scheduleMapRedraw();
 }
 
 /* return current NTP response time list.

@@ -57,7 +57,6 @@ static DXPCredit *credits;                      // malloced list of each credit
 static int n_credits;                           // n credits
 static ADIFWList *adif_worked;                  // malloced list of ADIF worked band+mode
 static int n_adif_worked;                       // n adif_worked[]
-static bool dxpeds_spots_changed;               // set when dxcluster spot state changes map markers
 
 
 // NV_DXPEDS bits
@@ -823,14 +822,8 @@ bool updateDXPeds (const SBox &box, bool fresh)
             }
         }
 
-        bool markers_changed = checkActiveDXPeds() || fresh;
-        if (markers_changed)
+        if (checkActiveDXPeds() || fresh)
             drawDXPedsPane (box);
-
-        if ((markers_changed || dxpeds_spots_changed) && findPaneForChoice(PLOT_CH_DXPEDS) != PANE_NONE) {
-            scheduleMapRedraw();
-            dxpeds_spots_changed = false;
-        }
 
     } else {
 
@@ -1002,10 +995,8 @@ bool getClosestDXPed (LatLong &ll, DXPedEntry *&dxp)
  */
 void tellDXPedsSpotChanged (void)
 {
-    if (findPaneForChoice (PLOT_CH_DXPEDS) != PANE_NONE && dxp_ss.atNewest()) {
-        dxpeds_spots_changed = true;
+    if (findPaneForChoice (PLOT_CH_DXPEDS) != PANE_NONE && dxp_ss.atNewest())
         scheduleNewPlot (PLOT_CH_DXPEDS);
-    }
 }
 
 
