@@ -10,3 +10,5 @@ Changes with latest release:
 - satellite skyview with stars
 - voacap timeout increase to 15s
 - url support in motd
+- yo3gnd cpu reduction
+- hamqsl band conditions
