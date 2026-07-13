@@ -32,7 +32,8 @@ bool dx_info_for_sat;                   // global to indicate whether dx_info_b 
 #define SAT_TOUCH_R     20U             // touch radius, pixels
 #define SAT_UP_R        2               // dot radius when up
 #define PASS_STEP       10.0F           // pass step size, seconds
-#define TBORDER         50              // top border
+#define TBORDER         94              // top border
+#define HDR_TXT_Y       37              // fixed y for header title/legend text, indep of TBORDER
 #define FONT_H          (dx_info_b.h/6) // height for SMALL_FONT
 #define FONT_D          5               // font descent
 #define SAT_COLOR       RA8875_WHITE    // overall annotation color
@@ -42,7 +43,7 @@ bool dx_info_for_sat;                   // global to indicate whether dx_info_b 
 #define GONE_COLOR      RGB565(255,90,90) // table text color for a sat that has gone missing
 #define SOON_MINS       10              // "soon", minutes
 #define CB_SIZE         20              // size of selection check box
-#define CELL_H          32              // display cell height
+#define CELL_H          29              // display cell height
 #define N_COLS          4               // n cols in name table
 #define CELL_W          (800/N_COLS)    // display cell width
 #define N_ROWS          ((480-TBORDER)/CELL_H)  // n rows in name table
@@ -1098,7 +1099,7 @@ static int askSat (char selections[MAX_ACTIVE_SATS][NV_SATNAME_LEN])
     tft.setTextColor (RA8875_WHITE);
 
     // show title and prompt
-    uint16_t title_y = 3*TBORDER/4;
+    uint16_t title_y = HDR_TXT_Y;
     selectFontStyle (BOLD_FONT, SMALL_FONT);
     tft.setCursor (5, title_y);
     tft.print ("Select satellites (two)");
