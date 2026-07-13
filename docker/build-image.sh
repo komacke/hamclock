@@ -152,13 +152,13 @@ build_image() {
     echo "Building image for '$IMAGE_BASE:$TAG'"
     pushd "$HERE/.." >/dev/null
 
-    echo $GIT_VERSION > git.version
     poke_version_cpp
 
     if [ $MULTI_PLATFORM == true ]; then
         docker buildx build \
             $NOCACHE_ARG \
             --pull \
+            --build-arg GIT_VERSION=${GIT_VERSION} \
             --build-arg HC_UID=$HC_UID \
             --build-arg HC_GID=$HC_GID \
             $SET_HC_SIZE \
@@ -172,6 +172,7 @@ build_image() {
         docker build \
             $NOCACHE_ARG \
             --pull \
+            --build-arg GIT_VERSION=${GIT_VERSION} \
             --build-arg HC_UID=$HC_UID \
             --build-arg HC_GID=$HC_GID \
             $SET_HC_SIZE \
@@ -182,7 +183,6 @@ build_image() {
     fi
 
     poke_version_cpp restore
-    rm -f git.version
 
     popd >/dev/null
 }
