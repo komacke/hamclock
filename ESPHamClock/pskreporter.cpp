@@ -511,6 +511,9 @@ bool updatePSKReporter (const SBox &box, bool force)
     // display whatever we got regardless
     drawPSKPane (box);
 
+    if (last_ok && findPaneForChoice(PLOT_CH_PSK) != PANE_NONE)
+        scheduleMapRedraw();
+
     // reply
     return (last_ok);
 }
