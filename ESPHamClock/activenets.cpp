@@ -8,8 +8,8 @@
  *
  *     NetName,Frequency,Band,Mode,NetControl,Checkins,Logger,Started
  *
- * Each net is drawn as two lines: the net name in a large font with a smaller
- * supporting line beneath it (frequency, band, mode, net control, check-ins).
+ * Each net is drawn as two lines in a small font: the net name (bright white)
+ * with a dimmer supporting line beneath it (frequency, band, mode, check-ins).
  * The Logger column is intentionally not displayed.
  */
 
@@ -48,7 +48,7 @@ typedef struct {
 } ActiveNetEntry;
 
 static ActiveNetEntry *anets;                   // malloced list, count in an_ss.n_data
-static char subtitle[40];                       // count / freshness line under the title
+static char subtitle[40];                       // credit line under the title
 static ScrollState an_ss;                       // scrolling context
 
 /* free the anets[] list and reset count.
@@ -114,7 +114,7 @@ static void anGeometry (const SBox &box, int &block_dy, int &name_base_off,
 {
     int n_asc, n_h, i_asc, i_h;
 
-    selectFontStyle (LIGHT_FONT, SMALL_FONT);
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
     fontVMetrics (n_asc, n_h);
     selectFontStyle (LIGHT_FONT, FAST_FONT);
     fontVMetrics (i_asc, i_h);
@@ -143,7 +143,7 @@ static void drawActiveNetsPane (const SBox &box)
     tft.setCursor (box.x + (box.w-tw)/2, box.y + PANETITLE_H);
     tft.print (title);
 
-    // subtitle (count / freshness)
+    // subtitle (credit line, like the Launches pane)
     selectFontStyle (LIGHT_FONT, FAST_FONT);
     tft.setTextColor (AN_COLOR);
     uint16_t sw = getTextWidth (subtitle);
@@ -174,8 +174,8 @@ static void drawActiveNetsPane (const SBox &box)
             int r = an_ss.getDisplayRow (i);
             uint16_t bt = y0 + r*block_dy;              // top of this net's block
 
-            // net name -- the largest text
-            selectFontStyle (LIGHT_FONT, SMALL_FONT);
+            // net name -- still the brighter (white) of the two lines, but same small font as info
+            selectFontStyle (LIGHT_FONT, FAST_FONT);
             tft.setTextColor (AN_NAME_COLOR);
             uint16_t w = getTextWidth (an.name);
             tft.setCursor (box.x + (box.w-w)/2, bt + name_base_off);
@@ -273,12 +273,17 @@ static void scrubToFit (char *line, const SBox &box)
 }
 
 /* build the supporting info line for one net from its CSV fields.
- * format: "<freq> <band> <mode> - <n> ckins", omitting empty pieces.
+ * format: "<freq> <band> <mode>", omitting empty pieces.
  * uses only ASCII so it renders correctly in the small CP437-based font.
+ * N.B. check-in count is intentionally NOT included here -- it's still recorded
+ * in ActiveNetEntry.chk and shown in the hover popup (see anFillInfo()).
  */
 static void buildInfoLine (char *out, size_t out_l, const char *freq, const char *band,
     const char *mode, const char *ncs, const char *chk)
 {
+    (void) ncs;                                 // not shown on the pane (kept for popup via caller)
+    (void) chk;                                 // not shown on the pane (kept for popup via caller)
+
     out[0] = '\0';
     size_t used = 0;
 
@@ -293,14 +298,6 @@ static void buildInfoLine (char *out, size_t out_l, const char *freq, const char
     AN_APP_SP (freq);
     AN_APP_SP (band);
     AN_APP_SP (mode);
-
-    // net control, set off with a dash
-    //if (ncs && ncs[0] && used < out_l)
-    //    used += snprintf (out+used, out_l-used, "%sNCS %s", used ? " - " : "", ncs);
-
-    // check-in count
-    if (chk && chk[0] && used < out_l)
-        used += snprintf (out+used, out_l-used, "%s%s ckins", used ? " - " : "", chk);
 
     #undef AN_APP_SP
 }
@@ -374,12 +371,11 @@ static bool retrieveActiveNets (const SBox &box)
         char info[200];
         buildInfoLine (info, sizeof(info), freq, band, mode, ncs, chk);
 
-        // scrub each to fit
+        // scrub each to fit (both now render in FAST_FONT)
         char nbuf[200];
         quietStrncpy (nbuf, name, sizeof(nbuf));
-        selectFontStyle (LIGHT_FONT, SMALL_FONT);
-        scrubToFit (nbuf, box);
         selectFontStyle (LIGHT_FONT, FAST_FONT);
+        scrubToFit (nbuf, box);
         scrubToFit (info, box);
 
         // append to anets[]
@@ -409,9 +405,8 @@ static bool retrieveActiveNets (const SBox &box)
 
     fclose (fp);
 
-    // build subtitle
-    snprintf (subtitle, sizeof(subtitle), "%d active net%s", an_ss.n_data,
-                                                an_ss.n_data == 1 ? "" : "s");
+    // build subtitle -- credit line, same spot/style as the Launches pane's credit
+    snprintf (subtitle, sizeof(subtitle), "Credit: NetLogger.org");
 
     an_ss.scrollToNewest();
 

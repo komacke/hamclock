@@ -259,7 +259,7 @@ static void drawStormsPane (const SBox &box)
     // so if a full-width centered title would reach under it, shift the title left to clear it.
     selectFontStyle (LIGHT_FONT, SMALL_FONT);
     tft.setTextColor (STORM_COLOR_TITLE);
-    const char *title = "Tropical Wx";
+    const char *title = "Trop Wx";
     uint16_t tw = getTextWidth (title);
     uint16_t avail_r = box.w > STORM_TITLE_RSV ? box.w - STORM_TITLE_RSV : box.w;  // right limit
     uint16_t tx = box.w > tw ? (box.w - tw)/2 : 2;                                 // ideal centered x
@@ -783,7 +783,7 @@ static void runStormsPaneMenu (const SBox &box)
     };
 
     MenuItem mitems[STM_N];
-    mitems[STM_TITLE] = {MENU_LABEL,  false, 0, 2, "Tropical Wx", 0};
+    mitems[STM_TITLE] = {MENU_LABEL,  false, 0, 2, "Trop Wx", 0};
     mitems[STM_NHC]   = {MENU_TOGGLE, false, 1, 2, "Open NHC page", 0};
 
     uint16_t menu_x = BOX_IS_PANE_0(box) ? box.x + 3 : box.x + 10;
