@@ -49,5 +49,5 @@ else
     exit 1
 fi
 
-$HC_EXEC -t 100 $BACKEND_ARG &
+$HC_EXEC -t 10 $BACKEND_ARG &
 wait $!

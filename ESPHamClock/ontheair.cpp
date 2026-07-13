@@ -671,25 +671,21 @@ bool updateOnTheAir (const SBox &box, bool fresh)
         loadONTASettings();
     }
 
-    uint32_t prev_hash = spots_hash;
+    // always update raw onta_spots, but don't transfer to ontawl_spots if scrolled away
+
     bool ok = retrieveONTA();
     if (ok) {
         spots_hash = spotsHash (onta_spots, n_ontaspots);
         if (onta_ss.atNewest()) {
-            bool rotated_org = false;
             if (onta_norgs > 0 && !onta_merge) {
                 // rotate to next org
                 next_ontaorg = (next_ontaorg + 1) % onta_norgs; // rotate org
-                rotated_org = true;
                 Serial.printf ("ONTA: now showing %s\n", onta_orgs[next_ontaorg]);
             }
             rebuildONTAWatchList();
             onta_ss.drawNewSpotsSymbol (false, false);                  // New symbol off
             ROTHOLD_CLR(PLOT_CH_ONTA);                                  // release rotation hold
             drawONTAPane (box);
-            if (findPaneForChoice(PLOT_CH_ONTA) != PANE_NONE
-                    && (fresh || rotated_org || spots_hash != prev_hash))
-                scheduleMapRedraw();
         } else {
             onta_ss.drawNewSpotsSymbol (NEW_SPOTS(), false);            // on if different
             ROTHOLD_SET(PLOT_CH_ONTA);                                  // hold rotation

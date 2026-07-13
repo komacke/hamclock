@@ -811,11 +811,6 @@ bool runMenu (MenuInfo &menu)
     if (!tft.setBackingStore (backing_store, menu.menu_b.x, menu.menu_b.y, menu.menu_b.w, menu.menu_b.h))
         fatalError ("mem pixel restore failed %d x %d", menu.menu_b.w, menu.menu_b.h);
 
-    // If the menu was over the map, publish the restored pixels immediately.
-    // On lazy redraw paths, otherwise the browser can still be looking at a dead menu.
-    if (boxesOverlap (menu.menu_b, map_b))
-        tft.drawPR();
-
     // record settings
     Serial.printf ("Menu result after %s:\n", ok ? "Ok" : "Cancel");
     for (int i = 0; i < menu.n_items; i++) {
