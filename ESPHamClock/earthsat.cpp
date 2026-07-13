@@ -3401,10 +3401,20 @@ static void showSkyView (SatState &s)
         float daz = az - az_offset;
         while (daz >  180) daz -= 360;
         while (daz < -180) daz += 360;
-        return (int)(sky_x + sky_w/2 + daz * px_per_az + 0.5F);
+        int x = (int)(sky_x + sky_w/2 + daz * px_per_az + 0.5F);
+        // clamp -- callers may feed in extreme az (eg satellite trail) that would
+        // otherwise map to a pixel outside the frame buffer
+        if (x < 0) x = 0;
+        else if (x > (int)tft.width()-1) x = tft.width()-1;
+        return x;
     };
     auto el2y = [&](float el) -> int {
-        return (int)(hz_y - el * px_per_el + 0.5F);
+        int y = (int)(hz_y - el * px_per_el + 0.5F);
+        // clamp -- eg a satellite trail point well below the horizon (el near -90)
+        // would otherwise map to a pixel outside the frame buffer
+        if (y < 0) y = 0;
+        else if (y > (int)tft.height()-1) y = tft.height()-1;
+        return y;
     };
 
     // Trailing track — record last _SKY_TRAIL_MAX positions (az/el/sunlit)

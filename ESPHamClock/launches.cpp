@@ -57,6 +57,7 @@ static const char launches_fn[]   = "launches.txt";
 // ---------------------------------------------------------------------------
 
 #define LAUNCH_TITLE_DY   PANETITLE_H   // pane title baseline
+#define LAUNCH_TITLE_RSV  28            // reserve at right so title clears the scroll-arrow control
 #define LAUNCH_CREDITS_DY SUBTITLE_Y0   // source credit line
 #define LAUNCH_START_DY   LISTING_Y0    // first entry name baseline
 #define LAUNCH_ROW_H      24            // total height of one 2-line entry (px)
@@ -177,20 +178,29 @@ static void drawLaunchesPane (const SBox &box)
 
     prepPlotBox (box);
 
-    // ---- Title ----
+    // ---- Title -- centered, but kept clear of the scroll-arrow control in the top-right
+    // corner. That control always erases a band at the right edge (even when the arrows
+    // are inactive), so if a full-width centered title would reach under it, shift left.
     selectFontStyle (LIGHT_FONT, SMALL_FONT);
     tft.setTextColor (LAUNCH_TITLE_COLOR);
     static const char *title = "Launches";
     uint16_t tw = getTextWidth (title);
-    tft.setCursor (box.x + (box.w - tw) / 2, box.y + LAUNCH_TITLE_DY);
+    uint16_t avail_r = box.w > LAUNCH_TITLE_RSV ? box.w - LAUNCH_TITLE_RSV : box.w;  // right limit
+    uint16_t tx = box.w > tw ? (box.w - tw)/2 : 2;                                   // ideal centered x
+    if (tx + tw > avail_r)                                                          // would hit arrows
+        tx = avail_r > tw ? avail_r - tw : 2;                                       // shift left to clear
+    tft.setCursor (box.x + tx, box.y + LAUNCH_TITLE_DY);
     tft.print (title);
 
     // ---- Credit ----
     selectFontStyle (LIGHT_FONT, FAST_FONT);
     tft.setTextColor (LAUNCH_TITLE_COLOR);
-    uint16_t cw = getTextWidth (launch_credit);
+    char credit_copy[80];
+    quietStrncpy (credit_copy, launch_credit, sizeof(credit_copy));
+    maxStringW (credit_copy, box.w - 4);
+    uint16_t cw = getTextWidth (credit_copy);
     tft.setCursor (box.x + (box.w - cw) / 2, box.y + LAUNCH_CREDITS_DY);
-    tft.print (launch_credit);
+    tft.print (credit_copy);
 
     // ---- Entries ----
     selectFontStyle (LIGHT_FONT, FAST_FONT);
@@ -305,7 +315,7 @@ static bool runLaunchMenu (const SCoord &s, const SBox &box)
     MenuItem mitems[] = {
         {lname_mft,   false, 0, indent, lname,            0},
         {webpage_mft, false, 1, indent, "Open web page",  0},
-        {credit_mft,  false, 2, indent, "Launch Library 2 site", 0},
+        {credit_mft,  false, 2, indent, "Launch Lib 2", 0},
     };
     const int n_mi = NARRAY(mitems);
 
@@ -435,6 +445,17 @@ static bool retrieveLaunches (const SBox &box)
     }
     chompString (line1);
     launch_credit = strdup (line1);
+
+    // shorten "Library" -> "Lib" so eg "Credit: Launch Library 2" becomes
+    // "Credit: Launch Lib 2" -- fits the narrower panes without truncation
+    {
+        char *lib = strstr (launch_credit, "Library");
+        if (lib) {
+            memmove (lib+3, lib+7, strlen(lib+7)+1);    // shift tail (+ NUL) left over "rary"
+            memcpy (lib, "Lib", 3);
+        }
+    }
+
     ok = true;                          // at minimum we got the credit line
 
     // ---- Three lines per launch ----
