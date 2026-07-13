@@ -1176,6 +1176,31 @@ void initEarthMap()
  */
 void drawMoreEarth()
 {
+    // check for mouse movement (both local and web)
+    static uint16_t lx = -1;
+    static uint16_t ly = -1;
+    static bool lom = false;
+    uint16_t mx, my;
+    bool has_mouse = tft.getMouse (&mx, &my);
+    if (has_mouse) {
+        bool om = overMap(SCoord{mx, my});
+        bool mv = mx != lx || my != ly;
+        if (mv) {
+            lx = mx;
+            ly = my;
+            if (mainpage_up && !mm_up() && (om || lom))
+                mm_redraw();
+            lom = om;
+        }
+    } else {
+        if (lom) {
+            mm_redraw();
+            lom = false;
+            lx = -1;
+            ly = -1;
+        }
+    }
+
     if (!moremap_active) {
         uint32_t now_ms = millis();
         bool mm_due = mm_p && now_ms - mm_ms >= 33U;

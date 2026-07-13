@@ -688,7 +688,7 @@ static void setLiveMouse (ws_cli_conn_t *client, char args[], size_t args_len)
         // City names/red dot are driven by mouse position, not by overlay data updates.
         // Since the normal map redraw interval is now long, explicitly redraw the map
         // when the cursor moves over the map, or leaves it, so the old city marker clears.
-        if (mv && mainpage_up && names_on && !mm_up() && (om || lom))
+        if (mv && mainpage_up && !mm_up() && (om || lom))
             mm_redraw();
 
         lx = x;
