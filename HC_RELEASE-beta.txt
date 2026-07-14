@@ -1,14 +1,14 @@
 Changes with latest release:
 - new netlogger panel
+- upcoming space launches pane
+- hamqsl band conditions
+- satellite skyview with stars
+- freq, mode, doppler for sats
+- url support in motd
 - mbox icon disappears sometimes
 - fix #189 tropics in zoom
 - update tropics more frequently
 - fix #193 band value display
-- freq, mode, doppler for sats
-- upcoming space launches pane
 - fix init/saved pos'n on some X
-- satellite skyview with stars
 - voacap timeout increase to 15s
-- url support in motd
-- yo3gnd cpu reduction
-- hamqsl band conditions
+- fix some FB mouse issues
