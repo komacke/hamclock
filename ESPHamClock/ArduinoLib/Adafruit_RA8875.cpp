@@ -1045,6 +1045,10 @@ bool Adafruit_RA8875::getMouse (uint16_t *x, uint16_t *y)
 {
 	pthread_mutex_lock(&mouse_lock);
 
+            struct timeval tv;
+            gettimeofday (&tv, NULL);
+            mouse_idle = (tv.tv_sec - mouse_tv.tv_sec)*1000 + (tv.tv_usec - mouse_tv.tv_usec)/1000;
+
             bool ok = mouse_idle <= MOUSE_FADE && mouse_x >= 0;
             if (ok) {
                 *x = (mouse_x-FB_X0)/SCALESZ;

@@ -2248,6 +2248,7 @@ extern int tickmarks (float min, float max, int numdiv, float ticks[]);
 extern bool isPaneRotating (PlotPane pp);
 extern bool isSpecialPaneRotating (PlotPane pp);
 extern bool enforceCDownAlone (const SBox &box, uint32_t rotset);
+extern bool overHoverPane (const SCoord &s);
 extern void restoreNormPANE0(void);
 
 

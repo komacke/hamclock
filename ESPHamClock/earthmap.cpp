@@ -1183,7 +1183,7 @@ void drawMoreEarth()
     uint16_t mx, my;
     bool has_mouse = tft.getMouse (&mx, &my);
     if (has_mouse) {
-        bool om = overMap(SCoord{mx, my});
+        bool om = overMap(SCoord{mx, my}) || overHoverPane(SCoord{mx, my});
         bool mv = mx != lx || my != ly;
         if (mv) {
             lx = mx;

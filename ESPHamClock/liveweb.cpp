@@ -682,7 +682,7 @@ static void setLiveMouse (ws_cli_conn_t *client, char args[], size_t args_len)
         tft.setMouse (x, y);
 
         SCoord ms = { (uint16_t)x, (uint16_t)y };
-        bool om = overMap(ms);
+        bool om = overMap(ms) || overHoverPane(ms);
         bool mv = x != lx || y != ly;
 
         // City names/red dot are driven by mouse position, not by overlay data updates.
