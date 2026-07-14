@@ -449,8 +449,8 @@ bool Adafruit_RA8875::begin (int not_used)
 	// try to disable some fb interference
 	ourSystem ("dmesg -n 1");
 
-        // try to engage 16 bit
-        ourSystem ("fbset -depth 16");
+        // try to engage depth matching compile-time depth
+        ourSystem ("fbset -depth %d", BITSPFBPIX);
         ourSystem ("fbset");
 
 	// init for mouse thread
