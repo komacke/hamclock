@@ -2871,10 +2871,51 @@ void Adafruit_RA8875::kbThread ()
 	    if (nr == 1) {
                 // arrow keys need a state machine to parse ESC [ A/B/C/D, plus non-block for normal ESC
                 ::printf ("KB: %d %c\n", buf[0], buf[0]);
-                if (isprint(buf[0])) {
+                char c = buf[0];
+                if (c == 27) {
+                    // check if more characters are available (e.g. arrow keys ESC [ A/B/C/D)
+                    int flags = fcntl(kb_fd, F_GETFL, 0);
+                    fcntl(kb_fd, F_SETFL, flags | O_NONBLOCK);
+                    char seq[2];
+                    int n2 = read(kb_fd, &seq[0], 1);
+                    if (n2 == 1) {
+                        int n3 = read(kb_fd, &seq[1], 1);
+                        if (n3 == 1) {
+                            if (seq[0] == '[') {
+                                if (seq[1] == 'A') c = CHAR_UP;
+                                else if (seq[1] == 'B') c = CHAR_DOWN;
+                                else if (seq[1] == 'C') c = CHAR_RIGHT;
+                                else if (seq[1] == 'D') c = CHAR_LEFT;
+                                else if (seq[1] == '3') {
+                                    char seq2[1];
+                                    if (read(kb_fd, &seq2[0], 1) == 1 && seq2[0] == '~') {
+                                        c = CHAR_DEL;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        c = CHAR_ESC;
+                    }
+                    fcntl(kb_fd, F_SETFL, flags);
+                } else if (c == 127) {
+                    c = CHAR_DEL;
+                } else if (c == '\r') {
+                    c = CHAR_NL;
+                } else if (c == '\b') {
+                    c = CHAR_BS;
+                } else if (c == '\t') {
+                    c = CHAR_TAB;
+                } else if (c == '\n') {
+                    c = CHAR_NL;
+                } else if (!isprint(c)) {
+                    c = 0;
+                }
+
+                if (c) {
                     pthread_mutex_lock (&kb_lock);
                         KBState &ks = kb_q[kb_qtail];
-                        ks.c = buf[0];
+                        ks.c = c;
                         ks.control = false;
                         ks.shift = false;
                         if (++kb_qtail == KB_N)
