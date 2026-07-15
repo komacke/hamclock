@@ -30,5 +30,5 @@ Bug reports and pull requests are welcome on GitHub at
     * also many appliances available for sale, with HamClock pre-installed and automatically maintained
 * Open Hamclock Backend project
     * <https://ohb.works/> - main site
-    * <https://github.com/komacke/open-hamclock-backend> - source
+    * <https://github.com/openhamclock/open-hamclock-backend> - source
 * [hamclock.com](https://hamclock.com) backend
