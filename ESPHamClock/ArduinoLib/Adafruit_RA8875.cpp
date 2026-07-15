@@ -2871,7 +2871,7 @@ void Adafruit_RA8875::kbThread ()
 	    if (nr == 1) {
                 // arrow keys need a state machine to parse ESC [ A/B/C/D, plus non-block for normal ESC
                 ::printf ("KB: %d %c\n", buf[0], buf[0]);
-                if (isprint(buf[0])) {
+                if (isprint(buf[0]) || buf[0] == 8 || buf[0] == 127) {
                     pthread_mutex_lock (&kb_lock);
                         KBState &ks = kb_q[kb_qtail];
                         ks.c = buf[0];
