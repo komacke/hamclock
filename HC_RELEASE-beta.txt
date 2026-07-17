@@ -1,2 +1,2 @@
 Changes with latest release:
-- no changes, start of next beta series
+- improve display refresh performance
