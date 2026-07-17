@@ -29,6 +29,7 @@ RUN addgroup -g $HC_GID hamclock && \
     mkdir -p /opt/hamclock/.hamclock && \
     mkdir -p /opt/hamclock/bin && \
     cd ESPHamClock && \
+    make clean && \
     \
     if [ -n "$HC_SIZE" ]; then \
         make -j 4 hamclock-web-${HC_SIZE} && \

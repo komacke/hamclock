@@ -17,6 +17,8 @@
 // max cpu usage, throttle with -t
 #define DEF_CPU_USAGE 0.8F
 static float max_cpu_usage = DEF_CPU_USAGE;
+// even at 100% throttle, don't busy-spin the host when loop() has nothing to do
+#define DEF_MIN_IDLE_LOOP_US 1000
 
 char **our_argv;                // our argv for restarting
 std::string our_dir;            // our storage directory, including trailing /
@@ -737,11 +739,21 @@ int main (int ac, char *av[])
     // this loop by itself would run 100% CPU so offer a means to be a better citizen and throttle back
     printf ("Starting Arduino loop()\n");
 
+    #define TVUSEC(tv0,tv1) (((tv1).tv_sec-(tv0).tv_sec)*1000000 + ((tv1).tv_usec-(tv0).tv_usec))
+
     if (max_cpu_usage == 1) {
 
-        // pure loop
-        for (;;)
+        // pure loop, but still yield briefly when loop() returns faster than our minimum idle cadence.
+        for (;;) {
+            struct timeval tv0;
+            gettimeofday (&tv0, NULL);
             loop();
+            struct timeval tv1;
+            gettimeofday (&tv1, NULL);
+            int loop_us = TVUSEC(tv0, tv1);
+            if (loop_us < DEF_MIN_IDLE_LOOP_US)
+                usleep (DEF_MIN_IDLE_LOOP_US - loop_us);
+        }
 
     } else {
 
@@ -750,8 +762,6 @@ int main (int ac, char *av[])
         int sleep_us = 100;             // initial sleep, usecs
         const int sleep_dt = 10;        // sleep adjustment, usecs
         const int max_sleep = 50000;    // max sleep each loop, usecs
-
-        #define TVUSEC(tv0,tv1) (((tv1).tv_sec-(tv0).tv_sec)*1000000 + ((tv1).tv_usec-(tv0).tv_usec))
 
         for (;;) {
 

@@ -764,3 +764,21 @@ void restoreNormPANE0(void)
     drawOneTimeDX();
     drawDXInfo();
 }
+
+/* return whether s is over a plot pane currently displaying a hover-capable plot choice.
+ */
+bool overHoverPane (const SCoord &s)
+{
+    for (int i = PANE_0; i < PANE_N; i++) {
+        if (inBox (s, plot_b[i])) {
+            PlotChoice ch = plot_ch[i];
+            if (ch == PLOT_CH_ACTIVENETS || ch == PLOT_CH_LAUNCHES || ch == PLOT_CH_STORMS ||
+                ch == PLOT_CH_DXCLUSTER || ch == PLOT_CH_PSK || ch == PLOT_CH_ONTA ||
+                ch == PLOT_CH_ADIF || ch == PLOT_CH_DXPEDS || ch == PLOT_CH_SDO ||
+                ch == PLOT_CH_MOON) {
+                return (true);
+            }
+        }
+    }
+    return (false);
+}

@@ -673,9 +673,28 @@ static void setLiveMouse (ws_cli_conn_t *client, char args[], size_t args_len)
     } else {
 
         // set
+        static int lx = -1;
+        static int ly = -1;
+        static bool lom;
+
         int x = atoi(wa.value[0]);
         int y = atoi(wa.value[1]);
         tft.setMouse (x, y);
+
+        SCoord ms = { (uint16_t)x, (uint16_t)y };
+        bool om = overMap(ms) || overHoverPane(ms);
+        bool mv = x != lx || y != ly;
+
+        // City names/red dot are driven by mouse position, not by overlay data updates.
+        // Since the normal map redraw interval is now long, explicitly redraw the map
+        // when the cursor moves over the map, or leaves it, so the old city marker clears.
+        if (mv && mainpage_up && !mm_up() && (om || lom))
+            mm_redraw();
+
+        lx = x;
+        ly = y;
+        lom = om;
+
         if (debugLevel (DEBUG_WEB, 1))
             Serial.printf ("LIVE: set_mouse %d %d\n", x, y);
             
