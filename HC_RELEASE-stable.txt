@@ -1,11 +1,14 @@
 Changes with latest release:
-- mobile dashboard on :8080/dashboard.html
-- update dxcluster connection retry
-- center clicked on zoom map
-- lightning uses config units
-- fix DE format's OK button broken
-- fix web-3200x1920 in alpine docker
-- support sys admin messages
-- ensure sat tracks on top
-- support 4-char grid squares
-- prelim support for tropo maps
+- new netlogger panel
+- new space launches pane
+- new hamqsl band conditions
+- new sats skyview with stars
+- freq, mode, doppler for sats
+- url support in motd
+- fix #189 tropics in zoom
+- fix #193 band value display
+- fix init/saved pos'n on some X
+- fix fb0 mouse and key issues
+- mbox icon disappears sometimes
+- update tropics more frequently
+- voacap timeout increase to 15s
