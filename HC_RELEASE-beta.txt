@@ -1,2 +1,5 @@
 Changes with latest release:
+- Added Sat Alerts via Hams.at
+- Added plane icon to launch to ADSB
+- Added Planets Display in Setup
 - improve display refresh performance
