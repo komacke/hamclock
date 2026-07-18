@@ -419,7 +419,7 @@ typedef enum {
     X(PLOT_CH_LAUNCHES,     "Launches")         \
     X(PLOT_CH_HFCOND,       "HF_Bands")         \
     X(PLOT_CH_VHFCOND,      "VHF_Cond")         \
-    X(PLOT_CH_SATACT,       "Sat_Activations")
+    X(PLOT_CH_SATACT,       "Sat_Alerts")
 
 #define X(a,b)  a,              // expands PLOTNAMES to each enum and comma
 typedef enum {

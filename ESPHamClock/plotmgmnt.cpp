@@ -26,8 +26,15 @@ static bool paneHasChoice (PlotPane pp, PlotChoice pc)
 {
     if (plot_rotset[pp] & PLOTBIT(pc))
         return (true);
-    if (PLOTBIT(pc) == 0 && plot_ch[pp] == pc && plot_rotset[pp] == 0)
+    if (PLOTBIT(pc) == 0 && plot_ch[pp] == pc && plot_rotset[pp] == 0) {
+        // PANE_0 is restricted to PANE_0_CH_MASK for its normal choices, but that mask can
+        // never include a solo/unrepresentable choice like this (PLOTBIT(pc)==0 means pc can't
+        // fit in any 32-bit bitmask, including PANE_0_CH_MASK) -- so it needs its own explicit
+        // whitelist here instead, or a stale/leftover value could silently reload forever.
+        if (pp == PANE_0)
+            return (pc == PLOT_CH_SATACT);
         return (true);
+    }
     return (false);
 }
 
@@ -89,8 +96,8 @@ static void setDefaultPaneChoice (PlotPane pp)
             plot_ch[pp] = PLOT_CH_NONE;
             Serial.println ("PANE: Setting pane 0 to default NONE");
         } else {
-            const PlotChoice ch_defaults[PANE_N] = {PLOT_CH_SSN, PLOT_CH_XRAY, PLOT_CH_SDO};
-            plot_ch[pp] = ch_defaults[pp];
+            const PlotChoice ch_defaults[PANE_N-1] = {PLOT_CH_SSN, PLOT_CH_XRAY, PLOT_CH_SDO};
+            plot_ch[pp] = ch_defaults[pp-1];
             plot_rotset[pp] = PLOTBIT(plot_ch[pp]);
             Serial.printf ("PANE: Setting pane %d to default %s\n", (int)pp, plot_names[plot_ch[pp]]);
         }
@@ -677,6 +684,15 @@ void initPlotPanes()
             plot_rotset[i] |= PLOTBIT(plot_ch[i]);
 
     // log and save final arrangement
+    // N.B. logPaneRotSet() only iterates plot_rotset[] bits, which can never reveal a solo choice
+    // like PLOT_CH_SATACT (PLOTBIT() is always 0 for it by design) -- print the raw plot_ch[]
+    // values directly too so a bug placing such a choice on the wrong pane is never invisible.
+    Serial.printf ("PANE: raw plot_ch[] = %d %d %d %d (%s %s %s %s)\n",
+                    (int)plot_ch[PANE_0], (int)plot_ch[PANE_1], (int)plot_ch[PANE_2], (int)plot_ch[PANE_3],
+                    plot_ch[PANE_0]==PLOT_CH_NONE ? "NONE" : plot_names[plot_ch[PANE_0]],
+                    plot_ch[PANE_1]==PLOT_CH_NONE ? "NONE" : plot_names[plot_ch[PANE_1]],
+                    plot_ch[PANE_2]==PLOT_CH_NONE ? "NONE" : plot_names[plot_ch[PANE_2]],
+                    plot_ch[PANE_3]==PLOT_CH_NONE ? "NONE" : plot_names[plot_ch[PANE_3]]);
     for (int i = PANE_0; i < PANE_N; i++)
         logPaneRotSet ((PlotPane)i, plot_ch[i]);
     savePlotOps();

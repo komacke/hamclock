@@ -395,8 +395,11 @@ static void formatCountdown (time_t aos, time_t now, char *buf, size_t buflen)
     long dt = aos - now;
     int hr = dt / 3600;
     int mn = (dt % 3600) / 60;
+    // clamp so %d always fits buf regardless of dt's theoretical range; also satisfies GCC's
+    // value-range analysis to avoid -Wformat-truncation (same convention used in lightning.cpp)
+    #define CD_CLAMP(n) ((n) > 99 ? 99 : (n))
     if (hr > 0)
-        snprintf (buf, buflen, "%dh%02dm", hr, mn);
+        snprintf (buf, buflen, "%dh%02dm", CD_CLAMP(hr), mn);
     else
         snprintf (buf, buflen, "%dm", mn);
 }
@@ -430,8 +433,11 @@ static void drawHamsatVisAlerts (const SBox &box)
 
             // match% badge, fixed width
             char mbuf[6];
+            // clamp to satisfy GCC's -Wformat-truncation value-range analysis (same convention
+            // as lightning.cpp) -- also just correct, since this is logically always 0-100
+            #define MP_CLAMP(n) ((n) < 0 ? 0 : (n) > 999 ? 999 : (n))
             if (a.match_percent >= 0)
-                snprintf (mbuf, sizeof(mbuf), "%3d%%", a.match_percent);
+                snprintf (mbuf, sizeof(mbuf), "%3d%%", MP_CLAMP(a.match_percent));
             else
                 snprintf (mbuf, sizeof(mbuf), " -- ");
             uint16_t bg = matchColor (a.match_percent);
@@ -472,7 +478,7 @@ static void drawHamsatPane (const SBox &box)
 
     // subtitle: source + whether personalized
     selectFontStyle (LIGHT_FONT, FAST_FONT);
-    const char *sub = hamsat_key[0] ? "hams.at (has key)" : "hams.at (no key)";
+    const char *sub = hamsat_key[0] ? "https://hams.at (has key)" : "https://hams.at (no key)";
     uint16_t sw = maxStringW ((char*)sub, box.w-2);
     tft.setTextColor (hamsat_key[0] ? RA8875_WHITE : RGB565(180,140,60));
     tft.setCursor (box.x + (box.w-sw)/2, box.y + SUBTITLE_Y0);
@@ -515,7 +521,7 @@ bool updateHamsat (const SBox &box, bool fresh)
             hamsat_ss.scrollToNewest();
         drawHamsatPane (box);
     } else {
-        plotMessage (box, RA8875_RED, "hams.at download error");
+        plotMessage (box, RA8875_RED, "https://hams.at download error");
     }
 
     return (ok);
@@ -624,7 +630,7 @@ void drawHamsatOnMap (void)
             continue;
 
         DXSpot spot{};
-        strncpy (spot.tx_call, a.callsign, sizeof(spot.tx_call)-1);
+        quietStrncpy (spot.tx_call, a.callsign, sizeof(spot.tx_call));
         spot.tx_ll = ll;
         spot.kHz = a.mhz * 1000.0F;             // DXSpot wants kHz, we store MHz
 

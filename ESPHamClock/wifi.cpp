@@ -2403,6 +2403,8 @@ void updateWiFi(void)
             break;
 
         case PLOT_CH_SATACT:
+            if (fresh_redraw[pc])
+                Serial.printf ("PANE: entering PLOT_CH_SATACT case for pp=%d (fresh)\n", (int)pp);
             if (t0 >= next_update[pp]) {
                 if (updateHamsat(box, fresh_redraw[pc])) {
                     next_update[pp] = nextPaneUpdate (pc, 90);     // secs, matches hamsat.cpp cache age

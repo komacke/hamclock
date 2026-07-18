@@ -1209,9 +1209,12 @@ bool checkClockTouch (SCoord &s)
         return (true);
     }
 
-    // ADS-B airplane icon: always present, opens adsb.lol
+    // ADS-B airplane icon: always present, opens adsb.lol centered on DE's location
     if (inBox (s, adsb_btn_b)) {
-        openURL ("https://adsb.lol");
+        char url[100];
+        snprintf (url, sizeof(url), "https://adsb.lol/?lat=%.3f&lon=%.3f&zoom=10",
+                    de_ll.lat_d, de_ll.lng_d);
+        openURL (url);
         return (true);
     }
 
