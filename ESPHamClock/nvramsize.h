@@ -376,6 +376,9 @@ static const uint8_t nv_sizes[NV_N] = {
     // 252
     1,                          // NV_SHOWPLANETS
 
+    // 253
+    1,                          // NV_PLOTSCHEMA
+
 };
 
 #endif // _NVRAMSIZE_H

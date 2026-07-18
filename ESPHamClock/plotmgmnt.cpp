@@ -611,11 +611,35 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
     return (true);
 }
 
+/* migrate persisted plot settings when their representation changes.
+ *
+ * Before PLOT_CH_SATACT was appended, PLOT_CH_NONE was defined as PLOT_CH_N and therefore
+ * persisted as 32. PLOT_CH_SATACT is now ordinal 32, so an old Pane 0 "off" setting would
+ * otherwise be mistaken for Sat Alerts. Use a schema byte so this conversion happens once,
+ * while keeping a real SATACT selection made by the new build across later restarts.
+ */
+static void migratePlotSettings()
+{
+    static const uint8_t PLOT_SCHEMA_CURRENT = 1;
+    static const uint8_t LEGACY_PLOT_CH_NONE = 32;
+
+    uint8_t schema;
+    if (!NVReadUInt8 (NV_PLOTSCHEMA, &schema) || schema < PLOT_SCHEMA_CURRENT) {
+        uint8_t p0;
+        if (NVReadUInt8 (NV_PLOT_0, &p0) && p0 == LEGACY_PLOT_CH_NONE) {
+            Serial.println ("PANE: Migrating legacy Pane 0 NONE value");
+            NVWriteUInt8 (NV_PLOT_0, (uint8_t)PLOT_CH_NONE);
+        }
+        NVWriteUInt8 (NV_PLOTSCHEMA, PLOT_SCHEMA_CURRENT);
+    }
+}
+
 /* called once to init plot info from NV and insure legal and consistent values.
  * N.B. PANE_0 is the only pane allowed to be PLOT_CH_NONE
  */
 void initPlotPanes()
 {
+    migratePlotSettings();
     // retrieve rotation sets -- ok to leave 0 for now if not yet defined
     memset (plot_rotset, 0, sizeof(plot_rotset));
     NVReadUInt32 (NV_PANE0ROTSET, &plot_rotset[PANE_0]);

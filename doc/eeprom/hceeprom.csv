@@ -217,3 +217,4 @@ Addr,Name,Len,Type,Description
 0xAFB,NV_HAMSATKEY,64,s,hams.at API key
 0xB3C,NV_SATGROUP,240,s,newline-separated satellite names for group schedule
 0xC2D,NV_SHOWPLANETS,1,i,whether to show planets on the map
+0xC2F,NV_PLOTSCHEMA,1,i,plot settings persistence schema version

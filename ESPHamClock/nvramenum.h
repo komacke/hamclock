@@ -373,6 +373,9 @@ typedef enum {
     // 252
     NV_SHOWPLANETS,               // whether to show planets on the map
 
+    // 253
+    NV_PLOTSCHEMA,                // plot settings persistence schema version
+
 	NV_N
 
 } NV_Name;

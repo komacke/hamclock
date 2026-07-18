@@ -453,7 +453,10 @@ static void drawHamsatVisAlerts (const SBox &box)
             char cd[8];
             formatCountdown (a.aos_at, now, cd, sizeof(cd));
             char line[24];
-            snprintf (line, sizeof(line), "%-7.7s%-6.6s%s", a.callsign, a.satname, cd);
+            if (box.w < PLOTBOX123_W)
+                snprintf (line, sizeof(line), "%-6.6s%-5.5s%s", a.callsign, a.satname, cd);
+            else
+                snprintf (line, sizeof(line), "%-7.7s%-6.6s%s", a.callsign, a.satname, cd);
             tft.setTextColor (a.is_workable ? RA8875_YELLOW : RA8875_WHITE);
             tft.setCursor (x + badge_w, y);
             tft.print (line);
@@ -477,10 +480,16 @@ static void drawHamsatPane (const SBox &box)
     tft.setCursor (box.x + (box.w-pw)/2, box.y + PANETITLE_H);
     tft.print (title);
 
-    // subtitle: source + whether personalized
+    // subtitle: source + whether personalized. maxStringW() truncates its argument in place,
+    // so this must be writable storage, never a cast-away-const string literal. Pane 0 is also
+    // narrower than the normal panes, so use a compact form there.
     selectFontStyle (LIGHT_FONT, FAST_FONT);
-    const char *sub = hamsat_key[0] ? "https://hams.at (has key)" : "https://hams.at (no key)";
-    uint16_t sw = maxStringW ((char*)sub, box.w-2);
+    char sub[40];
+    if (box.w < PLOTBOX123_W)
+        snprintf (sub, sizeof(sub), "hams.at (%s)", hamsat_key[0] ? "key" : "no key");
+    else
+        snprintf (sub, sizeof(sub), "https://hams.at (%s)", hamsat_key[0] ? "has key" : "no key");
+    uint16_t sw = maxStringW (sub, box.w-2);
     tft.setTextColor (hamsat_key[0] ? RA8875_WHITE : RGB565(180,140,60));
     tft.setCursor (box.x + (box.w-sw)/2, box.y + SUBTITLE_Y0);
     tft.print (sub);
