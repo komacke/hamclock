@@ -1714,6 +1714,7 @@ void drawAllSymbols()
     drawDXClusterSpotsOnMap();
     drawADIFSpotsOnMap();
     drawDXPedsOnMap();
+    drawHamsatOnMap();
     drawStormsOnMap();
     drawLaunchesOnMap();
     drawActiveNetsOnMap();

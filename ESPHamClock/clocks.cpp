@@ -4,6 +4,12 @@
 
 #include "HamClock.h"
 
+// ADS-B airplane icon -- opens https://adsb.lol, sits just below the MOTD mailbox icon
+#define ADSB_ICON_W             14
+#define ADSB_ICON_H             14
+#define ADSB_ICON_GAP           6               // gap below MOTD icon
+SBox adsb_btn_b;
+
 // format flags
 uint8_t de_time_fmt;                            // one of DETIME_*
 uint8_t desrss, dxsrss;                         // show actual de/dx sun rise/set else time to
@@ -71,6 +77,43 @@ static void drawUTCButton()
 
     // draw the MOTD mailbox icon to the left of the UTC button (or blank slot if no MOTD)
     drawMOTDIcon();
+
+    // draw the ADS-B airplane icon just below that -- always shown, opens adsb.lol when tapped
+    drawADSBIcon();
+}
+
+/* draw the ADS-B airplane icon immediately below the MOTD mailbox icon. always shown
+ * (unlike the MOTD icon, which blanks itself when there's no message) -- tapping it opens
+ * https://adsb.lol, a live ADS-B aircraft tracking site. should be called right after
+ * drawMOTDIcon() since it positions itself relative to motd_btn_b.
+ */
+void drawADSBIcon()
+{
+    adsb_btn_b.x = motd_btn_b.x;
+    adsb_btn_b.y = motd_btn_b.y + motd_btn_b.h + ADSB_ICON_GAP;
+    adsb_btn_b.w = ADSB_ICON_W;
+    adsb_btn_b.h = ADSB_ICON_H;
+
+    tft.fillRect (adsb_btn_b.x, adsb_btn_b.y, adsb_btn_b.w, adsb_btn_b.h, RA8875_BLACK);
+
+    // airplane silhouette: fuselage nose-to-tail, wide wings ~1/3 back from the nose, a smaller
+    // tail stabilizer near the back -- the classic top-down airplane pictogram, not a paper dart.
+    // no icon font available, so this is built from basic line primitives, same approach
+    // drawMOTDIcon() uses for its envelope shape.
+    const uint16_t x = adsb_btn_b.x + 1;
+    const uint16_t y = adsb_btn_b.y + 1;
+    const uint16_t w = 12;
+    const uint16_t h = 12;
+    const uint16_t col = GRAY;
+
+    uint16_t nose_x = x + w, tail_x = x, mid_y = y + h/2;
+    tft.drawLine (tail_x, mid_y, nose_x, mid_y, col);                       // fuselage
+    tft.drawLine (nose_x, mid_y, nose_x-3, mid_y-1, col);                   // nose taper
+    tft.drawLine (nose_x, mid_y, nose_x-3, mid_y+1, col);
+    uint16_t wing_x = x + (w*5)/8;
+    tft.drawLine (wing_x, y, wing_x, y+h-1, col);                          // main wings
+    uint16_t tail_wing_x = x + w/6;
+    tft.drawLine (tail_wing_x, mid_y-2, tail_wing_x, mid_y+2, col);        // tail stabilizer
 }
 
 /* function given to TimeLib's setSyncProvider() to resync its time base occasionally.
@@ -1163,6 +1206,12 @@ bool checkClockTouch (SCoord &s)
                    motdIsPresent());
     if (motdIsPresent() && inBox (s, motd_btn_b)) {
         motdClicked();
+        return (true);
+    }
+
+    // ADS-B airplane icon: always present, opens adsb.lol
+    if (inBox (s, adsb_btn_b)) {
+        openURL ("https://adsb.lol");
         return (true);
     }
 

@@ -367,6 +367,12 @@ static const uint8_t nv_sizes[NV_N] = {
     // 249
     1,                          // NV_STORMS_ON
 
+    // 250
+    NV_HAMSATKEY_LEN,           // NV_HAMSATKEY
+
+    // 251
+    NV_SATGROUP_LEN,            // NV_SATGROUP
+
 };
 
 #endif // _NVRAMSIZE_H

@@ -364,6 +364,12 @@ typedef enum {
     // 249
     NV_STORMS_ON,               // whether to show storm overlay and pane
 
+    // 250
+    NV_HAMSATKEY,                // hams.at API key
+
+    // 251
+    NV_SATGROUP,                 // newline-separated satellite names for group schedule
+
 	NV_N
 
 } NV_Name;

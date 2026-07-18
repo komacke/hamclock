@@ -16,6 +16,21 @@ PlotChoice plot_ch[PANE_N];
 uint32_t plot_rotset[PANE_N];
 uint32_t plot_rothold;
 
+/* true if choice pc is effectively "in" pane pp's current configuration.
+ * normally this just means pc's bit is set in plot_rotset[pp]. but choices whose ordinal is >= 32
+ * (e.g. PLOT_CH_SATACT) can never occupy a bit -- PLOTBIT() always returns 0 for them -- yet they
+ * can still be a pane's sole, non-rotating choice. detect that case too so such a choice is
+ * recognized as legitimately assigned rather than looking indistinguishable from "unconfigured".
+ */
+static bool paneHasChoice (PlotPane pp, PlotChoice pc)
+{
+    if (plot_rotset[pp] & PLOTBIT(pc))
+        return (true);
+    if (PLOTBIT(pc) == 0 && plot_ch[pp] == pc && plot_rotset[pp] == 0)
+        return (true);
+    return (false);
+}
+
 #define X(a,b)  b,                      // expands PLOTNAMES to name and comma
 const char *plot_names[PLOT_CH_N] = {
     PLOTNAMES
@@ -63,7 +78,7 @@ static void setDefaultPaneChoice (PlotPane pp)
     // check rotset first
     if (plot_rotset[pp]) {
         for (int i = 0; i < PLOT_CH_N; i++) {
-            if (plot_rotset[pp] & (1u << i)) {
+            if (plot_rotset[pp] & PLOTBIT(i)) {
                 plot_ch[pp] = (PlotChoice) i;
                 break;
             }
@@ -76,7 +91,7 @@ static void setDefaultPaneChoice (PlotPane pp)
         } else {
             const PlotChoice ch_defaults[PANE_N] = {PLOT_CH_SSN, PLOT_CH_XRAY, PLOT_CH_SDO};
             plot_ch[pp] = ch_defaults[pp];
-            plot_rotset[pp] = (1u << plot_ch[pp]);
+            plot_rotset[pp] = PLOTBIT(plot_ch[pp]);
             Serial.printf ("PANE: Setting pane %d to default %s\n", (int)pp, plot_names[plot_ch[pp]]);
         }
     }
@@ -131,6 +146,7 @@ bool plotChoiceIsAvailable (PlotChoice pc)
     case PLOT_CH_LAUNCHES:	// fallthru
     case PLOT_CH_HFCOND:        // fallthru
     case PLOT_CH_VHFCOND:       // fallthru
+    case PLOT_CH_SATACT:        // fallthru
         return (true);
 
     case PLOT_CH_N:
@@ -147,7 +163,7 @@ void logPaneRotSet (PlotPane pp, PlotChoice pc)
 {
     Serial.printf ("Pane %d choices:\n", (int)pp);
     for (int i = 0; i < PLOT_CH_N; i++)
-        if (plot_rotset[pp] & (1u << i))
+        if (plot_rotset[pp] & PLOTBIT(i))
             Serial.printf ("    %c%s\n", i == pc ? '*' : ' ', plot_names[i]);
 }
 
@@ -203,7 +219,7 @@ static PlotChoice askPaneChoice (PlotPane pp)
                 fatalError ("pane alloc: %d", n_mitems);
             MenuItem &mi = mitems[n_mitems++];
             mi.type = MENU_AL1OFN;
-            mi.set = (plot_rotset[pp] & (1u << pc)) ? true : false;
+            mi.set = paneHasChoice (pp, pc) ? true : false;
             mi.label = plot_names[pc];
             mi.indent = 2;
             mi.group = 1;
@@ -224,19 +240,42 @@ static PlotChoice askPaneChoice (PlotPane pp)
 
     if (menu_ok) {
 
-        // find new rotset for this pane
+        // find new rotset for this pane. separately track any checked choice that can't fit the
+        // bitmask (PLOTBIT() == 0, e.g. PLOT_CH_SATACT) -- such a choice can still be a pane's
+        // sole, non-rotating choice, just never combined with anything else.
         uint32_t new_rotset = 0;
+        PlotChoice solo_ch = PLOT_CH_N;
+        int n_solo = 0;
         for (int i = 0; i < n_mitems; i++) {
             if (mitems[i].set) {
                 // find which choice this refers to by matching labels
                 for (int j = 0; j < PLOT_CH_N; j++) {
                     if (strcmp (plot_names[j], mitems[i].label) == 0) {
-                        new_rotset |= (1u << j);
+                        if (PLOTBIT(j) == 0) {
+                            solo_ch = (PlotChoice)j;
+                            n_solo++;
+                        } else
+                            new_rotset |= PLOTBIT(j);
                         break;
                     }
                 }
             }
         }
+
+        if (n_solo > 0 && (n_solo > 1 || new_rotset != 0)) {
+
+            // a solo-only choice was checked along with something else -- not supported
+            plotMessage (box, RA8875_RED, "This pane choice may not be combined with others");
+            wdDelay(5000);
+
+        } else if (n_solo == 1) {
+
+            // sole, non-rotating choice: no bit to set, plot_rotset stays empty
+            plot_rotset[pp] = 0;
+            savePlotOps();
+            return_ch = solo_ch;
+
+        } else {
 
         // enforce a few panes that do not work well with rotation
         uint32_t new_sets[PANE_N];
@@ -248,14 +287,15 @@ static PlotChoice askPaneChoice (PlotPane pp)
             savePlotOps();
 
             // return current choice if still in rotset, else just pick one
-            if (!(plot_rotset[pp] & (1u << return_ch))) {
+            if (!(plot_rotset[pp] & PLOTBIT(return_ch))) {
                 for (int i = 0; i < PLOT_CH_N; i++) {
-                    if (plot_rotset[pp] & (1u << i)) {
+                    if (plot_rotset[pp] & PLOTBIT(i)) {
                         return_ch = (PlotChoice)i;
                         break;
                     }
                 }
             }
+        }
         }
     }
 
@@ -284,7 +324,7 @@ PlotPane findPaneChoiceNow (PlotChoice pc)
 PlotPane findPaneForChoice (PlotChoice pc)
 {
     for (int i = PANE_0; i < PANE_N; i++)
-        if ( (plot_rotset[i] & (1<<pc)) )
+        if ( paneHasChoice ((PlotPane)i, pc) )
             return ((PlotPane)i);
     return (PANE_NONE);
 }
@@ -297,7 +337,7 @@ PlotChoice getNextRotationChoice (PlotPane pp, PlotChoice pc)
     if (isPaneRotating (pp)) {
         for (int i = 1; i < PLOT_CH_N; i++) {
             int j = (pc + i) % PLOT_CH_N;
-            if (plot_rotset[pp] & (1u << j)) {
+            if (plot_rotset[pp] & PLOTBIT(j)) {
                 // don't rotate into the Storms pane when there are no active storms; skip it so the
                 // pane only appears once a storm exists. If Storms is the sole choice, isPaneRotating()
                 // is false and we never get here, so it always shows in that case.
@@ -322,7 +362,7 @@ PlotChoice getAnyAvailableChoice()
         if (plotChoiceIsAvailable (pc)) {
             bool inuse = false;
             for (int j = 0; !inuse && j < PANE_N; j++) {
-                if (plot_ch[j] == pc || (plot_rotset[j] & (1u << pc))) {
+                if (plot_ch[j] == pc || (plot_rotset[j] & PLOTBIT(pc))) {
                     inuse = true;
                 }
             }
@@ -344,7 +384,7 @@ PlotChoice getAnyAvailablePane0Choice()
     PlotChoice available[PLOT_CH_N];
     int n_available = 0;
     for (int pc = 0; pc < PLOT_CH_N; pc++) {
-        if (((1<<pc) & PANE_0_CH_MASK)
+        if ((PLOTBIT(pc) & PANE_0_CH_MASK)
                 && plotChoiceIsAvailable((PlotChoice)pc) && findPaneForChoice((PlotChoice)pc) == PANE_NONE) {
             available[n_available] = (PlotChoice)pc;
             n_available++;
@@ -467,6 +507,11 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
             return (true);
         in_top = true;
         break;
+    case PLOT_CH_SATACT:
+        if (checkHamsatTouch (s, box))
+            return (true);
+        in_top = true;
+        break;
     case PLOT_CH_ADIF:
         if (checkADIFTouch (s, box))
             return (true);
@@ -497,7 +542,7 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
             if (setPlotChoice (pp, PLOT_CH_HUMIDITY)
                             || setPlotChoice (pp, PLOT_CH_DEWPOINT)
                             || setPlotChoice (pp, PLOT_CH_PRESSURE)) {
-                plot_rotset[pp] = (1u << plot_ch[pp]);   // no auto rotation
+                plot_rotset[pp] = PLOTBIT(plot_ch[pp]);   // no auto rotation
                 savePlotOps();
                 return (true);
             }
@@ -508,7 +553,7 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
             if (setPlotChoice (pp, PLOT_CH_TEMPERATURE)
                             || setPlotChoice (pp, PLOT_CH_HUMIDITY)
                             || setPlotChoice (pp, PLOT_CH_DEWPOINT)) {
-                plot_rotset[pp] = (1u << plot_ch[pp]);   // no auto rotation
+                plot_rotset[pp] = PLOTBIT(plot_ch[pp]);   // no auto rotation
                 savePlotOps();
                 return (true);
             }
@@ -519,7 +564,7 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
             if (setPlotChoice (pp, PLOT_CH_DEWPOINT)
                             || setPlotChoice (pp, PLOT_CH_PRESSURE)
                             || setPlotChoice (pp, PLOT_CH_TEMPERATURE)) {
-                plot_rotset[pp] = (1u << plot_ch[pp]);   // no auto rotation
+                plot_rotset[pp] = PLOTBIT(plot_ch[pp]);   // no auto rotation
                 savePlotOps();
                 return (true);
             }
@@ -530,7 +575,7 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
             if (setPlotChoice (pp, PLOT_CH_PRESSURE)
                             || setPlotChoice (pp, PLOT_CH_TEMPERATURE)
                             || setPlotChoice (pp, PLOT_CH_HUMIDITY)) {
-                plot_rotset[pp] = (1u << plot_ch[pp]);   // no auto rotation
+                plot_rotset[pp] = PLOTBIT(plot_ch[pp]);   // no auto rotation
                 savePlotOps();
                 return (true);
             }
@@ -590,9 +635,9 @@ void initPlotPanes()
     for (int i = PANE_0; i < PANE_N; i++) {
         plot_rotset[i] &= all_panes;                     // reset any bits too high
         for (int j = 0; j < PLOT_CH_N; j++) {
-            if (plot_rotset[i] & (1u << j)) {
+            if (plot_rotset[i] & PLOTBIT(j)) {
                 if (!plotChoiceIsAvailable ((PlotChoice)j)) {
-                    plot_rotset[i] &= ~(1u << j);
+                    plot_rotset[i] &= ~PLOTBIT(j);
                     Serial.printf ("PANE: Removing %s from pane %d: not available\n", plot_names[j],i);
                 }
             }
@@ -601,7 +646,7 @@ void initPlotPanes()
 
     // if current selection not yet defined or not in rotset pick one from rotset or set a default
     for (int i = PANE_0; i < PANE_N; i++) {
-        if (!getPlotChoiceNV ((PlotPane)i, &plot_ch[i]) || !(plot_rotset[i] & (1u << plot_ch[i])))
+        if (!getPlotChoiceNV ((PlotPane)i, &plot_ch[i]) || !paneHasChoice ((PlotPane)i, plot_ch[i]))
             setDefaultPaneChoice ((PlotPane)i);
     }
 
@@ -616,8 +661,8 @@ void initPlotPanes()
                         Serial.printf ("PANE: Reassigning dup pane %d from %s to %s\n", j,
                                         plot_names[plot_ch[j]], plot_names[new_pc]);
                         // remove dup from rotation set then replace with new choice
-                        plot_rotset[j] &= ~(1u << plot_ch[j]);
-                        plot_rotset[j] |= (1u << new_pc);
+                        plot_rotset[j] &= ~PLOTBIT(plot_ch[j]);
+                        plot_rotset[j] |= PLOTBIT(new_pc);
                         plot_ch[j] = new_pc;
                         break;
                     }
@@ -629,7 +674,7 @@ void initPlotPanes()
     // one last bit of paranoia: insure each pane choice is in its rotation set unless empty
     for (int i = PANE_0; i < PANE_N; i++)
         if (plot_ch[i] != PLOT_CH_NONE)
-            plot_rotset[i] |= (1u << plot_ch[i]);
+            plot_rotset[i] |= PLOTBIT(plot_ch[i]);
 
     // log and save final arrangement
     for (int i = PANE_0; i < PANE_N; i++)
@@ -739,7 +784,7 @@ bool isPaneRotating (PlotPane pp)
         return (false);
 
     bool on_hold = ROTHOLD_TST(pc);
-    bool just_us = (plot_rotset[pp] & ~(1u << pc)) == 0;
+    bool just_us = (plot_rotset[pp] & ~PLOTBIT(pc)) == 0;
     return (!on_hold && !just_us);
 }
 

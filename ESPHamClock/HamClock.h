@@ -418,7 +418,8 @@ typedef enum {
     X(PLOT_CH_ACTIVENETS,   "Nets")             \
     X(PLOT_CH_LAUNCHES,     "Launches")         \
     X(PLOT_CH_HFCOND,       "HF_Bands")         \
-    X(PLOT_CH_VHFCOND,      "VHF_Cond")
+    X(PLOT_CH_VHFCOND,      "VHF_Cond")         \
+    X(PLOT_CH_SATACT,       "Sat_Activations")
 
 #define X(a,b)  a,              // expands PLOTNAMES to each enum and comma
 typedef enum {
@@ -682,12 +683,16 @@ extern SBox de_info_b;                  // de info pane
 extern SBox map_b;                      // main map 
 extern SBox view_btn_b;                 // map view menu button
 extern SBox motd_btn_b;                 // MOTD mailbox icon (next to UTC button)
+extern SBox adsb_btn_b;                 // ADS-B airplane icon (next to MOTD icon)
 
 // MOTD (Message of the Day) functions
 extern void checkMOTD (void);
 extern bool motdIsPresent (void);
 extern void drawMOTDIcon (void);
 extern void motdClicked (void);
+
+// ADS-B airplane icon -- opens https://adsb.lol
+extern void drawADSBIcon (void);
 extern SBox dx_maid_b;                  // dx maidenhead pick
 extern SBox de_maid_b;                  // de maidenhead pick
 extern SBox lkscrn_b;                   // screen lock icon button
@@ -1582,6 +1587,16 @@ extern void drawSatName(void);
 extern void drawOneTimeDX(void);
 extern void drawOneTimeDE(void);
 extern bool setSatFromName (const char *new_name);
+extern Satellite *lookupSatByName (const char *name, int *norad = NULL);
+
+/*********************************************************************************************
+ *
+ * satsked.cpp
+ *
+ */
+
+extern void drawSatGroupSchedule (void);
+extern void drawSatCoVis (void);
 extern bool setSatFromTLE (const char *name, const char *t1, const char *t2);
 extern bool initSat(void);
 extern bool getSatNow (SatNow &satnow);
@@ -2110,6 +2125,16 @@ extern void reportEESize (uint16_t &ee_used, uint16_t &ee_size);
 
 extern bool updateOnTheAir (const SBox &box, bool fresh);
 extern bool checkOnTheAirTouch (const SCoord &s, const SBox &box);
+
+/*********************************************************************************************
+ *
+ * hamsat.cpp
+ *
+ */
+
+extern bool updateHamsat (const SBox &box, bool fresh);
+extern bool checkHamsatTouch (const SCoord &s, const SBox &box);
+extern void drawHamsatOnMap (void);
 extern bool getOnTheAirSpots (DXSpot **spp, uint8_t *nspotsp);
 extern void drawOnTheAirSpotsOnMap (void);
 extern bool getClosestOnTheAirSpot (LatLong &ll, DXSpot *sp, LatLong *llp);
@@ -2211,9 +2236,15 @@ extern uint32_t plot_rothold;              // bitmask of PlotChoice in rotset bu
 extern uint32_t plot_rotset[PANE_N];       // bitmask of each pane's PlotChoice rotation choices
                                            // N.B. plot_rotset[i] must always include plot_ch[i] unless NONE
 
-#define ROTHOLD_SET(pc)         (plot_rothold |= (1<<(pc)))
-#define ROTHOLD_CLR(pc)         (plot_rothold &= ~(1<<(pc)))
-#define ROTHOLD_TST(pc)         ((plot_rothold & (1<<(pc))) != 0)
+// plot_rotset/plot_rothold are only 32 bits wide, but PLOT_CH_N may exceed 32 (e.g. PLOT_CH_SATACT).
+// PLOTBIT() maps any PlotChoice >= 32 to 0 instead of performing an out-of-range shift, which both
+// avoids undefined behavior and, as a deliberate side effect, guarantees such choices can never be
+// captured in a rotation set -- i.e. they can never participate in pane auto rotation.
+#define PLOTBIT(pc)             ((uint32_t)(pc) < 32 ? (1u << (uint32_t)(pc)) : 0u)
+
+#define ROTHOLD_SET(pc)         (plot_rothold |= PLOTBIT(pc))
+#define ROTHOLD_CLR(pc)         (plot_rothold &= ~PLOTBIT(pc))
+#define ROTHOLD_TST(pc)         ((plot_rothold & PLOTBIT(pc)) != 0)
 
 #define SHOWING_PANE_0()        (plot_ch[PANE_0] != PLOT_CH_NONE)
 #define BOX_IS_PANE_0(b)        ((b).w == PLOTBOX0_W && (b).h == PLOTBOX0_H)

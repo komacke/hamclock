@@ -2402,6 +2402,16 @@ void updateWiFi(void)
             }
             break;
 
+        case PLOT_CH_SATACT:
+            if (t0 >= next_update[pp]) {
+                if (updateHamsat(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, 90);     // secs, matches hamsat.cpp cache age
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
         case PLOT_CH_ADIF:
             if (t0 >= next_update[pp]) {
                 updateADIF (box, fresh_redraw[pc]);
