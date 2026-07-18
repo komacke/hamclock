@@ -58,6 +58,7 @@ typedef struct {
 static HamsatAlert *hamsat_alerts;                   // malloced list, sorted by aos_at
 static int n_hamsat;                                 // n entries
 static ScrollState hamsat_ss;                        // scrolling context
+static SBox hamsat_url_b;                             // tappable region over the subtitle text
 static char hamsat_key[NV_HAMSATKEY_LEN];            // API key, may be empty
 
 
@@ -484,6 +485,12 @@ static void drawHamsatPane (const SBox &box)
     tft.setCursor (box.x + (box.w-sw)/2, box.y + SUBTITLE_Y0);
     tft.print (sub);
 
+    // remember where this was drawn so a tap can offer to open the web page
+    hamsat_url_b.x = box.x + (box.w-sw)/2;
+    hamsat_url_b.y = box.y + SUBTITLE_Y0 - 2;
+    hamsat_url_b.w = sw;
+    hamsat_url_b.h = 12;
+
     drawHamsatVisAlerts (box);
 }
 
@@ -557,6 +564,26 @@ bool checkHamsatTouch (const SCoord &s, const SBox &box)
 
         // else tapping title always leaves this pane
         return (false);
+    }
+
+    // tap on the "https://hams.at" subtitle: offer to open the web page
+    if (inBox (s, hamsat_url_b)) {
+
+        typedef enum {
+            UEX_PAGE,
+            UEX_N
+        } UrlExInfo;
+
+        MenuItem mitems[UEX_N];
+        mitems[UEX_PAGE] = {MENU_TOGGLE, false, 1, 2, "Open webpage?", 0};
+
+        SBox menu_b = {s.x, s.y, 0, 0};
+        SBox ok_b;
+        MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 1, UEX_N, mitems};
+        if (runMenu (menu) && mitems[UEX_PAGE].set)
+            openURL ("https://hams.at");
+
+        return (true);
     }
 
     // row tap: offer to set DX (and track this satellite) and/or open the alert's web page
