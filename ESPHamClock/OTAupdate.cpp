@@ -404,7 +404,7 @@ bool askOTAupdate(char *new_ver, bool show_pending, bool def_yes)
                     if (!show_pending && beta_exists && inBox (ui.tap, beta_b)) {
                         // Switch to beta upgrade flow!
                         show_pending = true;
-                        active_yes = true;
+                        active_yes = false;
                         is_beta_flow = true;
                         snprintf (new_ver, 20, "%.19s", beta_ver);
 
