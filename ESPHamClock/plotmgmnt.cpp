@@ -13,34 +13,20 @@ const SBox plot_b[PANE_N] = {
     {575, 0,   PLOTBOX123_W, PLOTBOX123_H},
 };
 PlotChoice plot_ch[PANE_N];
-uint32_t plot_rotset[PANE_N];
-uint32_t plot_rothold;
+PlotMask plot_rotset[PANE_N];
+PlotMask plot_rothold;
 
-/* true if choice pc is effectively "in" pane pp's current configuration.
- * normally this just means pc's bit is set in plot_rotset[pp]. but choices whose ordinal is >= 32
- * (e.g. PLOT_CH_SATACT) can never occupy a bit -- PLOTBIT() always returns 0 for them -- yet they
- * can still be a pane's sole, non-rotating choice. detect that case too so such a choice is
- * recognized as legitimately assigned rather than looking indistinguishable from "unconfigured".
- */
+/* true if choice pc is in pane pp's current rotation set. PLOT_CH_NONE has no bit. */
 static bool paneHasChoice (PlotPane pp, PlotChoice pc)
 {
-    if (plot_rotset[pp] & PLOTBIT(pc))
-        return (true);
-    if (PLOTBIT(pc) == 0 && plot_ch[pp] == pc && plot_rotset[pp] == 0) {
-        // PANE_0 is restricted to PANE_0_CH_MASK for its normal choices, but that mask can
-        // never include a solo/unrepresentable choice like this (PLOTBIT(pc)==0 means pc can't
-        // fit in any 32-bit bitmask, including PANE_0_CH_MASK) -- so it needs its own explicit
-        // whitelist here instead, or a stale/leftover value could silently reload forever.
-        if (pp == PANE_0)
-            return (pc == PLOT_CH_SATACT);
-        return (true);
-    }
-    return (false);
+    return ((plot_rotset[pp] & PLOTBIT(pc)) != 0);
 }
 
-#define X(a,b)  b,                      // expands PLOTNAMES to name and comma
+#define X(a,b)  b,                      // expand names while preserving the NONE hole at value 32
 const char *plot_names[PLOT_CH_N] = {
-    PLOTNAMES
+    PLOTNAMES_LOW
+    "NONE",
+    PLOTNAMES_HIGH
 };
 #undef X
 
@@ -54,16 +40,16 @@ static bool getPlotChoiceNV (PlotPane new_pp, PlotChoice *new_pc)
     switch (new_pp) {
     case PANE_0:
         // only Pane 0 can be NONE
-        ok = NVReadUInt8 (NV_PLOT_0, &pc) && (pc < PLOT_CH_N || pc == PLOT_CH_NONE);
+        ok = NVReadUInt8 (NV_PLOT_0, &pc) && (PLOT_CH_IS_REAL(pc) || pc == PLOT_CH_NONE);
         break;
     case PANE_1:
-        ok = NVReadUInt8 (NV_PLOT_1, &pc) && (pc < PLOT_CH_N);
+        ok = NVReadUInt8 (NV_PLOT_1, &pc) && PLOT_CH_IS_REAL(pc);
         break;
     case PANE_2:
-        ok = NVReadUInt8 (NV_PLOT_2, &pc) && (pc < PLOT_CH_N);
+        ok = NVReadUInt8 (NV_PLOT_2, &pc) && PLOT_CH_IS_REAL(pc);
         break;
     case PANE_3:
-        ok = NVReadUInt8 (NV_PLOT_3, &pc) && (pc < PLOT_CH_N);
+        ok = NVReadUInt8 (NV_PLOT_3, &pc) && PLOT_CH_IS_REAL(pc);
         break;
     case PANE_N:
         break;
@@ -156,6 +142,7 @@ bool plotChoiceIsAvailable (PlotChoice pc)
     case PLOT_CH_SATACT:        // fallthru
         return (true);
 
+    case PLOT_CH_NONE:         // fallthru
     case PLOT_CH_N:
         break;                  // lint
     }
@@ -188,9 +175,9 @@ void logBRBRotSet()
 /* if the given rotset include PLOT_CH_COUNTDOWN and more, show message in box and return true.
  * else return false.
  */
-bool enforceCDownAlone (const SBox &box, uint32_t rotset)
+bool enforceCDownAlone (const SBox &box, PlotMask rotset)
 {
-    if ((rotset & (1<<PLOT_CH_COUNTDOWN)) && (rotset & ~(1<<PLOT_CH_COUNTDOWN))) {
+    if ((rotset & PLOTBIT(PLOT_CH_COUNTDOWN)) && (rotset & ~PLOTBIT(PLOT_CH_COUNTDOWN))) {
         plotMessage (box, RA8875_RED, "Countdown may not be combined with other data panes");
         wdDelay(5000);
         return (true);
@@ -216,6 +203,8 @@ static PlotChoice askPaneChoice (PlotPane pp)
     int n_mitems = 0;
     for (int i = 0; i < PLOT_CH_N; i++) {
         PlotChoice pc = (PlotChoice) i;
+        if (!PLOT_CH_IS_REAL(pc))
+            continue;
         PlotPane pp_ch = findPaneForChoice (pc);
 
         // otherwise use if not used elsewhere and available or already assigned to this pane
@@ -247,45 +236,23 @@ static PlotChoice askPaneChoice (PlotPane pp)
 
     if (menu_ok) {
 
-        // find new rotset for this pane. separately track any checked choice that can't fit the
-        // bitmask (PLOTBIT() == 0, e.g. PLOT_CH_SATACT) -- such a choice can still be a pane's
-        // sole, non-rotating choice, just never combined with anything else.
-        uint32_t new_rotset = 0;
-        PlotChoice solo_ch = PLOT_CH_N;
-        int n_solo = 0;
+        // build the complete 64-bit rotation set. Choices after the fixed NONE sentinel are
+        // represented in the high word, so Sat Alerts can rotate with any other pane choice.
+        PlotMask new_rotset = 0;
         for (int i = 0; i < n_mitems; i++) {
             if (mitems[i].set) {
                 // find which choice this refers to by matching labels
                 for (int j = 0; j < PLOT_CH_N; j++) {
-                    if (strcmp (plot_names[j], mitems[i].label) == 0) {
-                        if (PLOTBIT(j) == 0) {
-                            solo_ch = (PlotChoice)j;
-                            n_solo++;
-                        } else
-                            new_rotset |= PLOTBIT(j);
+                    if (PLOT_CH_IS_REAL(j) && strcmp (plot_names[j], mitems[i].label) == 0) {
+                        new_rotset |= PLOTBIT(j);
                         break;
                     }
                 }
             }
         }
 
-        if (n_solo > 0 && (n_solo > 1 || new_rotset != 0)) {
-
-            // a solo-only choice was checked along with something else -- not supported
-            plotMessage (box, RA8875_RED, "This pane choice may not be combined with others");
-            wdDelay(5000);
-
-        } else if (n_solo == 1) {
-
-            // sole, non-rotating choice: no bit to set, plot_rotset stays empty
-            plot_rotset[pp] = 0;
-            savePlotOps();
-            return_ch = solo_ch;
-
-        } else {
-
         // enforce a few panes that do not work well with rotation
-        uint32_t new_sets[PANE_N];
+        PlotMask new_sets[PANE_N];
         memcpy (new_sets, plot_rotset, sizeof(new_sets));
         new_sets[pp] = new_rotset;
         if (!enforceCDownAlone (box, new_rotset)) {
@@ -302,7 +269,6 @@ static PlotChoice askPaneChoice (PlotPane pp)
                     }
                 }
             }
-        }
         }
     }
 
@@ -412,8 +378,8 @@ void insureCountdownPaneSensible()
 {
     if (getSWEngineState(NULL,NULL) != SWE_COUNTDOWN) {
         for (int i = PANE_1; i < PANE_N; i++) {
-            if (plot_rotset[i] & (1u << PLOT_CH_COUNTDOWN)) {
-                plot_rotset[i] &= ~(1u << PLOT_CH_COUNTDOWN);
+            if (plot_rotset[i] & PLOTBIT(PLOT_CH_COUNTDOWN)) {
+                plot_rotset[i] &= ~PLOTBIT(PLOT_CH_COUNTDOWN);
                 if (plot_ch[i] == PLOT_CH_COUNTDOWN) {
                     setDefaultPaneChoice((PlotPane)i);
                     if (!setPlotChoice ((PlotPane)i, plot_ch[i])) {
@@ -616,33 +582,45 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
  */
 void initPlotPanes()
 {
-    // retrieve rotation sets -- ok to leave 0 for now if not yet defined
+    // Retrieve the historic low words from their original EEPROM locations and combine them with
+    // the newly appended high words. A missing high-word cookie is the normal upgrade case.
+    static const NV_Name rot_lo_nv[PANE_N] = {
+        NV_PANE0ROTSET, NV_PANE1ROTSET, NV_PANE2ROTSET, NV_PANE3ROTSET
+    };
+    static const NV_Name rot_hi_nv[PANE_N] = {
+        NV_PANE0ROTSET_HI, NV_PANE1ROTSET_HI, NV_PANE2ROTSET_HI, NV_PANE3ROTSET_HI
+    };
     memset (plot_rotset, 0, sizeof(plot_rotset));
-    NVReadUInt32 (NV_PANE0ROTSET, &plot_rotset[PANE_0]);
-    NVReadUInt32 (NV_PANE1ROTSET, &plot_rotset[PANE_1]);
-    NVReadUInt32 (NV_PANE2ROTSET, &plot_rotset[PANE_2]);
-    NVReadUInt32 (NV_PANE3ROTSET, &plot_rotset[PANE_3]);
+    for (int i = PANE_0; i < PANE_N; i++) {
+        uint32_t lo = 0;
+        uint32_t hi = 0;
+        NVReadUInt32 (rot_lo_nv[i], &lo);
+        NVReadUInt32 (rot_hi_nv[i], &hi);
+        plot_rotset[i] = ((PlotMask)hi << 32) | lo;
+    }
 
     // NB. since NV_PANE0ROTSET repurposes a prior NV it might contain invalid bits, 0 all if find any
     if (plot_rotset[PANE_0] & ~PANE_0_CH_MASK) {
 
-        Serial.printf ("PANE: Resetting bogus Pane 0 rot set: 0x%x\n", plot_rotset[PANE_0]);
+        Serial.printf ("PANE: Resetting bogus Pane 0 rot set: 0x%llx\n",
+                        (unsigned long long)plot_rotset[PANE_0]);
         plot_rotset[PANE_0] = 0;
         plot_ch[PANE_0] = PLOT_CH_NONE;
 
         // save scrubbed values
-        NVWriteUInt32 (NV_PANE0ROTSET, plot_rotset[PANE_0]);
+        NVWriteUInt32 (NV_PANE0ROTSET, 0);
+        NVWriteUInt32 (NV_PANE0ROTSET_HI, 0);
         NVWriteUInt8 (NV_PLOT_0, plot_ch[PANE_0]);
     }
 
 
-    // rm any choice not available
-    // all-panes mask, valid even when PLOT_CH_N == 32 (1u<<32 would be UB)
-    const uint32_t all_panes = (PLOT_CH_N >= 32) ? 0xFFFFFFFFu : ((1u << PLOT_CH_N) - 1);
+    // remove bits beyond the real choices. PLOT_CH_NONE consumes no bit.
+    const unsigned n_plot_bits = PLOT_CH_N - 1;
+    const PlotMask all_panes = n_plot_bits >= 64 ? ~UINT64_C(0) : ((UINT64_C(1) << n_plot_bits) - 1);
     for (int i = PANE_0; i < PANE_N; i++) {
         plot_rotset[i] &= all_panes;                     // reset any bits too high
         for (int j = 0; j < PLOT_CH_N; j++) {
-            if (plot_rotset[i] & PLOTBIT(j)) {
+            if (PLOT_CH_IS_REAL(j) && (plot_rotset[i] & PLOTBIT(j))) {
                 if (!plotChoiceIsAvailable ((PlotChoice)j)) {
                     plot_rotset[i] &= ~PLOTBIT(j);
                     Serial.printf ("PANE: Removing %s from pane %d: not available\n", plot_names[j],i);
@@ -664,7 +642,8 @@ void initPlotPanes()
                 // found dup -- replace with some other unused choice
                 for (int k = 0; k < PLOT_CH_N; k++) {
                     PlotChoice new_pc = (PlotChoice)k;
-                    if (plotChoiceIsAvailable(new_pc) && findPaneChoiceNow(new_pc) == PANE_NONE) {
+                    if (PLOT_CH_IS_REAL(new_pc) && plotChoiceIsAvailable(new_pc)
+                            && findPaneChoiceNow(new_pc) == PANE_NONE) {
                         Serial.printf ("PANE: Reassigning dup pane %d from %s to %s\n", j,
                                         plot_names[plot_ch[j]], plot_names[new_pc]);
                         // remove dup from rotation set then replace with new choice
@@ -683,10 +662,7 @@ void initPlotPanes()
         if (plot_ch[i] != PLOT_CH_NONE)
             plot_rotset[i] |= PLOTBIT(plot_ch[i]);
 
-    // log and save final arrangement
-    // N.B. logPaneRotSet() only iterates plot_rotset[] bits, which can never reveal a solo choice
-    // like PLOT_CH_SATACT (PLOTBIT() is always 0 for it by design) -- print the raw plot_ch[]
-    // values directly too so a bug placing such a choice on the wrong pane is never invisible.
+    // log and save final arrangement, including the raw current choices
     Serial.printf ("PANE: raw plot_ch[] = %d %d %d %d (%s %s %s %s)\n",
                     (int)plot_ch[PANE_0], (int)plot_ch[PANE_1], (int)plot_ch[PANE_2], (int)plot_ch[PANE_3],
                     plot_ch[PANE_0]==PLOT_CH_NONE ? "NONE" : plot_names[plot_ch[PANE_0]],
@@ -698,19 +674,23 @@ void initPlotPanes()
     savePlotOps();
 }
 
-/* update NV_PANE?CH from plot_rotset[] and NV_PLOT_? from plot_ch[]
+/* update the original low rotation words, appended high words and current choices.
  */
 void savePlotOps()
 {
-    NVWriteUInt32 (NV_PANE0ROTSET, plot_rotset[PANE_0]);
-    NVWriteUInt32 (NV_PANE1ROTSET, plot_rotset[PANE_1]);
-    NVWriteUInt32 (NV_PANE2ROTSET, plot_rotset[PANE_2]);
-    NVWriteUInt32 (NV_PANE3ROTSET, plot_rotset[PANE_3]);
+    static const NV_Name rot_lo_nv[PANE_N] = {
+        NV_PANE0ROTSET, NV_PANE1ROTSET, NV_PANE2ROTSET, NV_PANE3ROTSET
+    };
+    static const NV_Name rot_hi_nv[PANE_N] = {
+        NV_PANE0ROTSET_HI, NV_PANE1ROTSET_HI, NV_PANE2ROTSET_HI, NV_PANE3ROTSET_HI
+    };
+    static const NV_Name plot_nv[PANE_N] = {NV_PLOT_0, NV_PLOT_1, NV_PLOT_2, NV_PLOT_3};
 
-    NVWriteUInt8 (NV_PLOT_0, plot_ch[PANE_0]);
-    NVWriteUInt8 (NV_PLOT_1, plot_ch[PANE_1]);
-    NVWriteUInt8 (NV_PLOT_2, plot_ch[PANE_2]);
-    NVWriteUInt8 (NV_PLOT_3, plot_ch[PANE_3]);
+    for (int i = PANE_0; i < PANE_N; i++) {
+        NVWriteUInt32 (rot_lo_nv[i], (uint32_t)plot_rotset[i]);
+        NVWriteUInt32 (rot_hi_nv[i], (uint32_t)(plot_rotset[i] >> 32));
+        NVWriteUInt8 (plot_nv[i], plot_ch[i]);
+    }
 }
 
 /* flash plot and NCDXF_b borders that are nearly ready to change
@@ -796,7 +776,7 @@ bool isPaneRotating (PlotPane pp)
 {
     // beware plot choices not yet defined
     PlotChoice pc = plot_ch[pp];
-    if (pc == PLOT_CH_N)
+    if (!PLOT_CH_IS_REAL(pc))
         return (false);
 
     bool on_hold = ROTHOLD_TST(pc);
@@ -819,6 +799,7 @@ void restoreNormPANE0(void)
 {
     plot_ch[PANE_0] = PLOT_CH_NONE;
     plot_rotset[PANE_0] = 0;
+    savePlotOps();
 
     drawOneTimeDE();
     drawDEInfo();

@@ -386,7 +386,9 @@ typedef enum {
 
 // N.B. take care that names will fit in menu built by askPaneChoice()
 // N.B. names should not include blanks, but _ are changed to blanks for prettier printing
-#define PLOTNAMES \
+// Keep the original 32 choices at their historic ordinals. EEPROM value 32 remains NONE forever;
+// choices added after that sentinel are mapped into the new high rotation word by PLOTBIT().
+#define PLOTNAMES_LOW \
     X(PLOT_CH_BC,           "VOACAP_DEDX")      \
     X(PLOT_CH_DEWX,         "DE_Wx")            \
     X(PLOT_CH_DXCLUSTER,    "DX_Cluster")       \
@@ -418,18 +420,23 @@ typedef enum {
     X(PLOT_CH_ACTIVENETS,   "Nets")             \
     X(PLOT_CH_LAUNCHES,     "Launches")         \
     X(PLOT_CH_HFCOND,       "HF_Bands")         \
-    X(PLOT_CH_VHFCOND,      "VHF_Cond")         \
+    X(PLOT_CH_VHFCOND,      "VHF_Cond")
+
+#define PLOTNAMES_HIGH \
     X(PLOT_CH_SATACT,       "Sat_Alerts")
 
-#define X(a,b)  a,              // expands PLOTNAMES to each enum and comma
+#define PLOTNAMES PLOTNAMES_LOW PLOTNAMES_HIGH
+
+#define X(a,b)  a,              // expand the original low-word choices
 typedef enum {
-    PLOTNAMES
+    PLOTNAMES_LOW
+    PLOT_CH_NONE,               // fixed EEPROM sentinel: value 32
+    PLOTNAMES_HIGH              // first high-word choice starts at value 33
     PLOT_CH_N
 } PlotChoice;
 #undef X
 
-// reuse count also handy flag for not found
-#define PLOT_CH_NONE    PLOT_CH_N
+static_assert (PLOT_CH_N - 1 <= 64, "PlotMask high word is full");
 
 typedef enum {
     PANE_0,                             // DE/DX overlay
@@ -1597,6 +1604,15 @@ extern Satellite *lookupSatByName (const char *name, int *norad = NULL);
 
 extern void drawSatGroupSchedule (void);
 extern void drawSatCoVis (void);
+
+/*********************************************************************************************
+ *
+ * planets.cpp
+ *
+ */
+
+extern void drawPlanetsOnMap (void);
+extern bool checkPlanetMapTouch (const SCoord &s);
 extern bool setSatFromTLE (const char *name, const char *t1, const char *t2);
 extern bool initSat(void);
 extern bool getSatNow (SatNow &satnow);
@@ -2231,16 +2247,22 @@ extern void plotServerFile (const char *filename, const char title[], const char
 
 extern const SBox plot_b[PANE_N];          // box for each pane
 extern PlotChoice plot_ch[PANE_N];         // current choice in each pane, or PLOT_CH_NONE for PANE_0
-extern const char *plot_names[PLOT_CH_N];  // must be in same order as PlotChoice
-extern uint32_t plot_rothold;              // bitmask of PlotChoice in rotset but temporarily holding
-extern uint32_t plot_rotset[PANE_N];       // bitmask of each pane's PlotChoice rotation choices
-                                           // N.B. plot_rotset[i] must always include plot_ch[i] unless NONE
+extern const char *plot_names[PLOT_CH_N];  // indexed by PlotChoice; PLOT_CH_NONE entry is "NONE"
 
-// plot_rotset/plot_rothold are only 32 bits wide, but PLOT_CH_N may exceed 32 (e.g. PLOT_CH_SATACT).
-// PLOTBIT() maps any PlotChoice >= 32 to 0 instead of performing an out-of-range shift, which both
-// avoids undefined behavior and, as a deliberate side effect, guarantees such choices can never be
-// captured in a rotation set -- i.e. they can never participate in pane auto rotation.
-#define PLOTBIT(pc)             ((uint32_t)(pc) < 32 ? (1u << (uint32_t)(pc)) : 0u)
+typedef uint64_t PlotMask;
+extern PlotMask plot_rothold;              // PlotChoice bits temporarily holding rotation
+extern PlotMask plot_rotset[PANE_N];       // each pane's PlotChoice rotation choices
+                                           // N.B. plot_rotset[i] must include plot_ch[i] unless NONE
+
+// EEPROM value 32 is permanently reserved for PLOT_CH_NONE. Choices below it keep their original
+// low-word bit numbers; real choices above it are packed down by one so PLOT_CH_SATACT uses bit 32
+// (high-word bit 0), the next new choice uses bit 33, and so on.
+#define PLOT_CH_IS_REAL(pc)     ((uint32_t)(pc) < (uint32_t)PLOT_CH_NONE || \
+                                 ((uint32_t)(pc) > (uint32_t)PLOT_CH_NONE && \
+                                  (uint32_t)(pc) < (uint32_t)PLOT_CH_N))
+#define PLOTBIT_INDEX(pc)       ((uint32_t)(pc) < (uint32_t)PLOT_CH_NONE \
+                                    ? (uint32_t)(pc) : (uint32_t)(pc)-1U)
+#define PLOTBIT(pc)             (PLOT_CH_IS_REAL(pc) ? (UINT64_C(1) << PLOTBIT_INDEX(pc)) : UINT64_C(0))
 
 #define ROTHOLD_SET(pc)         (plot_rothold |= PLOTBIT(pc))
 #define ROTHOLD_CLR(pc)         (plot_rothold &= ~PLOTBIT(pc))
@@ -2249,15 +2271,18 @@ extern uint32_t plot_rotset[PANE_N];       // bitmask of each pane's PlotChoice 
 #define SHOWING_PANE_0()        (plot_ch[PANE_0] != PLOT_CH_NONE)
 #define BOX_IS_PANE_0(b)        ((b).w == PLOTBOX0_W && (b).h == PLOTBOX0_H)
 
-// bit mask of plot choices suitable for PANE_0
-#define PANE_0_CH_MASK          ((1<<PLOT_CH_DXCLUSTER) | (1<<PLOT_CH_CONTESTS) | (1<<PLOT_CH_ADIF) \
-                                 | (1<<PLOT_CH_ONTA) | (1<<PLOT_CH_DXPEDS) | (1<<PLOT_CH_ACTIVENETS) | (1<<PLOT_CH_LAUNCHES))
+// bit mask of plot choices suitable for PANE_0, including high-word choices
+#define PANE_0_CH_MASK          (PLOTBIT(PLOT_CH_DXCLUSTER) | PLOTBIT(PLOT_CH_CONTESTS) | \
+                                 PLOTBIT(PLOT_CH_ADIF) | PLOTBIT(PLOT_CH_ONTA) | \
+                                 PLOTBIT(PLOT_CH_DXPEDS) | PLOTBIT(PLOT_CH_ACTIVENETS) | \
+                                 PLOTBIT(PLOT_CH_LAUNCHES) | PLOTBIT(PLOT_CH_SATACT))
 
 // compute number of bits set in PANE_0_CH_MASK at compile time :-)
 // https://stackoverflow.com/questions/109023/count-the-number-of-set-bits-in-a-32-bit-integer
 // https://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
 #define NBITS_SET(v) ((((((((v) - (((v) >> 1) & 0x55555555)) & 0x33333333) + ((((v) - (((v) >> 1) & 0x55555555)) >> 2) & 0x33333333)) + (((((v) - (((v) >> 1) & 0x55555555)) & 0x33333333) + ((((v) - (((v) >> 1) & 0x55555555)) >> 2) & 0x33333333)) >> 4)) & 0xF0F0F0F) * 0x1010101) >> 24)
-#define N_PANE_0_CH             ((int)(NBITS_SET((uint32_t)PANE_0_CH_MASK)))
+#define N_PANE_0_CH             ((int)(NBITS_SET((uint32_t)PANE_0_CH_MASK) + \
+                                                 NBITS_SET((uint32_t)(PANE_0_CH_MASK >> 32))))
 
 #define PLOT_ROTWARN_DT        4           // show rotation about to occur, secs
 
@@ -2278,7 +2303,7 @@ extern void savePlotOps(void);
 extern int tickmarks (float min, float max, int numdiv, float ticks[]);
 extern bool isPaneRotating (PlotPane pp);
 extern bool isSpecialPaneRotating (PlotPane pp);
-extern bool enforceCDownAlone (const SBox &box, uint32_t rotset);
+extern bool enforceCDownAlone (const SBox &box, PlotMask rotset);
 extern bool overHoverPane (const SCoord &s);
 extern void restoreNormPANE0(void);
 
@@ -2771,6 +2796,7 @@ extern bool useOSTime (void);
 extern bool showNewDXDEWx(void);
 extern int getPaneRotationPeriod (void);
 extern bool showPIP(void);
+extern bool showPlanets(void);
 extern bool autoMap(void);
 extern int getMapRotationPeriod(void);
 extern GrayDpy_t getGrayDisplay(void);

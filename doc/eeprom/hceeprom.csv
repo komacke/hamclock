@@ -216,3 +216,9 @@ Addr,Name,Len,Type,Description
 0xAF9,NV_STORMS_ON,1,i,whether to show storm overlay and pane
 0xAFB,NV_HAMSATKEY,64,s,hams.at API key
 0xB3C,NV_SATGROUP,240,s,newline-separated satellite names for group schedule
+0xC2D,NV_SHOWPLANETS,1,i,whether to show planets on the map
+0xC2F,NV_PLOTSCHEMA,1,i,reserved plot settings schema marker
+0xC31,NV_PANE0ROTSET_HI,4,i,high 32 bits of pane 0 PlotChoice rotation mask
+0xC36,NV_PANE1ROTSET_HI,4,i,high 32 bits of pane 1 PlotChoice rotation mask
+0xC3B,NV_PANE2ROTSET_HI,4,i,high 32 bits of pane 2 PlotChoice rotation mask
+0xC40,NV_PANE3ROTSET_HI,4,i,high 32 bits of pane 3 PlotChoice rotation mask

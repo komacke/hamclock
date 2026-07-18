@@ -1042,6 +1042,9 @@ static void checkBRB (time_t t)
  */
 void setPlotVisible (PlotChoice pc)
 {
+    if (!PLOT_CH_IS_REAL(pc))
+        return;
+
     // done if the choice is already on display
     if (findPaneChoiceNow (pc) != PANE_NONE)
         return;
@@ -1051,10 +1054,9 @@ void setPlotVisible (PlotChoice pc)
     if (pp == PANE_NONE)
         pp = PANE_3;
 
-    // install as the only choice
+    // install as the only choice; set the mask first so setPlotChoice() persists both words
+    plot_rotset[pp] = PLOTBIT(pc);
     (void) setPlotChoice (pp, pc);
-    plot_rotset[pp] = 1 << pc;
-    savePlotOps();
 }
 
 /* set the given pane to the given plot choice now.
@@ -1064,6 +1066,10 @@ void setPlotVisible (PlotChoice pc)
  */
 bool setPlotChoice (PlotPane pp, PlotChoice pc)
 {
+    // NONE is a saved Pane 0 sentinel, never a drawable plot choice or array index.
+    if (pp < PANE_0 || pp >= PANE_N || !PLOT_CH_IS_REAL(pc))
+        return (false);
+
     // ignore if new choice is already in some other pane
     PlotPane pp_now = findPaneForChoice (pc);
     if (pp_now != PANE_NONE && pp_now != pp)
@@ -2403,8 +2409,6 @@ void updateWiFi(void)
             break;
 
         case PLOT_CH_SATACT:
-            if (fresh_redraw[pc])
-                Serial.printf ("PANE: entering PLOT_CH_SATACT case for pp=%d (fresh)\n", (int)pp);
             if (t0 >= next_update[pp]) {
                 if (updateHamsat(box, fresh_redraw[pc])) {
                     next_update[pp] = nextPaneUpdate (pc, 90);     // secs, matches hamsat.cpp cache age
@@ -2488,6 +2492,7 @@ void updateWiFi(void)
             }
             break;
 
+        case PLOT_CH_NONE:     // fallthru -- only possible for inactive Pane 0
         case PLOT_CH_N:
             break;              // lint
         }
