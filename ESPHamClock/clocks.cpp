@@ -5,10 +5,37 @@
 #include "HamClock.h"
 
 // ADS-B airplane icon -- opens https://adsb.lol, sits just below the MOTD mailbox icon
-#define ADSB_ICON_W             14
-#define ADSB_ICON_H             14
+#define ADSB_ICON_W             20
+#define ADSB_ICON_H             20
+#define ADSB_ICON_BPR           ((ADSB_ICON_W + 7)/8) // bytes per bitmap row
 #define ADSB_ICON_GAP           6               // gap below MOTD icon
+#define ADSB_ICON_C             GRAY
 SBox adsb_btn_b;
+
+// top-down airliner silhouette, one bit per pixel. zero bits are transparent.
+// rows are packed left-to-right, least-significant bit first, like santa.cpp.
+static const uint8_t adsb_plane[ADSB_ICON_BPR*ADSB_ICON_H] PROGMEM = {
+    0x00, 0x06, 0x00,
+    0x00, 0x06, 0x00,
+    0x00, 0x06, 0x00,
+    0x00, 0x06, 0x00,
+    0x00, 0x06, 0x00,
+    0x00, 0x06, 0x00,
+    0x00, 0x06, 0x00,
+    0x80, 0x1f, 0x00,
+    0xc0, 0x3f, 0x00,
+    0xf0, 0xff, 0x00,
+    0xf8, 0xff, 0x01,
+    0x1e, 0x86, 0x07,
+    0x03, 0x06, 0x0c,
+    0x00, 0x06, 0x00,
+    0x00, 0x06, 0x00,
+    0x00, 0x06, 0x00,
+    0x00, 0x06, 0x00,
+    0x00, 0x0f, 0x00,
+    0xe0, 0x7f, 0x00,
+    0x00, 0x0f, 0x00,
+};
 
 // format flags
 uint8_t de_time_fmt;                            // one of DETIME_*
@@ -89,31 +116,24 @@ static void drawUTCButton()
  */
 void drawADSBIcon()
 {
-    adsb_btn_b.x = motd_btn_b.x;
+    // center the wider airplane below the mailbox while retaining one clickable bounding box.
+    adsb_btn_b.x = motd_btn_b.x - (ADSB_ICON_W - motd_btn_b.w)/2;
     adsb_btn_b.y = motd_btn_b.y + motd_btn_b.h + ADSB_ICON_GAP;
     adsb_btn_b.w = ADSB_ICON_W;
     adsb_btn_b.h = ADSB_ICON_H;
 
+    // erase the old icon, then paint only set bitmap pixels; zero bits remain background.
     tft.fillRect (adsb_btn_b.x, adsb_btn_b.y, adsb_btn_b.w, adsb_btn_b.h, RA8875_BLACK);
-
-    // airplane silhouette: fuselage nose-to-tail, wide wings ~1/3 back from the nose, a smaller
-    // tail stabilizer near the back -- the classic top-down airplane pictogram, not a paper dart.
-    // no icon font available, so this is built from basic line primitives, same approach
-    // drawMOTDIcon() uses for its envelope shape.
-    const uint16_t x = adsb_btn_b.x + 1;
-    const uint16_t y = adsb_btn_b.y + 1;
-    const uint16_t w = 12;
-    const uint16_t h = 12;
-    const uint16_t col = GRAY;
-
-    uint16_t nose_x = x + w, tail_x = x, mid_y = y + h/2;
-    tft.drawLine (tail_x, mid_y, nose_x, mid_y, col);                       // fuselage
-    tft.drawLine (nose_x, mid_y, nose_x-3, mid_y-1, col);                   // nose taper
-    tft.drawLine (nose_x, mid_y, nose_x-3, mid_y+1, col);
-    uint16_t wing_x = x + (w*5)/8;
-    tft.drawLine (wing_x, y, wing_x, y+h-1, col);                          // main wings
-    uint16_t tail_wing_x = x + w/6;
-    tft.drawLine (tail_wing_x, mid_y-2, tail_wing_x, mid_y+2, col);        // tail stabilizer
+    for (uint16_t row = 0; row < ADSB_ICON_H; row++) {
+        for (uint16_t byte_col = 0; byte_col < ADSB_ICON_BPR; byte_col++) {
+            uint8_t bits = pgm_read_byte (&adsb_plane[row*ADSB_ICON_BPR + byte_col]);
+            for (uint16_t bit = 0; bit < 8; bit++) {
+                uint16_t col = 8*byte_col + bit;
+                if (col < ADSB_ICON_W && (bits & (1U << bit)))
+                    tft.drawPixel (adsb_btn_b.x + col, adsb_btn_b.y + row, ADSB_ICON_C);
+            }
+        }
+    }
 }
 
 /* function given to TimeLib's setSyncProvider() to resync its time base occasionally.
