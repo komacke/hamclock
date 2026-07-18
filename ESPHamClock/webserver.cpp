@@ -419,7 +419,7 @@ static void reportPaneChoices (WiFiClient &client, PlotPane pp)
         snprintf (buf, sizeof(buf), " %s", plot_names[pc_now]);
         client.print (buf);
         for (int i = 0; i < PLOT_CH_N; i++) {
-            if (i != pc_now && (plot_rotset[pp] & PLOTBIT(i))) {
+            if (i != pc_now && plot_rotset[pp] & PLOTBIT(i)) {
                 snprintf (buf, sizeof(buf), " %s", plot_names[i]);
                 client.print (buf);
             }
@@ -3420,7 +3420,8 @@ static bool setWiFiADIF (WiFiClient &client, char line[], size_t line_len)
         // assign if not already
         if (adif_pp == PANE_NONE && setPlotChoice (pp, PLOT_CH_ADIF)) {
             adif_pp = pp;
-            plot_rotset[adif_pp] |= (1 << PLOT_CH_ADIF);
+            plot_rotset[adif_pp] |= PLOTBIT(PLOT_CH_ADIF);
+            savePlotOps();
         }
 
         // create GenReader using existing client
@@ -3831,7 +3832,7 @@ static bool setWiFiPane (WiFiClient &client, char line[], size_t line_len)
             // find tok in plot_names
             PlotChoice tok_pc = PLOT_CH_NONE;
             for (int i = 0; i < PLOT_CH_N; i++) {
-                if (strcmp (tok_copy, plot_names[i]) == 0) {
+                if (PLOT_CH_IS_REAL(i) && strcmp (tok_copy, plot_names[i]) == 0) {
                     tok_pc = (PlotChoice)i;
                     break;
                 }
@@ -3843,10 +3844,8 @@ static bool setWiFiPane (WiFiClient &client, char line[], size_t line_len)
                 return (false);
             }
 
-            // ok on PANE_0? SATACT is a special solo-only choice because its ordinal
-            // does not fit in the 32-bit PANE_0_CH_MASK.
-            if (pp == PANE_0 && tok_pc != PLOT_CH_SATACT
-                            && (PLOTBIT(tok_pc) & PANE_0_CH_MASK) == 0) {
+            // ok on PANE_0?
+            if (pp == PANE_0 && (PLOTBIT(tok_pc) & ~PANE_0_CH_MASK) != 0) {
                 strcpy (line, "not supported on Pane 0");
                 return (false);
             }
@@ -3880,21 +3879,10 @@ static bool setWiFiPane (WiFiClient &client, char line[], size_t line_len)
             return (false);
         }
 
-        // Choices whose ordinal does not fit in plot_rotset[] are supported only as a
-        // sole, non-rotating selection.
-        int n_solo = 0;
-        uint32_t new_rotset = 0;
-        for (int i = 0; i < n_pc; i++) {
-            uint32_t bit = PLOTBIT(pc[i]);
-            if (bit == 0)
-                n_solo++;
-            else
-                new_rotset |= bit;
-        }
-        if (n_solo > 0 && (n_solo > 1 || n_pc > 1)) {
-            strcpy (line, "solo-only pane choice may not be combined");
-            return (false);
-        }
+        // build candidate rotset
+        PlotMask new_rotset = 0;
+        for (int i = 0; i < n_pc; i++)
+            new_rotset |= PLOTBIT(pc[i]);
 
         // ok! engage new rotset and show first in list
         plot_rotset[pp] = new_rotset;
@@ -5143,9 +5131,10 @@ static bool runDemoChoice (DemoChoice choice, bool &slow, char msg[], size_t msg
             } else {
                 // select an appropriate choice for PANE_0
                 PlotChoice pc0 = getAnyAvailablePane0Choice();
+                if (pc0 != PLOT_CH_NONE)
+                    plot_rotset[PANE_0] = PLOTBIT(pc0);   // no auto rotation
                 ok = pc0 != PLOT_CH_NONE && setPlotChoice (PANE_0, pc0);
                 if (ok) {
-                    plot_rotset[PANE_0] = PLOTBIT(pc0);   // no auto rotation
                     logPaneRotSet (PANE_0, pc0);
                     demoMsg (ok, choice, msg, msg_len, "Pane 0 now %s", plot_names[pc0]);
                 } else
@@ -5157,9 +5146,9 @@ static bool runDemoChoice (DemoChoice choice, bool &slow, char msg[], size_t msg
     case DEMO_PANE1:
         {
             PlotChoice pc = getAnyAvailableChoice();
+            plot_rotset[PANE_1] = PLOTBIT(pc);   // no auto rotation
             ok = setPlotChoice (PANE_1, pc);
             if (ok) {
-                plot_rotset[PANE_1] = PLOTBIT(pc);   // no auto rotation
                 logPaneRotSet (PANE_1, pc);
                 demoMsg (ok, choice, msg, msg_len, "Pane 1 now %s", plot_names[pc]);
             } else
@@ -5170,9 +5159,9 @@ static bool runDemoChoice (DemoChoice choice, bool &slow, char msg[], size_t msg
     case DEMO_PANE2:
         {
             PlotChoice pc = getAnyAvailableChoice();
+            plot_rotset[PANE_2] = PLOTBIT(pc);   // no auto rotation
             ok = setPlotChoice (PANE_2, pc);
             if (ok) {
-                plot_rotset[PANE_2] = PLOTBIT(pc);   // no auto rotation
                 logPaneRotSet (PANE_2, pc);
                 demoMsg (ok, choice, msg, msg_len, "Pane 2 now %s", plot_names[pc]);
             } else
@@ -5183,9 +5172,9 @@ static bool runDemoChoice (DemoChoice choice, bool &slow, char msg[], size_t msg
     case DEMO_PANE3:
         {
             PlotChoice pc = getAnyAvailableChoice();
+            plot_rotset[PANE_3] = PLOTBIT(pc);   // no auto rotation
             ok = setPlotChoice (PANE_3, pc);
             if (ok) {
-                plot_rotset[PANE_3] = PLOTBIT(pc);   // no auto rotation
                 logPaneRotSet (PANE_3, pc);
                 demoMsg (ok, choice, msg, msg_len, "Pane 3 now %s", plot_names[pc]);
             } else

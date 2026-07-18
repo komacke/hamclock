@@ -373,8 +373,14 @@ typedef enum {
     // 252
     NV_SHOWPLANETS,               // whether to show planets on the map
 
-    // 253
-    NV_PLOTSCHEMA,                // plot settings persistence schema version
+    // 253 -- retain the experimental marker so already-patched EEPROM files remain compatible
+    NV_PLOTSCHEMA,                 // reserved plot settings schema marker
+
+    // 254 -- appended so all prior EEPROM addresses remain unchanged
+    NV_PANE0ROTSET_HI,            // high 32 bits of pane 0 PlotChoice rotation mask
+    NV_PANE1ROTSET_HI,            // high 32 bits of pane 1 PlotChoice rotation mask
+    NV_PANE2ROTSET_HI,            // high 32 bits of pane 2 PlotChoice rotation mask
+    NV_PANE3ROTSET_HI,            // high 32 bits of pane 3 PlotChoice rotation mask
 
 	NV_N
 
