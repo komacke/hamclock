@@ -144,6 +144,7 @@ OBJS = \
 	ontheair.o \
 	parsespot.o \
 	passwd.o \
+	planets.o \
 	plot.o \
 	plotmap.o \
 	plotmgmnt.o \

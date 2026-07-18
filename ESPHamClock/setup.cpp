@@ -635,6 +635,8 @@ typedef enum {
     MAXTLEA_BPR,
     MAXTLEB_BPR,
 
+    SHOWPLANETS_BPR,
+
     // page "6" -- color editor
 
     N_BPR,                                      // number of fields
@@ -945,6 +947,9 @@ static BoolPrompt bool_pr[N_BPR] = {
     {4, {400, R2Y(11), 190, PR_H},  {590, R2Y(11), 170, PR_H}, false, NULL,
                     maxTLEAges[2], maxTLEAges[3], MAXTLEA_BPR, 0},
                                                 // 4x entangled: FF -> TF -> FT -> TT -> ...
+
+    {4, { 10, R2Y(12), 190, PR_H}, {200, R2Y(12), 170, PR_H}, false, "Show Planets?", "No", "Yes", NOMATE,
+                    "Whether to show the 7 visible planets on the map at their current position"},
 
 
 
@@ -4581,6 +4586,13 @@ static void initSetup()
     }
     bool_pr[SHOWPIP_BPR].state = (show_pip != 0);
 
+    uint8_t show_planets;
+    if (!NVReadUInt8 (NV_SHOWPLANETS, &show_planets)) {
+        show_planets = 0;
+        NVWriteUInt8 (NV_SHOWPLANETS, show_planets);
+    }
+    bool_pr[SHOWPLANETS_BPR].state = (show_planets != 0);
+
     uint8_t auto_map;
     if (!NVReadUInt8 (NV_AUTOMAP, &auto_map)) {
         auto_map = 0;
@@ -5434,6 +5446,7 @@ static void saveParams2NV()
     NVWriteUInt8 (NV_PANEROTP, getPaneRotationPeriod());
     NVWriteUInt8 (NV_MAPROTP, getMapRotationPeriod());
     NVWriteUInt8 (NV_SHOWPIP, showPIP());
+    NVWriteUInt8 (NV_SHOWPLANETS, showPlanets());
     NVWriteUInt8 (NV_AUTOMAP, autoMap());
     NVWriteUInt8 (NV_GRAYDPY, (uint8_t)getGrayDisplay());
     NVWriteUInt8 (NV_QRZID, getQRZId());
@@ -6244,6 +6257,13 @@ int getPaneRotationPeriod (void)
 bool showPIP()
 {
     return (bool_pr[SHOWPIP_BPR].state);
+}
+
+/* return whether to show planets on the map
+ */
+bool showPlanets()
+{
+    return (bool_pr[SHOWPLANETS_BPR].state);
 }
 
 /* return whether to run the automatic space weather map detection.

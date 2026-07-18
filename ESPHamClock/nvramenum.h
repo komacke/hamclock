@@ -370,6 +370,9 @@ typedef enum {
     // 251
     NV_SATGROUP,                 // newline-separated satellite names for group schedule
 
+    // 252
+    NV_SHOWPLANETS,               // whether to show planets on the map
+
 	NV_N
 
 } NV_Name;

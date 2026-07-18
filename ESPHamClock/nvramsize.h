@@ -373,6 +373,9 @@ static const uint8_t nv_sizes[NV_N] = {
     // 251
     NV_SATGROUP_LEN,            // NV_SATGROUP
 
+    // 252
+    1,                          // NV_SHOWPLANETS
+
 };
 
 #endif // _NVRAMSIZE_H

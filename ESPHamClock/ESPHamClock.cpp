@@ -878,6 +878,8 @@ static void checkTouch()
         // set showing sat in DX box
         dx_info_for_sat = true;
         drawSatPass();
+    } else if (checkPlanetMapTouch (s)) {
+        // handled entirely within checkPlanetMapTouch
     } else if (!overViewBtn(s, DX_R) && s2ll (s, ll)) {
         // tapped map: set flag to run popup after map finishes or set newDX here if special-tap
         if (names_on)
@@ -1715,6 +1717,7 @@ void drawAllSymbols()
     drawADIFSpotsOnMap();
     drawDXPedsOnMap();
     drawHamsatOnMap();
+    drawPlanetsOnMap();
     drawStormsOnMap();
     drawLaunchesOnMap();
     drawActiveNetsOnMap();

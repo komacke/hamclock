@@ -1597,6 +1597,15 @@ extern Satellite *lookupSatByName (const char *name, int *norad = NULL);
 
 extern void drawSatGroupSchedule (void);
 extern void drawSatCoVis (void);
+
+/*********************************************************************************************
+ *
+ * planets.cpp
+ *
+ */
+
+extern void drawPlanetsOnMap (void);
+extern bool checkPlanetMapTouch (const SCoord &s);
 extern bool setSatFromTLE (const char *name, const char *t1, const char *t2);
 extern bool initSat(void);
 extern bool getSatNow (SatNow &satnow);
@@ -2771,6 +2780,7 @@ extern bool useOSTime (void);
 extern bool showNewDXDEWx(void);
 extern int getPaneRotationPeriod (void);
 extern bool showPIP(void);
+extern bool showPlanets(void);
 extern bool autoMap(void);
 extern int getMapRotationPeriod(void);
 extern GrayDpy_t getGrayDisplay(void);
