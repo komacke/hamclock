@@ -315,7 +315,7 @@ bool askOTAupdate(char *new_ver, bool show_pending, bool def_yes)
         drawStringInBox ("No", no_b, !active_yes, RA8875_WHITE);
         drawStringInBox ("Yes", yes_b, active_yes, RA8875_WHITE);
     } else {
-        drawStringInBox ("Ok", no_b, false, RA8875_WHITE);
+        drawStringInBox ("Ok", no_b, true, RA8875_WHITE);
     }
 
     // Check if beta version exists
