@@ -1467,6 +1467,23 @@ static bool checkSatUpToDate (SatState &s, bool *updated)
     return (true);
 }
 
+/* lightweight TLE lookup for a satellite NOT part of the globally-tracked sat_state[] --
+ * does not disturb sat_state[], the map display, or NVRAM. used by satsked.cpp's group
+ * schedule feature to get orbital elements for many satellites at once.
+ * returns a heap-allocated Satellite* the caller owns (delete when done), or NULL if the
+ * name isn't found or its TLE is unavailable/stale.
+ */
+Satellite *lookupSatByName (const char *name, int *norad)
+{
+    SatState tmp{};
+    strncpySubChar (tmp.name, name, '_', ' ', NV_SATNAME_LEN);
+    if (!checkSatUpToDate (tmp, NULL))
+        return (NULL);
+    if (norad)
+        *norad = tmp.norad;
+    return (tmp.sat);
+}
+
 /* show pass time of sat_rs(void)
  */
 static void drawSatRSEvents(SatState &s)
@@ -3842,6 +3859,8 @@ void drawDXSatMenu (const SCoord &s)
         _SMI_ORBTRACK2,
         _SMI_SATNOGS2,
         _SMI_AMSAT_STATUS,
+        _SMI_GROUPSKED,
+        _SMI_COVIS,
         _SMI_N,
     };
 
@@ -3900,6 +3919,8 @@ void drawDXSatMenu (const SCoord &s)
         {menu_sat2,   false, 1, _DXS_INDENT2,  "Show OrbTrack", NULL},
         {menu_sat2,   false, 1, _DXS_INDENT2,  "Show SatNogs",  NULL},
         {MENU_1OFN,   false, 1, _DXS_INDENT1,  "Show Status",   NULL},
+        {MENU_1OFN,   false, 1, _DXS_INDENT1,  "Group Schedule", NULL},
+        {MENU_1OFN,   false, 1, _DXS_INDENT1,  "Co-Visibility", NULL},
     };
 
     // box for menu
@@ -4044,6 +4065,14 @@ void drawDXSatMenu (const SCoord &s)
                 }
                 case _SMI_AMSAT_STATUS:
                     openURL ("https://www.amsat.org/status/");
+                    break;
+                case _SMI_GROUPSKED:
+                    drawSatGroupSchedule ();
+                    initEarthMap ();
+                    break;
+                case _SMI_COVIS:
+                    drawSatCoVis ();
+                    initEarthMap ();
                     break;
                 case _SMI_N:
                     // lint

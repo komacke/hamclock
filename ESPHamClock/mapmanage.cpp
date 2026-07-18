@@ -737,6 +737,13 @@ void logMapRotSet(void)
  */
 const char *getCoreMapStyle (CoreMaps cm, char s[NV_COREMAPSTYLE_LEN])
 {
+        // N.B. CM_NONE is defined as CM_N, one past the end of cm_info[] -- guard against it and
+        // any other out-of-range value rather than reading past the array.
+        if ((int)cm < 0 || (int)cm >= CM_N) {
+            snprintf (s, NV_COREMAPSTYLE_LEN, "None");
+            return (s);
+        }
+
         const char *name = cm_info[cm].name;
 
         if (cm == CM_PMTOA || cm == CM_PMREL)

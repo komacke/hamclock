@@ -1714,6 +1714,7 @@ void drawAllSymbols()
     drawDXClusterSpotsOnMap();
     drawADIFSpotsOnMap();
     drawDXPedsOnMap();
+    drawHamsatOnMap();
     drawStormsOnMap();
     drawLaunchesOnMap();
     drawActiveNetsOnMap();
@@ -1885,7 +1886,10 @@ void drawDEFormatMenu()
     // number of core menu items
     #define N_DEFMT_CORE        8
 
-    MenuItem mitems[N_DEFMT_CORE+N_PANE_0_CH] = {
+    // PLOT_CH_SATACT can't join PANE_0_CH_MASK -- that's a 32-bit bitmask constant and SATACT's
+    // ordinal (32) can never fit in one, by the same design as everywhere else PLOTBIT() is used.
+    // it's offered as one extra, separately-handled menu item instead.
+    MenuItem mitems[N_DEFMT_CORE+N_PANE_0_CH+1] = {
 
         // outer menu is whether to display the DE pane or use both DE+DX for a pane choice
         {MENU_1OFN, !SHOWING_PANE_0(), 1, mi, "DE format:", NULL},
@@ -1919,10 +1923,21 @@ void drawDEFormatMenu()
         PlotPane pp = findPaneForChoice ((PlotChoice)plot_n);
         bool available =  plotChoiceIsAvailable((PlotChoice)plot_n) && (pp == PANE_NONE || pp == PANE_0);
         MenuFieldType type = available ? MENU_AL1OFN : MENU_IGNORE;
-        mitems[N_DEFMT_CORE+i] = {type, !!(plot_rotset[PANE_0] & (1<<plot_n)), 3, Mi, plot_names[plot_n], 0};
+        mitems[N_DEFMT_CORE+i] = {type, !!(plot_rotset[PANE_0] & PLOTBIT(plot_n)), 3, Mi, plot_names[plot_n], 0};
     }
     if (pane_0_bits != 0)
         fatalError ("drawDEFormatMenu() %d %d 0x%x\n", pane_0_bits, N_PANE_0_CH, PANE_0_CH_MASK);
+
+    // extra SATACT item -- can't be represented in plot_rotset (see comment above), so its
+    // "currently set" state is determined the same way paneHasChoice() checks a solo choice
+    const int SATACT_MI = N_DEFMT_CORE + N_PANE_0_CH;
+    {
+        PlotPane pp = findPaneForChoice (PLOT_CH_SATACT);
+        bool available = plotChoiceIsAvailable (PLOT_CH_SATACT) && (pp == PANE_NONE || pp == PANE_0);
+        MenuFieldType type = available ? MENU_AL1OFN : MENU_IGNORE;
+        bool is_set = (plot_ch[PANE_0] == PLOT_CH_SATACT && plot_rotset[PANE_0] == 0);
+        mitems[SATACT_MI] = {type, is_set, 3, Mi, plot_names[PLOT_CH_SATACT], 0};
+    }
 
     // create a box for the menu
     SBox menu_b;
@@ -1965,18 +1980,26 @@ void drawDEFormatMenu()
             uint32_t new_rotset = 0;
             for (int i = 0; i < N_PANE_0_CH; i++) { 
                 if (mitems[N_DEFMT_CORE+i].set)
-                    new_rotset |= (1<<menu_ch[i]);
+                    new_rotset |= PLOTBIT(menu_ch[i]);
             }
 
-            // might not be any if user clicked this section but made no choice
-            if (new_rotset != 0) {
+            bool satact_set = mitems[SATACT_MI].set;
 
-                // ok!
+            if (satact_set && new_rotset == 0) {
+
+                // SATACT alone: solo, non-rotating choice -- can't be represented in plot_rotset
+                plot_ch[PANE_0] = PLOT_CH_SATACT;
+                plot_rotset[PANE_0] = 0;
+
+            } else if (new_rotset != 0) {
+
+                // one or more mask-based choices (SATACT, if also checked, can't join a
+                // multi-item rotation set the way these can, so it's dropped in that case)
                 plot_rotset[PANE_0] = new_rotset;
 
                 // pick any one as current
                 for (int i = 0; i < PLOT_CH_N; i++) {
-                    if (plot_rotset[PANE_0] & (1 << i)) {
+                    if (plot_rotset[PANE_0] & PLOTBIT(i)) {
                         plot_ch[PANE_0] = (PlotChoice) i;
                         break;
                     }

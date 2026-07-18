@@ -48,6 +48,7 @@ static bool good_wpa;
 static char wifi_ssid[NV_WIFI_SSID_LEN];
 static char wifi_pw[NV_WIFI_PW_LEN];
 static char dx_login[NV_DXLOGIN_LEN];
+static char hamsat_key[NV_HAMSATKEY_LEN];
 static char dx_host[NV_DXHOST_LEN];
 static char rot_host[NV_ROTHOST_LEN];
 static char rig_host[NV_RIGHOST_LEN];
@@ -384,6 +385,7 @@ typedef enum {
     ONTAWL_SPR,
 
     // page "4"
+    HAMSATKEY_SPR,
     CENTERLNG_SPR,
     I2CFN_SPR,
     BME76DT_SPR,
@@ -488,7 +490,11 @@ static StringPrompt string_pr[N_SPR] = {
 
     // "page 4" -- index 3
 
-    {3, {10,  R2Y(0), 240, PR_H}, {250, R2Y(0), 100, PR_H}, "Map center longitude:", NULL, 0, 0, 0,
+    {3, { 10, R2Y(0), 190, PR_H}, {210, R2Y(0), 600, PR_H}, "hams.at key:  ", hamsat_key, NV_HAMSATKEY_LEN, 0, 0,
+                "Enter your hams.at API key for personalized satellite activation match%/visibility, "
+                "or leave blank"},
+
+    {3, {10,  R2Y(1), 240, PR_H}, {250, R2Y(1), 100, PR_H}, "Map center longitude:", NULL, 0, 0, 0,
                 "Enter the desired center longitude for the Mercator map projection in decimal degrees; "
                 "use - or suffix W for west"},
 
@@ -512,7 +518,6 @@ static StringPrompt string_pr[N_SPR] = {
                 "Enter the percentage of hardware brightness to be used for Dim"},                // shadowed
     {3, {350, R2Y(6),  90, PR_H}, {450, R2Y(6),  80, PR_H}, "Max%:", NULL, 0, 0, 0,
                 "Enter the percentage of hardware brightness to be used for Bright"},             // shadowed
-
 
 
     // "page 5" -- index 4
@@ -4218,6 +4223,10 @@ static void initSetup()
         setClusterLogin();
         NVWriteString(NV_DXLOGIN, dx_login);
     }
+    if (!NVReadString(NV_HAMSATKEY, hamsat_key)) {
+        memset (hamsat_key, 0, sizeof(hamsat_key));
+        NVWriteString(NV_HAMSATKEY, hamsat_key);
+    }
     if (!NVReadUInt16(NV_DXPORT, &dx_port)) {
         dx_port = 0;
         NVWriteUInt16(NV_DXPORT, dx_port);
@@ -5393,6 +5402,7 @@ static void saveParams2NV()
 
     NVWriteUInt16 (NV_DXPORT, dx_port);
     NVWriteString (NV_DXLOGIN, dx_login);
+    NVWriteString (NV_HAMSATKEY, hamsat_key);
 
     NVWriteUInt8 (NV_LOGUSAGE, bool_pr[LOGUSAGE_BPR].state);
     NVWriteUInt8 (NV_LBLSTYLE,

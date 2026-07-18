@@ -115,6 +115,7 @@ OBJS = \
 	dxpeds.o \
 	dxpeds_hide.o \
 	hamqsl.o \
+	hamsat.o \
 	hurricane.o \
 	earthmap.o \
 	earthsat.o \
@@ -155,6 +156,7 @@ OBJS = \
 	runner.o \
 	santa.o \
 	sattool.o \
+	satsked.o \
 	scrollbar.o \
 	scrollstate.o \
 	sdo.o \
