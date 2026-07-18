@@ -214,3 +214,5 @@ Addr,Name,Len,Type,Description
 0xAF4,NV_LTG_WORLDWIDE,1,i,"lightning: 1=worldwide, 0=radius"
 0xAF6,NV_LTG_RADIUS,2,i,lightning: search radius in km
 0xAF9,NV_STORMS_ON,1,i,whether to show storm overlay and pane
+0xAFB,NV_HAMSATKEY,64,s,hams.at API key
+0xB3C,NV_SATGROUP,240,s,newline-separated satellite names for group schedule
