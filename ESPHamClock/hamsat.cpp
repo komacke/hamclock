@@ -506,7 +506,10 @@ static void drawHamsatPane (const SBox &box)
 {
     prepPlotBox (box);
 
-    const char *title = "Sat Alerts";
+    // narrow pane (PANE_0): full "Sat Alerts" centers wide enough to collide with the scroll-up
+    // arrow/count, which is drawn at a fixed offset from the right edge regardless of title width
+    // -- shorten it, same fix ONTA uses for "On The Air" -> "On Air".
+    const char *title = BOX_IS_PANE_0(box) ? "Alerts" : "Sat Alerts";
     selectFontStyle (LIGHT_FONT, SMALL_FONT);
     tft.setTextColor (HAMSAT_COLOR);
     uint16_t pw = getTextWidth (title);
