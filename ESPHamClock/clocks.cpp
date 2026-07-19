@@ -4,9 +4,11 @@
 
 #include "HamClock.h"
 
-// ADS-B airplane icon -- opens https://adsb.lol, sits just below the MOTD mailbox icon
-#define ADSB_ICON_W             20
-#define ADSB_ICON_H             20
+// ADS-B airplane icon -- opens https://adsb.lol, sits just below the MOTD mailbox icon.
+// kept small (matches MOTD icon size) to leave enough clearance below for the Windy icon
+// before hitting auxtime_b (the date line).
+#define ADSB_ICON_W             14
+#define ADSB_ICON_H             14
 #define ADSB_ICON_BPR           ((ADSB_ICON_W + 7)/8) // bytes per bitmap row
 #define ADSB_ICON_GAP           6               // gap below MOTD icon
 #define ADSB_ICON_C             GRAY
@@ -15,26 +17,46 @@ SBox adsb_btn_b;
 // top-down airliner silhouette, one bit per pixel. zero bits are transparent.
 // rows are packed left-to-right, least-significant bit first, like santa.cpp.
 static const uint8_t adsb_plane[ADSB_ICON_BPR*ADSB_ICON_H] PROGMEM = {
-    0x00, 0x06, 0x00,
-    0x00, 0x06, 0x00,
-    0x00, 0x06, 0x00,
-    0x00, 0x06, 0x00,
-    0x00, 0x06, 0x00,
-    0x00, 0x06, 0x00,
-    0x00, 0x06, 0x00,
-    0x80, 0x1f, 0x00,
-    0xc0, 0x3f, 0x00,
-    0xf0, 0xff, 0x00,
-    0xf8, 0xff, 0x01,
-    0x1e, 0x86, 0x07,
-    0x03, 0x06, 0x0c,
-    0x00, 0x06, 0x00,
-    0x00, 0x06, 0x00,
-    0x00, 0x06, 0x00,
-    0x00, 0x06, 0x00,
-    0x00, 0x0f, 0x00,
-    0xe0, 0x7f, 0x00,
-    0x00, 0x0f, 0x00,
+    0xc0, 0x00,
+    0xc0, 0x00,
+    0xc0, 0x00,
+    0xc0, 0x00,
+    0xc0, 0x00,
+    0xe0, 0x01,
+    0xf8, 0x07,
+    0xfc, 0x0f,
+    0xc7, 0x38,
+    0xc0, 0x00,
+    0xc0, 0x00,
+    0xc0, 0x00,
+    0xf0, 0x03,
+    0xf0, 0x03,
+};
+
+// Windy.com wind icon -- opens https://www.windy.com centered on DE, sits just below the ADS-B icon.
+// there are only ~14px of clearance between the bottom of the (now smaller) ADS-B icon and the
+// top of auxtime_b (the date line) before this location starts getting overdrawn, so this stays small.
+#define WINDY_ICON_W             14
+#define WINDY_ICON_H             11
+#define WINDY_ICON_BPR           ((WINDY_ICON_W + 7)/8) // bytes per bitmap row
+#define WINDY_ICON_GAP           1               // gap below ADS-B icon -- keep minimal, see above
+#define WINDY_ICON_C             GRAY
+SBox windy_btn_b;
+
+// three wavy wind-flow lines, one bit per pixel. zero bits are transparent.
+// rows are packed left-to-right, least-significant bit first, like adsb_plane above.
+static const uint8_t windy_icon[WINDY_ICON_BPR*WINDY_ICON_H] PROGMEM = {
+    0x07, 0x00,
+    0x3f, 0x00,
+    0xf0, 0x01,
+    0xc0, 0x3f,
+    0x0f, 0x3e,
+    0x3e, 0x00,
+    0xf0, 0x00,
+    0xc3, 0x07,
+    0x0f, 0x04,
+    0x3c, 0x00,
+    0xf0, 0x00,
 };
 
 // format flags
@@ -105,8 +127,16 @@ static void drawUTCButton()
     // draw the MOTD mailbox icon to the left of the UTC button (or blank slot if no MOTD)
     drawMOTDIcon();
 
+    // defensively blank the entire icon column below the mailbox down to just above auxtime_b
+    // (the date line, whose top edge sits 48px below clock_b.y by experiment) -- guards against
+    // stale pixels left over from a previous build's differently-sized icons in this same spot.
+    tft.fillRect (motd_btn_b.x-3, motd_btn_b.y, motd_btn_b.w+6, 48, RA8875_BLACK);
+
     // draw the ADS-B airplane icon just below that -- always shown, opens adsb.lol when tapped
     drawADSBIcon();
+
+    // draw the Windy.com wind icon just below that -- always shown, opens windy.com when tapped
+    drawWindyIcon();
 }
 
 /* draw the ADS-B airplane icon immediately below the MOTD mailbox icon. always shown
@@ -131,6 +161,32 @@ void drawADSBIcon()
                 uint16_t col = 8*byte_col + bit;
                 if (col < ADSB_ICON_W && (bits & (1U << bit)))
                     tft.drawPixel (adsb_btn_b.x + col, adsb_btn_b.y + row, ADSB_ICON_C);
+            }
+        }
+    }
+}
+
+/* draw the Windy.com wind icon immediately below the ADS-B airplane icon. always shown --
+ * tapping it opens https://www.windy.com centered on DE's location. should be called right
+ * after drawADSBIcon() since it positions itself relative to adsb_btn_b.
+ */
+void drawWindyIcon()
+{
+    // center the icon below the airplane while retaining one clickable bounding box.
+    windy_btn_b.x = adsb_btn_b.x + (adsb_btn_b.w - WINDY_ICON_W)/2;
+    windy_btn_b.y = adsb_btn_b.y + adsb_btn_b.h + WINDY_ICON_GAP;
+    windy_btn_b.w = WINDY_ICON_W;
+    windy_btn_b.h = WINDY_ICON_H;
+
+    // erase the old icon, then paint only set bitmap pixels; zero bits remain background.
+    tft.fillRect (windy_btn_b.x, windy_btn_b.y, windy_btn_b.w, windy_btn_b.h, RA8875_BLACK);
+    for (uint16_t row = 0; row < WINDY_ICON_H; row++) {
+        for (uint16_t byte_col = 0; byte_col < WINDY_ICON_BPR; byte_col++) {
+            uint8_t bits = pgm_read_byte (&windy_icon[row*WINDY_ICON_BPR + byte_col]);
+            for (uint16_t bit = 0; bit < 8; bit++) {
+                uint16_t col = 8*byte_col + bit;
+                if (col < WINDY_ICON_W && (bits & (1U << bit)))
+                    tft.drawPixel (windy_btn_b.x + col, windy_btn_b.y + row, WINDY_ICON_C);
             }
         }
     }
@@ -1233,6 +1289,15 @@ bool checkClockTouch (SCoord &s)
     if (inBox (s, adsb_btn_b)) {
         char url[100];
         snprintf (url, sizeof(url), "https://adsb.lol/?lat=%.3f&lon=%.3f&zoom=10",
+                    de_ll.lat_d, de_ll.lng_d);
+        openURL (url);
+        return (true);
+    }
+
+    // Windy wind icon: always present, opens windy.com centered on DE's location
+    if (inBox (s, windy_btn_b)) {
+        char url[100];
+        snprintf (url, sizeof(url), "https://www.windy.com/?%.3f,%.3f,8",
                     de_ll.lat_d, de_ll.lng_d);
         openURL (url);
         return (true);
