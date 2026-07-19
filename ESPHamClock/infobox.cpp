@@ -626,8 +626,14 @@ void drawInfoBox()
     LatLong net_ll;
     bool over_net_map  = over_map && !over_psk && !over_dxped && !over_spot
                                 && getClosestActiveNet (ll, &net_ll, &net_info);
-    bool over_net_pane = over_app && !over_map && !over_dxped && !over_pane
+
+    char hamsat_pane_label[40];
+    bool over_hamsat_pane = over_app && !over_map && !over_dxped && !over_pane
                                 && !over_storm_pane && !over_launch_pane
+                                && getHamsatPaneHover (ms, &dxc_ll, hamsat_pane_label, sizeof(hamsat_pane_label));
+
+    bool over_net_pane = over_app && !over_map && !over_dxped && !over_pane
+                                && !over_storm_pane && !over_launch_pane && !over_hamsat_pane
                                 && getActiveNetsPaneInfo (ms, &net_ll, &net_info);
     bool over_net = over_net_map || over_net_pane;
     MeshInfo mesh_info;
@@ -700,6 +706,18 @@ void drawInfoBox()
         names_w = getTextWidth (launch_pane_label);
         tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
         tft.print (launch_pane_label);
+        was_city = true;
+    }
+
+    // hovering an alert row in the Sat Alerts pane: ring the station's grid location on the
+    // map and name it in the bar, same idea as Storms/Launches above
+    if (over_hamsat_pane) {
+        drawIB_MapMarker (dxc_ll, minfo_b, true);
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        names_w = getTextWidth (hamsat_pane_label);
+        tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+        tft.print (hamsat_pane_label);
         was_city = true;
     }
 

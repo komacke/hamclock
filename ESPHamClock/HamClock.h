@@ -2169,6 +2169,7 @@ extern bool checkOnTheAirTouch (const SCoord &s, const SBox &box);
 extern bool updateHamsat (const SBox &box, bool fresh);
 extern bool checkHamsatTouch (const SCoord &s, const SBox &box);
 extern void drawHamsatOnMap (void);
+extern bool getHamsatPaneHover (const SCoord &ms, LatLong *ll, char *label, size_t label_len);
 extern bool updateMeshtastic (const SBox &box, bool fresh);
 extern bool checkMeshtasticTouch (const SCoord &s, const SBox &box);
 extern bool getOnTheAirSpots (DXSpot **spp, uint8_t *nspotsp);
