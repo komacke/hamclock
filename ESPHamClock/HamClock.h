@@ -2525,6 +2525,7 @@ extern uint16_t ltg_radius_km;          // search radius when not worldwide
 #define STORM_INTERVAL      (2) 
 
 extern void initStorms (void);
+extern bool checkStormsData (void);
 extern bool updateStorms (const SBox &box, bool fresh);
 extern void drawStormsOnMap (void);
 extern bool checkStormsTouch (const SCoord &s, const SBox &box);

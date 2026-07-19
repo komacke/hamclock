@@ -2521,6 +2521,8 @@ void updateWiFi(void)
     // update lightning overlay if due
     updateLightning();
 
+    checkStormsData();
+
     // maps are checked after each full earth draw -- see drawMoreEarth()
 
     // check for server commands
