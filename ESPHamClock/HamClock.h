@@ -700,6 +700,9 @@ extern void motdClicked (void);
 
 // ADS-B airplane icon -- opens https://adsb.lol
 extern void drawADSBIcon (void);
+extern void drawWindyIcon (void);
+extern SBox windy_btn_b;
+
 extern SBox dx_maid_b;                  // dx maidenhead pick
 extern SBox de_maid_b;                  // de maidenhead pick
 extern SBox lkscrn_b;                   // screen lock icon button

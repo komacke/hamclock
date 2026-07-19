@@ -261,13 +261,15 @@ static void parseOneAlert (const char *obj, const char *obj_end, HamsatAlert &a)
     }
 }
 
-/* qsort comparator: ascending aos_at
+/* qsort comparator: descending aos_at -- combined with the pane's existing "newest at top"
+ * display convention (scrollToNewest() + reversed getDisplayRow mapping), this puts the
+ * soonest-upcoming alert at the top of the list and the furthest-out one at the bottom.
  */
 static int qsAOS (const void *p1, const void *p2)
 {
     const HamsatAlert *a1 = (const HamsatAlert *)p1;
     const HamsatAlert *a2 = (const HamsatAlert *)p2;
-    return (a1->aos_at < a2->aos_at ? -1 : a1->aos_at > a2->aos_at ? 1 : 0);
+    return (a1->aos_at > a2->aos_at ? -1 : a1->aos_at < a2->aos_at ? 1 : 0);
 }
 
 
@@ -356,11 +358,25 @@ static bool retrieveHamsat (void)
         if (!obj_end)
             break;
 
-        hamsat_alerts = (HamsatAlert *) realloc (hamsat_alerts, (n_hamsat+1)*sizeof(HamsatAlert));
-        if (!hamsat_alerts)
-            fatalError ("No room for %d hamsat alerts", n_hamsat+1);
-        parseOneAlert (p, obj_end, hamsat_alerts[n_hamsat]);
-        n_hamsat++;
+        // parse into scratch storage first and sanity-check it before it ever reaches the
+        // display array -- callsign/satname should never be empty, aos_at should always crack
+        // successfully from a real alert, and match_percent (when not the -1 "unknown" sentinel)
+        // must be a real 0-100 percentage. Anything failing this is rejected rather than risk
+        // rendering as a garbage row (e.g. "999%" with junk text) if a response was ever malformed.
+        HamsatAlert tmp;
+        parseOneAlert (p, obj_end, tmp);
+        bool sane = tmp.callsign[0] && tmp.satname[0] && tmp.aos_at != 0 &&
+                    (tmp.match_percent == -1 || (tmp.match_percent >= 0 && tmp.match_percent <= 100));
+        if (sane) {
+            hamsat_alerts = (HamsatAlert *) realloc (hamsat_alerts, (n_hamsat+1)*sizeof(HamsatAlert));
+            if (!hamsat_alerts)
+                fatalError ("No room for %d hamsat alerts", n_hamsat+1);
+            hamsat_alerts[n_hamsat++] = tmp;
+        } else {
+            Serial.printf ("HAMSAT: rejecting malformed alert entry: callsign='%s' sat='%s' "
+                            "aos=%ld match=%d\n", tmp.callsign, tmp.satname, (long)tmp.aos_at,
+                            tmp.match_percent);
+        }
 
         p = jsonSkipWS (obj_end);
         if (*p == ',')
@@ -448,8 +464,9 @@ static void drawHamsatVisAlerts (const SBox &box)
             tft.setCursor (x+1, y);
             tft.print (mbuf);
 
-            // callsign, sat, countdown -- rest of the line, color flags workable instead of
-            // spending a character on it
+            // callsign, sat, countdown -- rest of the line. color signals status: green if the
+            // pass is happening right now, yellow if it starts within 15 minutes, else fall back
+            // to flagging workable passes yellow (as before) or plain white.
             char cd[8];
             formatCountdown (a.aos_at, now, cd, sizeof(cd));
             char line[24];
@@ -457,7 +474,15 @@ static void drawHamsatVisAlerts (const SBox &box)
                 snprintf (line, sizeof(line), "%-6.6s%-5.5s%s", a.callsign, a.satname, cd);
             else
                 snprintf (line, sizeof(line), "%-7.7s%-6.6s%s", a.callsign, a.satname, cd);
-            tft.setTextColor (a.is_workable ? RA8875_YELLOW : RA8875_WHITE);
+            #define SOON_SECS       (15*60)            // "starting soon" threshold, seconds
+            uint16_t line_color;
+            if (a.aos_at && a.aos_at <= now && (a.los_at == 0 || a.los_at > now))
+                line_color = RA8875_GREEN;             // in progress right now
+            else if (a.aos_at && a.aos_at > now && a.aos_at - now <= SOON_SECS)
+                line_color = RA8875_YELLOW;            // starting within 15 minutes
+            else
+                line_color = a.is_workable ? RA8875_YELLOW : RA8875_WHITE;
+            tft.setTextColor (line_color);
             tft.setCursor (x + badge_w, y);
             tft.print (line);
         }
