@@ -513,15 +513,21 @@ char live_html[] =  R"_raw_html_(
                     return;
                 }
 
-                // code button0+mods or button1 as button 1, else button 0.
+                // code button0+mods, button1 (middle), or button2 (right) as button 1, else button 0.
                 // N.B. event.button 0 means button 1 !
                 var mods = event.ctrlKey || event.metaKey;
-                var button = ((event.button == 0 && mods) || event.button == 1) ? 1 : 0;
+                var button = ((event.button == 0 && mods) || event.button == 1 || event.button == 2) ? 1 : 0;
                 console.log ("button " + event.button + " + " + mods + " -> " + button);
 
                 // compose and send
                 let msg = 'set_touch?x=' + m.x + '&y=' + m.y + '&button=' + button;
                 sendWSMsg (msg);
+            });
+
+            // suppress the browser's native right-click context menu on the canvas so a right-click
+            // reaches pointerup above (as an 'other button' tap) instead of popping the OS/browser menu
+            cvs.addEventListener ('contextmenu', function(event) {
+                event.preventDefault();
             });
 
 

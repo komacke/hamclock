@@ -2418,6 +2418,16 @@ void updateWiFi(void)
             }
             break;
 
+        case PLOT_CH_MESHTASTIC:
+            if (t0 >= next_update[pp]) {
+                if (updateMeshtastic(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, 120);    // secs, matches meshtastic.cpp
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
         case PLOT_CH_ADIF:
             if (t0 >= next_update[pp]) {
                 updateADIF (box, fresh_redraw[pc]);
@@ -2705,6 +2715,32 @@ time_t nextPaneRotation(PlotPane pp)
 void forcePaneRotation (PlotPane pp)
 {
     next_rotation[pp] = 0;
+}
+
+/* immediately step the given pane backward to its previous rotation choice, overriding the
+ * normal timer. unlike forcePaneRotation() (which just zeroes next_rotation[] and lets the next
+ * updateWiFi() pass do the forward step), this must apply the choice change itself since the
+ * automatic path only ever steps forward.
+ * it's ok if pp is not actually rotating -- getPrevRotationChoice() just returns the same choice.
+ */
+void forcePaneRotationPrev (PlotPane pp)
+{
+    PlotChoice pc = plot_ch[pp] = getPrevRotationChoice (pp, plot_ch[pp]);
+    next_rotation[pp] = nextRotation (pp);
+    showRotatingBorder ();
+
+    // same fresh_redraw bookkeeping as the forward path in updateWiFi()
+    if (pc == PLOT_CH_DXCLUSTER)  fresh_redraw[PLOT_CH_DXCLUSTER] = true;
+    if (pc == PLOT_CH_ADIF)       fresh_redraw[PLOT_CH_ADIF] = true;
+    if (pc == PLOT_CH_ONTA)       fresh_redraw[PLOT_CH_ONTA] = true;
+    if (pc == PLOT_CH_CONTESTS)   fresh_redraw[PLOT_CH_CONTESTS] = true;
+    if (pc == PLOT_CH_ACTIVENETS) fresh_redraw[PLOT_CH_ACTIVENETS] = true;
+    if (pc == PLOT_CH_DXPEDS)     fresh_redraw[PLOT_CH_DXPEDS] = true;
+    if (pc == PLOT_CH_STORMS)     fresh_redraw[PLOT_CH_STORMS] = true;
+    if (pc == PLOT_CH_LAUNCHES)   fresh_redraw[PLOT_CH_LAUNCHES] = true;
+
+    // go now
+    next_update[pp] = 0;
 }
 
 /* return pane for which taps are to be ignored because a revert is in progress, if any

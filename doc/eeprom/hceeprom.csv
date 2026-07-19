@@ -222,3 +222,4 @@ Addr,Name,Len,Type,Description
 0xC36,NV_PANE1ROTSET_HI,4,i,high 32 bits of pane 1 PlotChoice rotation mask
 0xC3B,NV_PANE2ROTSET_HI,4,i,high 32 bits of pane 2 PlotChoice rotation mask
 0xC40,NV_PANE3ROTSET_HI,4,i,high 32 bits of pane 3 PlotChoice rotation mask
+0xC45,NV_MESHWATCHLIST,120,s,comma-separated Meshtastic node IDs to draw neighbour links for

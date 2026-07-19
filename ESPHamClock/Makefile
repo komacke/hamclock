@@ -135,6 +135,7 @@ OBJS = \
 	maidenhead.o \
 	mapmanage.o \
 	menu.o \
+	meshtastic.o \
 	moon_imgs.o \
 	moonpane.o \
 	motd.o \
