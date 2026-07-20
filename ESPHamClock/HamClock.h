@@ -2159,7 +2159,7 @@ extern void reportEESize (uint16_t &ee_used, uint16_t &ee_size);
 #define ONTA_INTERVAL   70                              // polling interval
 
 extern bool updateOnTheAir (const SBox &box, bool fresh);
-extern bool checkOnTheAirTouch (const SCoord &s, const SBox &box);
+extern bool checkOnTheAirTouch (TouchType tt, const SCoord &s, const SBox &box);
 
 /*********************************************************************************************
  *
