@@ -140,6 +140,7 @@ bool plotChoiceIsAvailable (PlotChoice pc)
     case PLOT_CH_HFCOND:        // fallthru
     case PLOT_CH_VHFCOND:       // fallthru
     case PLOT_CH_SATACT:        // fallthru
+    case PLOT_CH_MESHTASTIC:    // fallthru
         return (true);
 
     case PLOT_CH_NONE:         // fallthru
@@ -325,6 +326,25 @@ PlotChoice getNextRotationChoice (PlotPane pp, PlotChoice pc)
         return (pc);
 }
 
+/* same as getNextRotationChoice() but walks the rotation set backwards -- used to implement
+ * manual reverse pane advancement.
+ */
+PlotChoice getPrevRotationChoice (PlotPane pp, PlotChoice pc)
+{
+    if (isPaneRotating (pp)) {
+        for (int i = 1; i < PLOT_CH_N; i++) {
+            int j = (pc - i + PLOT_CH_N) % PLOT_CH_N;
+            if (plot_rotset[pp] & PLOTBIT(j)) {
+                if (j == PLOT_CH_STORMS && !stormsActive())
+                    continue;
+                return ((PlotChoice)j);
+            }
+        }
+        return (pc);
+    } else
+        return (pc);
+}
+
 /* return any available unassigned plot choice
  */
 PlotChoice getAnyAvailableChoice()
@@ -407,11 +427,15 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
     if (!inBox (s, box))
         return (false);
 
-    // reserve top portion for bringing up choice menu or forcing rotation
+    // reserve top portion for bringing up choice menu or forcing rotation.
+    // left half forces reverse rotation, right half forces forward rotation.
     bool in_top = s.y < box.y + PANETITLE_H;
 
     if (in_top && tt == TT_TAP_BX) {
-        forcePaneRotation (pp);
+        if (s.x < box.x + box.w/2)
+            forcePaneRotationPrev (pp);
+        else
+            forcePaneRotation (pp);
         return (true);
     }
 
@@ -482,6 +506,11 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
         break;
     case PLOT_CH_SATACT:
         if (checkHamsatTouch (s, box))
+            return (true);
+        in_top = true;
+        break;
+    case PLOT_CH_MESHTASTIC:
+        if (checkMeshtasticTouch (s, box))
             return (true);
         in_top = true;
         break;
@@ -817,7 +846,7 @@ bool overHoverPane (const SCoord &s)
             if (ch == PLOT_CH_ACTIVENETS || ch == PLOT_CH_LAUNCHES || ch == PLOT_CH_STORMS ||
                 ch == PLOT_CH_DXCLUSTER || ch == PLOT_CH_PSK || ch == PLOT_CH_ONTA ||
                 ch == PLOT_CH_ADIF || ch == PLOT_CH_DXPEDS || ch == PLOT_CH_SDO ||
-                ch == PLOT_CH_MOON) {
+                ch == PLOT_CH_MOON || ch == PLOT_CH_SATACT || ch == PLOT_CH_SATACT) {
                 return (true);
             }
         }

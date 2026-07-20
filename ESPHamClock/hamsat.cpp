@@ -471,9 +471,17 @@ static void drawHamsatVisAlerts (const SBox &box)
             formatCountdown (a.aos_at, now, cd, sizeof(cd));
             char line[24];
             if (box.w < PLOTBOX123_W)
-                snprintf (line, sizeof(line), "%-6.6s%-5.5s%s", a.callsign, a.satname, cd);
+                // narrow pane (pane 0): truncate callsign to 3 chars, then a literal 2-space
+                // gap before the countdown -- NOT just field padding, since satnames like
+                // AO-73/RS-44/FO-29 are exactly 5 chars and fill %-5.5s with no trailing pad,
+                // which was swallowing the gap and running straight into the countdown.
+                // full callsign is still shown in the tap-to-detail popup below, via a.callsign.
+                snprintf (line, sizeof(line), "%-3.3s %-5.5s  %s", a.callsign, a.satname, cd);
             else
-                snprintf (line, sizeof(line), "%-7.7s%-6.6s%s", a.callsign, a.satname, cd);
+                // wide pane (1/2/3): same issue as above -- satnames like AO-123 fill the whole
+                // %-6.6s field with no trailing pad, so force a literal 1-char gap before the
+                // countdown instead of relying on padding.
+                snprintf (line, sizeof(line), "%-7.7s%-6.6s %s", a.callsign, a.satname, cd);
             #define SOON_SECS       (15*60)            // "starting soon" threshold, seconds
             uint16_t line_color;
             if (a.aos_at && a.aos_at <= now && (a.los_at == 0 || a.los_at > now))
@@ -498,7 +506,10 @@ static void drawHamsatPane (const SBox &box)
 {
     prepPlotBox (box);
 
-    const char *title = "Sat Alerts";
+    // narrow pane (PANE_0): full "Sat Alerts" centers wide enough to collide with the scroll-up
+    // arrow/count, which is drawn at a fixed offset from the right edge regardless of title width
+    // -- shorten it, same fix ONTA uses for "On The Air" -> "On Air".
+    const char *title = BOX_IS_PANE_0(box) ? "Alerts" : "Sat Alerts";
     selectFontStyle (LIGHT_FONT, SMALL_FONT);
     tft.setTextColor (HAMSAT_COLOR);
     uint16_t pw = getTextWidth (title);
@@ -667,6 +678,37 @@ bool checkHamsatTouch (const SCoord &s, const SBox &box)
     }
 
     return (false);
+}
+
+/* If ms is hovering over an alert row in the Sat Alerts pane, return that station's grid location
+ * in *ll plus a short label, and return true. Lets infobox ring/highlight it on the map the same
+ * way hovering a Storms or Launches row does (and the way ONTA highlights a station on the map,
+ * though ONTA's version goes through the DXSpot-based over_pane path instead since it's a spot
+ * type shared with other panes).
+ */
+bool getHamsatPaneHover (const SCoord &ms, LatLong *ll, char *label, size_t label_len)
+{
+    if (n_hamsat == 0)
+        return false;
+
+    PlotPane pp = findPaneChoiceNow (PLOT_CH_SATACT);
+    if (pp == PANE_NONE)
+        return false;
+    const SBox &box = plot_b[pp];
+    if (!inBox (ms, box) || ms.y < box.y + LISTING_Y0)          // not over the alert-rows region
+        return false;
+
+    int row = (ms.y - (box.y + LISTING_Y0)) / ALERT_DY;
+    int index;
+    if (!hamsat_ss.findDataIndex (row, index) || index < 0 || index >= n_hamsat)
+        return false;
+
+    const HamsatAlert &a = hamsat_alerts[index];
+    if (!a.grid[0] || !maidenhead2ll (*ll, a.grid))
+        return false;
+
+    snprintf (label, label_len, "%s on %s", a.callsign, a.satname);
+    return true;
 }
 
 /* draw each currently-loaded alert's callsign on the map at its grid location, same convention as

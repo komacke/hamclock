@@ -382,6 +382,9 @@ typedef enum {
     NV_PANE2ROTSET_HI,            // high 32 bits of pane 2 PlotChoice rotation mask
     NV_PANE3ROTSET_HI,            // high 32 bits of pane 3 PlotChoice rotation mask
 
+    // 255 -- appended so all prior EEPROM addresses remain unchanged
+    NV_MESHWATCHLIST,             // comma-separated Meshtastic node IDs to draw neighbour links for
+
 	NV_N
 
 } NV_Name;

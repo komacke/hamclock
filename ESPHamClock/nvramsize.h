@@ -385,6 +385,9 @@ static const uint8_t nv_sizes[NV_N] = {
     4,                          // NV_PANE2ROTSET_HI
     4,                          // NV_PANE3ROTSET_HI
 
+    // 255 -- appended so all prior EEPROM addresses remain unchanged
+    NV_MESHWATCHLIST_LEN,       // NV_MESHWATCHLIST
+
 };
 
 #endif // _NVRAMSIZE_H

@@ -74,6 +74,10 @@ typedef struct {
 
 static Storm  storms[STORM_MAXSTORMS];
 static int    n_storms = 0;
+static uint32_t storm_prev_refresh;             // millis() of last fetch attempt; 0 == never fetched.
+                                                 // shared by checkStormsData() and updateStorms() so
+                                                 // fetching stays on one schedule regardless of which
+                                                 // one triggers it.
 
 // map-centering state for the "reset view" button (feature: tap storm centers map, button restores)
 static int      storm_centered_idx = -1;        // data index of storm the map is centered on, else -1
@@ -724,8 +728,10 @@ bool getStormMapMenuInfo (const LatLong &ll, char *line1, size_t line1_len,
 // Data fetch and update
 // ---------------------------------------------------------------------------
 
-/* retrieve storms file from OHB backend and parse it */
-static bool retrieveStorms (const SBox &box)
+/* retrieve storms file from OHB backend and parse it into storms[]/n_storms.
+ * N.B. does not touch the display -- safe to call whether or not the Storms pane is shown.
+ */
+static bool retrieveStorms (void)
 {
     FILE *fp = openCachedFile (storm_fn, storm_page, STORM_MAXAGE, STORM_MINSIZ);
     if (!fp) {
@@ -742,19 +748,39 @@ static bool retrieveStorms (const SBox &box)
     return ok;
 }
 
+/* fetch/parse storm data if due, independent of whether the Storms pane is currently displayed
+ * anywhere. This must run whenever Storms is selected in ANY pane's rotation set -- not just when
+ * it happens to be the pane actively shown -- otherwise getNextRotationChoice()'s stormsActive()
+ * gate can never be satisfied (n_storms starts at 0 and nothing else ever fetches it), permanently
+ * locking Storms out of a multi-choice rotation. Called unconditionally from wifi.cpp updateWiFi(),
+ * same as updateLightning() -- self-guards below like updateLightning() guards on lightning_on.
+ * return whether the current storm data is valid (true also when not in use, or a fetch wasn't due).
+ */
+bool checkStormsData (void)
+{
+    if (findPaneForChoice (PLOT_CH_STORMS) == PANE_NONE)
+        return true;                                     // not selected in any pane -- nothing to do
+
+    if (storm_prev_refresh != 0 && !timesUp (&storm_prev_refresh, (uint32_t)STORM_MAXAGE * 1000))
+        return true;                                     // not due yet, existing data still good
+
+    storm_prev_refresh = millis();
+    return retrieveStorms ();
+}
+
 /* update the storms pane.
  * called from wifi.cpp updateWiFi() PLOT_CH_STORMS case.
  */
 bool updateStorms (const SBox &box, bool fresh)
 {
-    bool ok = true;
-    static uint32_t prev_refresh = 0;
+    bool ok;
 
-    if (fresh || timesUp (&prev_refresh, (uint32_t)STORM_MAXAGE * 1000)) {
-        prev_refresh = millis();
-        ok = retrieveStorms (box);
-        if (ok)
-            fresh = true;
+    if (fresh) {
+        // pane was just rotated/switched into view -- fetch now regardless of schedule
+        storm_prev_refresh = millis();
+        ok = retrieveStorms ();
+    } else {
+        ok = checkStormsData ();
     }
 
     if (ok) {

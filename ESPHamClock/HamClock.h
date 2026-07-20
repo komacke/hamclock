@@ -423,7 +423,8 @@ typedef enum {
     X(PLOT_CH_VHFCOND,      "VHF_Cond")
 
 #define PLOTNAMES_HIGH \
-    X(PLOT_CH_SATACT,       "Sat_Alerts")
+    X(PLOT_CH_SATACT,       "Sat_Alerts")        \
+    X(PLOT_CH_MESHTASTIC,   "Mesh_Mon")
 
 #define PLOTNAMES PLOTNAMES_LOW PLOTNAMES_HIGH
 
@@ -691,6 +692,7 @@ extern SBox map_b;                      // main map
 extern SBox view_btn_b;                 // map view menu button
 extern SBox motd_btn_b;                 // MOTD mailbox icon (next to UTC button)
 extern SBox adsb_btn_b;                 // ADS-B airplane icon (next to MOTD icon)
+extern SBox windy_btn_b;                // Windy.com wind icon (next to ADS-B icon)
 
 // MOTD (Message of the Day) functions
 extern void checkMOTD (void);
@@ -700,9 +702,9 @@ extern void motdClicked (void);
 
 // ADS-B airplane icon -- opens https://adsb.lol
 extern void drawADSBIcon (void);
-extern void drawWindyIcon (void);
-extern SBox windy_btn_b;
 
+// Windy.com wind icon -- opens https://www.windy.com
+extern void drawWindyIcon (void);
 extern SBox dx_maid_b;                  // dx maidenhead pick
 extern SBox de_maid_b;                  // de maidenhead pick
 extern SBox lkscrn_b;                   // screen lock icon button
@@ -1280,6 +1282,19 @@ typedef struct {
 extern void drawActiveNetsOnMap (void);
 extern bool getClosestActiveNet (LatLong &from_ll, LatLong *mark_ll, ActiveNetInfo *info);
 extern bool getActiveNetsPaneInfo (const SCoord &ms, LatLong *mark_ll, ActiveNetInfo *info);
+
+// meshtastic node map plotting + hover info -- same pattern as ActiveNetInfo above
+typedef struct {
+    char name[40];                      // long_name
+    char short_name[8];
+    int battery_level;                  // 0-100, 101 = powered, -1 = unknown
+    float voltage;
+    int n_links;
+    LatLong ll;
+} MeshInfo;
+extern void drawMeshtasticOnMap (void);
+extern bool getClosestMeshtasticNode (LatLong &from_ll, LatLong *mark_ll, MeshInfo *info);
+extern bool getMeshtasticPaneInfo (const SCoord &ms, LatLong *mark_ll, MeshInfo *info);
 
 #define LAUNCHES_INTERVAL (2)
 
@@ -2154,6 +2169,9 @@ extern bool checkOnTheAirTouch (const SCoord &s, const SBox &box);
 extern bool updateHamsat (const SBox &box, bool fresh);
 extern bool checkHamsatTouch (const SCoord &s, const SBox &box);
 extern void drawHamsatOnMap (void);
+extern bool getHamsatPaneHover (const SCoord &ms, LatLong *ll, char *label, size_t label_len);
+extern bool updateMeshtastic (const SBox &box, bool fresh);
+extern bool checkMeshtasticTouch (const SCoord &s, const SBox &box);
 extern bool getOnTheAirSpots (DXSpot **spp, uint8_t *nspotsp);
 extern void drawOnTheAirSpotsOnMap (void);
 extern bool getClosestOnTheAirSpot (LatLong &ll, DXSpot *sp, LatLong *llp);
@@ -2294,9 +2312,11 @@ extern bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp);
 extern PlotPane findPaneForChoice (PlotChoice pc);
 extern PlotPane findPaneChoiceNow (PlotChoice pc);
 extern PlotChoice getNextRotationChoice (PlotPane pp, PlotChoice pc);
+extern PlotChoice getPrevRotationChoice (PlotPane pp, PlotChoice pc);
 extern PlotChoice getAnyAvailableChoice (void);
 extern PlotChoice getAnyAvailablePane0Choice (void);
 extern void forcePaneRotation (PlotPane pp);
+extern void forcePaneRotationPrev (PlotPane pp);
 extern bool plotChoiceIsAvailable (PlotChoice ch);
 extern void logPaneRotSet (PlotPane pp, PlotChoice ch);
 extern void logBRBRotSet(void);
@@ -2506,6 +2526,7 @@ extern uint16_t ltg_radius_km;          // search radius when not worldwide
 #define STORM_INTERVAL      (2) 
 
 extern void initStorms (void);
+extern bool checkStormsData (void);
 extern bool updateStorms (const SBox &box, bool fresh);
 extern void drawStormsOnMap (void);
 extern bool checkStormsTouch (const SCoord &s, const SBox &box);

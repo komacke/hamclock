@@ -49,6 +49,7 @@ static char wifi_ssid[NV_WIFI_SSID_LEN];
 static char wifi_pw[NV_WIFI_PW_LEN];
 static char dx_login[NV_DXLOGIN_LEN];
 static char hamsat_key[NV_HAMSATKEY_LEN];
+static char mesh_watchlist[NV_MESHWATCHLIST_LEN];    // comma-separated Meshtastic node IDs
 static char dx_host[NV_DXHOST_LEN];
 static char rot_host[NV_ROTHOST_LEN];
 static char rig_host[NV_RIGHOST_LEN];
@@ -387,6 +388,7 @@ typedef enum {
     // page "4"
     HAMSATKEY_SPR,
     CENTERLNG_SPR,
+    MESHWATCH_SPR,
     I2CFN_SPR,
     BME76DT_SPR,
     BME76DP_SPR,
@@ -497,6 +499,10 @@ static StringPrompt string_pr[N_SPR] = {
     {3, {10,  R2Y(1), 240, PR_H}, {250, R2Y(1), 100, PR_H}, "Map center longitude:", NULL, 0, 0, 0,
                 "Enter the desired center longitude for the Mercator map projection in decimal degrees; "
                 "use - or suffix W for west"},
+
+    {3, {400, R2Y(1), 130, PR_H}, {530, R2Y(1), 280, PR_H}, "Mesh watch:", mesh_watchlist, NV_MESHWATCHLIST_LEN, 0, 0,
+                "Enter comma-separated Meshtastic node IDs (decimal) to draw neighbour links for on the "
+                "map and Mesh Net pane, or leave blank to show node positions only"},
 
     {3, {350, R2Y(2),  70, PR_H}, {440, R2Y(2), 360,PR_H},  "name:", i2c_fn, NV_I2CFN_LEN, 0, 0,
                 "Enter the full /dev name for the I2C connection"},
@@ -4232,6 +4238,10 @@ static void initSetup()
         memset (hamsat_key, 0, sizeof(hamsat_key));
         NVWriteString(NV_HAMSATKEY, hamsat_key);
     }
+    if (!NVReadString(NV_MESHWATCHLIST, mesh_watchlist)) {
+        memset (mesh_watchlist, 0, sizeof(mesh_watchlist));
+        NVWriteString(NV_MESHWATCHLIST, mesh_watchlist);
+    }
     if (!NVReadUInt16(NV_DXPORT, &dx_port)) {
         dx_port = 0;
         NVWriteUInt16(NV_DXPORT, dx_port);
@@ -5415,6 +5425,7 @@ static void saveParams2NV()
     NVWriteUInt16 (NV_DXPORT, dx_port);
     NVWriteString (NV_DXLOGIN, dx_login);
     NVWriteString (NV_HAMSATKEY, hamsat_key);
+    NVWriteString (NV_MESHWATCHLIST, mesh_watchlist);
 
     NVWriteUInt8 (NV_LOGUSAGE, bool_pr[LOGUSAGE_BPR].state);
     NVWriteUInt8 (NV_LBLSTYLE,
