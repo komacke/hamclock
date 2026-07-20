@@ -54,6 +54,7 @@ static char dx_host[NV_DXHOST_LEN];
 static char rot_host[NV_ROTHOST_LEN];
 static char rig_host[NV_RIGHOST_LEN];
 static char flrig_host[NV_FLRIGHOST_LEN];
+static char piaware_host[NV_PIAWAREHOST_LEN];  // optional PiAware ADS-B receiver host/IP; blank == unused
 static char gpsd_host[NV_GPSDHOST_LEN];
 static char nmea_file[NV_NMEAFILE_LEN];
 static char ntp_host[NV_NTPHOST_LEN];
@@ -381,6 +382,7 @@ typedef enum {
     RIGHOST_SPR,
     FLRIGPORT_SPR,
     FLRIGHOST_SPR,
+    PIAWAREHOST_SPR,
     ADIFFN_SPR,
     ADIFWL_SPR,
     ONTAWL_SPR,
@@ -479,6 +481,10 @@ static StringPrompt string_pr[N_SPR] = {
                 "Enter the network port number for connecting to flrig"},                         // shadowed
     {2, {310, R2Y(2), 60, PR_H}, {360, R2Y(2), 300, PR_H}, "host:", flrig_host, NV_FLRIGHOST_LEN, 0, 0,
                 "Enter the IP address or DNS host name for connecting to flrig"},
+
+    {2, {310, R2Y(3), 130, PR_H}, {452, R2Y(3), 208, PR_H}, "PiAware host:", piaware_host, NV_PIAWAREHOST_LEN, 0, 0,
+                "Enter the IP address or DNS host name of a local PiAware ADS-B receiver to use for the "
+                "ADS-B airplane icon instead of adsb.lol; leave blank to use adsb.lol"},
 
     {2, {100, R2Y(4), 60, PR_H}, {160, R2Y(4), 580, PR_H}, "file:", adif_fn, NV_ADIFFN_LEN, 0, 0,
                 "Enter the path name to the ADIF file; "
@@ -3753,6 +3759,12 @@ static bool validateStringPrompts (bool show_errors)
             badsids[n_badsids++] = FLRIGPORT_SPR;
     }
 
+    // PiAware host is optional -- only validate if the user entered something
+    if (strlen (string_pr[PIAWAREHOST_SPR].v_str) > 0) {
+        if (!hostOK(string_pr[PIAWAREHOST_SPR].v_str, NV_PIAWAREHOST_LEN))
+            badsids[n_badsids++] = PIAWAREHOST_SPR;
+    }
+
     // check for plausible temperature and pressure corrections and file name if used
     if (bool_pr[GPIOOK_BPR].state || bool_pr[I2CON_BPR].state) {
         char *tc_str = string_pr[BME76DT_SPR].v_str;
@@ -4203,6 +4215,14 @@ static void initSetup()
         NVWriteUInt8 (NV_FLRIGUSE, 0);
     } else
         bool_pr[FLRIGUSE_BPR].state = (nv_flrig != 0);
+
+
+    // init optional PiAware ADS-B host; blank means not configured, fall back to adsb.lol
+
+    if (!NVReadString (NV_PIAWAREHOST, piaware_host)) {
+        piaware_host[0] = '\0';
+        NVWriteString (NV_PIAWAREHOST, piaware_host);
+    }
 
 
 
@@ -5450,6 +5470,7 @@ static void saveParams2NV()
     NVWriteUInt8 (NV_FLRIGUSE, bool_pr[FLRIGUSE_BPR].state);
     NVWriteString (NV_FLRIGHOST, flrig_host);
     NVWriteUInt16 (NV_FLRIGPORT, flrig_port);
+    NVWriteString (NV_PIAWAREHOST, piaware_host);
     NVWriteUInt8 (NV_SETRADIO, bool_pr[SETRADIO_BPR].state);
     NVWriteUInt8 (NV_SCROLLDIR, bool_pr[SCROLLDIR_BPR].state);
     NVWriteUInt8 (NV_NEWDXDEWX, bool_pr[NEWDXDEWX_BPR].state);
@@ -5685,6 +5706,14 @@ const char *getDXClusterHost()
 const char *getGPSDHost()
 {
     return (gpsd_host);
+}
+
+/* return pointer to static storage containing the user's PiAware ADS-B receiver host or IP,
+ * or an empty string if not configured -- caller should treat empty as "use adsb.lol instead".
+ */
+const char *getPiAwareHost()
+{
+    return (piaware_host);
 }
 
 /* return pointer to static storage containing the NMEA host

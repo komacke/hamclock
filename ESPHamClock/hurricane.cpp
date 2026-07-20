@@ -1,10 +1,21 @@
 /* hurricane.cpp -- tropical cyclone tracking overlay for HamClock
  *
- * Fetches active storm data from OHB backend (fetch_hurricane.py) and
+ * Fetches active storm data from OHB backend (fetch_cyclones.py) and
  * displays storm tracks on the map and in a scrollable pane.
  *
- * Data format from /storms/storms.txt (one line per track point):
+ * Data format from /storms/storms.txt (one line per track point) -- UNCHANGED, 9 fields:
  *   NAME,BASIN,TYPE,CATEGORY,LAT,LON,WIND_KT,FCST_HOUR,ADVISORY
+ *
+ * A companion, OPTIONAL sidecar file /storms/storm_ids.txt (one line per storm, not per
+ * track point) may also be present:
+ *   NAME,BASIN,ATCF_ID
+ * eg "FAUSTO,EP,EP062026". It's joined to storms.txt by the (NAME,BASIN) pair -- the same
+ * key storms.txt already uses to group a storm's track points -- to recover the storm's real
+ * ATCF number for building a reliable Tropical Tidbits link. This file is deliberately kept
+ * separate rather than added as a 10th storms.txt column so storms.txt's format never changes
+ * for any other consumer; if storm_ids.txt is missing or a storm has no entry in it, the
+ * Tropical Tidbits link simply falls back to other heuristics (see stormATCFNumber()) or is
+ * omitted for that storm.
  *
  * FCST_HOUR == 0  → current position (drawn as bullseye)
  * FCST_HOUR >  0  → forecast track point (drawn as line + circle)
@@ -36,6 +47,12 @@
 static const char storm_page[] = "/storms/storms.txt";
 static const char storm_fn[]   = "storms.txt";
 
+// optional sidecar file mapping (NAME,BASIN) -> ATCF_ID; safe to be missing entirely
+#define STORMIDS_MAXAGE     (60*10)     // same refresh cadence as storms.txt
+#define STORMIDS_MINSIZ     1           // just needs to be non-empty
+static const char stormids_page[] = "/storms/storm_ids.txt";
+static const char stormids_fn[]   = "storm_ids.txt";
+
 // ---------------------------------------------------------------------------
 // Colours (NWS standard tropical cyclone colour convention)
 // ---------------------------------------------------------------------------
@@ -65,6 +82,7 @@ typedef struct {
     char       name[STORM_NAMELEN]; // e.g. "HELENE"
     char       basin[3];            // AL|EP|CP|WP|IO
     char       advisory[STORM_IDLEN]; // advisory/storm id, if supplied
+    char       atcf_id[STORM_IDLEN];  // optional full ATCF id, eg "AL092026", if supplied (10th field)
     uint8_t    peak_cat;            // highest category in track
     uint16_t   peak_wind;           // highest wind speed in track
     LatLong    cur_ll;              // current position (fcst_hour==0)
@@ -121,8 +139,9 @@ static const char *stormCategoryLabel (uint8_t cat, uint16_t wind_kt, const char
 // CSV parser
 // ---------------------------------------------------------------------------
 
-/* parse storms.txt into storms[] array.
- * format: NAME,BASIN,TYPE,CATEGORY,LAT,LON,WIND_KT,FCST_HOUR,ADVISORY
+/* parse storms.txt into storms[] array. storms.txt format is unchanged -- 9 fields:
+ * NAME,BASIN,TYPE,CATEGORY,LAT,LON,WIND_KT,FCST_HOUR,ADVISORY
+ * (atcf_id is filled in separately, if available, by applyStormIds() from storm_ids.txt)
  */
 static bool parseStormsFile (FILE *fp)
 {
@@ -704,6 +723,126 @@ static bool stormMotionString (const Storm &st, char *buf, size_t buflen)
     return true;
 }
 
+/* map a 2-letter NHC/JTWC basin code to the single-letter ATCF basin suffix used by Tropical
+ * Tidbits region codes, e.g. AL -> L, EP -> E.
+ */
+static char stormATCFBasinLetter (const char *basin)
+{
+    if (!strcmp (basin, "AL")) return 'L';
+    if (!strcmp (basin, "EP")) return 'E';
+    if (!strcmp (basin, "CP")) return 'C';
+    if (!strcmp (basin, "WP")) return 'W';
+    if (!strcmp (basin, "IO")) return 'A';
+    if (!strcmp (basin, "SH")) return 'S';
+    return 0;
+}
+
+/* map a spelled-out placeholder name (used by NHC for still-unnamed Atlantic/EPac depressions,
+ * eg "TWO") to its numeric ATCF storm number, or 0 if name isn't one of these.
+ */
+static int stormNumberFromName (const char *name)
+{
+    static const char *numwords[] = {
+        "ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN",
+        "ELEVEN", "TWELVE", "THIRTEEN", "FOURTEEN", "FIFTEEN", "SIXTEEN", "SEVENTEEN", "EIGHTEEN",
+        "NINETEEN", "TWENTY", "TWENTYONE", "TWENTYTWO", "TWENTYTHREE", "TWENTYFOUR", "TWENTYFIVE",
+        "TWENTYSIX", "TWENTYSEVEN", "TWENTYEIGHT", "TWENTYNINE", "THIRTY"
+    };
+    for (unsigned i = 0; i < NARRAY(numwords); i++)
+        if (!strcasecmp (name, numwords[i]))
+            return (int)i;
+    return 0;
+}
+
+/* try to determine st's 2-digit ATCF storm number, filling num_buf[3] with it zero-padded (eg "02")
+ * and returning true, else returning false if no number could be reliably determined. Deliberately
+ * conservative -- a wrong region code sends the user to the wrong storm's satellite loop, so this
+ * only trusts sources that are unambiguous, checked in order of reliability:
+ *   1. the storm's atcf_id field (the optional 10th CSV column), eg "AL092026" -- if present this
+ *      is the authoritative ATCF id and its 2-digit storm number (chars 2-3) is used directly.
+ *   2. the advisory id IS the number+year, ie exactly 6 digits "NNYYYY" with a plausible year --
+ *      this intentionally excludes other advisory formats, eg a bare synoptic timestamp like
+ *      "2026071918", which could otherwise be misread as a number.
+ *   3. the advisory id is already a bare region code, eg "02L".
+ *   4. the storm's name is one of the placeholder names ("ONE", "TWO", ...) NHC uses for a still
+ *      unnamed depression -- for these the ATCF number is exactly the spelled-out value.
+ * a storm with a proper name (eg "FAUSTO") and neither an atcf_id nor one of the advisory formats
+ * above simply has no reliably-known ATCF number available to this parser and returns false.
+ */
+static bool stormATCFNumber (const Storm &st, char num_buf[3])
+{
+    // 1. explicit atcf_id field, eg "AL092026" -- basin (2 letters) + number (2 digits) + year
+    size_t id_len = strlen (st.atcf_id);
+    if (id_len >= 4 && isalpha ((unsigned char)st.atcf_id[0]) && isalpha ((unsigned char)st.atcf_id[1])
+                     && isdigit ((unsigned char)st.atcf_id[2]) && isdigit ((unsigned char)st.atcf_id[3])) {
+        num_buf[0] = st.atcf_id[2];
+        num_buf[1] = st.atcf_id[3];
+        num_buf[2] = '\0';
+        return true;
+    }
+
+    const char *advisory = st.advisory;
+    size_t len = strlen (advisory);
+
+    // 2. advisory id looks unambiguously like NNYYYY
+    if (len == 6) {
+        bool all_digits = true;
+        for (size_t i = 0; i < len; i++)
+            if (!isdigit ((unsigned char)advisory[i])) { all_digits = false; break; }
+        if (all_digits) {
+            int year = atoi (advisory+2);
+            if (year >= 1990 && year <= 2199) {
+                num_buf[0] = advisory[0];
+                num_buf[1] = advisory[1];
+                num_buf[2] = '\0';
+                return true;
+            }
+        }
+    }
+
+    // 3. advisory id is already a bare region code, eg "02L"
+    if (len == 3 && isdigit ((unsigned char)advisory[0]) && isdigit ((unsigned char)advisory[1])
+                 && isalpha ((unsigned char)advisory[2])) {
+        num_buf[0] = advisory[0];
+        num_buf[1] = advisory[1];
+        num_buf[2] = '\0';
+        return true;
+    }
+
+    // 4. placeholder numeric name for a still-unnamed depression, eg "TWO"
+    int n = stormNumberFromName (st.name);
+    if (n > 0) {
+        snprintf (num_buf, 3, "%02d", n);
+        return true;
+    }
+
+    return false;
+}
+
+/* build the Tropical Tidbits satlooper URL for the storm nearest ll, eg:
+ *   https://www.tropicaltidbits.com/sat/satlooper.php?region=02L&product=truecolor
+ * returns false (leaving url untouched) if no storm is nearby or no ATCF number can be reliably
+ * determined for it -- see stormATCFNumber().
+ */
+bool getStormTropicalTidbitsURL (const LatLong &ll, char *url, size_t url_len)
+{
+    Storm *st = NULL;
+    if (!getNearestStorm (ll, &st) || !st)
+        return false;
+
+    char basin_letter = stormATCFBasinLetter (st->basin);
+    if (!basin_letter)
+        return false;
+
+    char num_buf[3];
+    if (!stormATCFNumber (*st, num_buf))
+        return false;
+
+    snprintf (url, url_len, "https://www.tropicaltidbits.com/sat/satlooper.php?region=%s%c&product=truecolor",
+               num_buf, basin_letter);
+    return true;
+}
+
 bool getStormMapMenuInfo (const LatLong &ll, char *line1, size_t line1_len,
         char *line2, size_t line2_len, char *line3, size_t line3_len)
 {
@@ -728,6 +867,49 @@ bool getStormMapMenuInfo (const LatLong &ll, char *line1, size_t line1_len,
 // Data fetch and update
 // ---------------------------------------------------------------------------
 
+/* parse storm_ids.txt (one "NAME,BASIN,ATCF_ID" line per storm) and fill in atcf_id for any
+ * already-parsed entry in storms[] whose name+basin matches. Tolerant of a missing, empty, or
+ * malformed file -- storms[] atcf_id fields simply stay blank in that case and
+ * stormATCFNumber() falls back to its other heuristics.
+ */
+static void applyStormIds (FILE *fp)
+{
+    char line[100];
+    while (fgets (line, sizeof(line), fp)) {
+
+        if (line[0] == '#' || line[0] == '\n' || line[0] == '\r')
+            continue;
+
+        char name[64];
+        char basin[8];
+        char atcf_id[32];
+        if (sscanf (line, "%63[^,],%7[^,],%31[^,\n\r]", name, basin, atcf_id) != 3)
+            continue;
+
+        for (int i = 0; i < n_storms; i++) {
+            if (strncmp (storms[i].name, name, STORM_NAMELEN-1) == 0
+                        && strncmp (storms[i].basin, basin, sizeof(storms[i].basin)-1) == 0) {
+                quietStrncpy (storms[i].atcf_id, atcf_id, sizeof(storms[i].atcf_id));
+                break;
+            }
+        }
+    }
+}
+
+/* fetch and apply the optional storm_ids.txt sidecar file, if the backend provides one.
+ * must be called AFTER storms[] has already been populated by parseStormsFile() since it
+ * matches into existing entries by name+basin. Not finding this file is not an error --
+ * plenty of backends won't have it -- so this never affects the return value of retrieveStorms().
+ */
+static void retrieveStormIds (void)
+{
+    FILE *fp = openCachedFile (stormids_fn, stormids_page, STORMIDS_MAXAGE, STORMIDS_MINSIZ);
+    if (!fp)
+        return;                          // fine -- backend doesn't provide this file (yet)
+    applyStormIds (fp);
+    fclose (fp);
+}
+
 /* retrieve storms file from OHB backend and parse it into storms[]/n_storms.
  * N.B. does not touch the display -- safe to call whether or not the Storms pane is shown.
  */
@@ -744,9 +926,12 @@ static bool retrieveStorms (void)
 
     if (!ok)
         Serial.printf ("STORM: parse failed\n");
+    else
+        retrieveStormIds ();            // best-effort; fills in atcf_id where available
 
     return ok;
 }
+
 
 /* fetch/parse storm data if due, independent of whether the Storms pane is currently displayed
  * anywhere. This must run whenever Storms is selected in ANY pane's rotation set -- not just when

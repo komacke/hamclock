@@ -500,7 +500,7 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
         in_top = true;
         break;
     case PLOT_CH_ONTA:
-        if (checkOnTheAirTouch (s, box))
+        if (checkOnTheAirTouch (tt, s, box))
             return (true);
         in_top = true;
         break;

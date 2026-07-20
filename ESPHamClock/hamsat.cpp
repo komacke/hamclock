@@ -401,7 +401,11 @@ static bool retrieveHamsat (void)
  * drawing
  */
 
-/* format "Hh MMm" or "NOW" until aos, relative to now
+/* format "Hh MMm", "DdHhMMm", "9+", or "NOW" until aos, relative to now.
+ * once a pass is a day or more away, the day count is prefixed onto the existing "Hh MMm" form
+ * (eg "5d6h58m") rather than letting hours alone run to 3+ digits ("99h58m" was ambiguous --
+ * could mean 99h or actually be several days out, clamped/truncated). once beyond 9 days out,
+ * collapse to "9+" rather than growing the day count past 1 digit.
  */
 static void formatCountdown (time_t aos, time_t now, char *buf, size_t buflen)
 {
@@ -410,15 +414,21 @@ static void formatCountdown (time_t aos, time_t now, char *buf, size_t buflen)
         return;
     }
     long dt = aos - now;
-    int hr = dt / 3600;
+    int days = dt / 86400;
+    int hr = (dt % 86400) / 3600;
     int mn = (dt % 3600) / 60;
     // clamp so %d always fits buf regardless of dt's theoretical range; also satisfies GCC's
     // value-range analysis to avoid -Wformat-truncation (same convention used in lightning.cpp)
-    #define CD_CLAMP(n) ((n) > 99 ? 99 : (n))
-    if (hr > 0)
-        snprintf (buf, buflen, "%dh%02dm", CD_CLAMP(hr), mn);
+    #define CD_CLAMP(n,mx) ((n) > (mx) ? (mx) : (n))
+    if (days > 9)
+        snprintf (buf, buflen, "9+");
+    else if (days > 0)
+        snprintf (buf, buflen, "%dd%dh%02dm", CD_CLAMP(days,9), CD_CLAMP(hr,23), mn);
+    else if (hr > 0)
+        snprintf (buf, buflen, "%dh%02dm", CD_CLAMP(hr,23), mn);
     else
         snprintf (buf, buflen, "%dm", mn);
+    #undef CD_CLAMP
 }
 
 static uint16_t matchColor (int match_percent)
@@ -467,16 +477,18 @@ static void drawHamsatVisAlerts (const SBox &box)
             // callsign, sat, countdown -- rest of the line. color signals status: green if the
             // pass is happening right now, yellow if it starts within 15 minutes, else fall back
             // to flagging workable passes yellow (as before) or plain white.
-            char cd[8];
+            char cd[12];
             formatCountdown (a.aos_at, now, cd, sizeof(cd));
-            char line[24];
+            char line[32];
             if (box.w < PLOTBOX123_W)
-                // narrow pane (pane 0): truncate callsign to 3 chars, then a literal 2-space
+                // narrow pane (pane 0): truncate callsign to 3 chars, then a literal 1-space
                 // gap before the countdown -- NOT just field padding, since satnames like
                 // AO-73/RS-44/FO-29 are exactly 5 chars and fill %-5.5s with no trailing pad,
-                // which was swallowing the gap and running straight into the countdown.
+                // which was swallowing the gap and running straight into the countdown. now that
+                // the countdown can be as wide as "9d23h59m", even the 1-space gap keeps it from
+                // running off the right edge of the narrow pane.
                 // full callsign is still shown in the tap-to-detail popup below, via a.callsign.
-                snprintf (line, sizeof(line), "%-3.3s %-5.5s  %s", a.callsign, a.satname, cd);
+                snprintf (line, sizeof(line), "%-3.3s %-5.5s %s", a.callsign, a.satname, cd);
             else
                 // wide pane (1/2/3): same issue as above -- satnames like AO-123 fill the whole
                 // %-6.6s field with no trailing pad, so force a literal 1-char gap before the

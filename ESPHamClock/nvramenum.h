@@ -385,6 +385,13 @@ typedef enum {
     // 255 -- appended so all prior EEPROM addresses remain unchanged
     NV_MESHWATCHLIST,             // comma-separated Meshtastic node IDs to draw neighbour links for
 
+    // 256 -- appended so all prior EEPROM addresses remain unchanged
+    NV_PIAWAREHOST,                // user's PiAware ADS-B receiver host name or IP, else unused
+
+    // 257 -- appended so all prior EEPROM addresses remain unchanged
+    NV_ONTA_MODES,                 // ONTA mode filter bitmask (see ONTAMB_* in ontheair.cpp)
+    NV_ONTA_BANDS,                 // ONTA band filter bitmask, 1 bit per HamBandSetting
+
 	NV_N
 
 } NV_Name;

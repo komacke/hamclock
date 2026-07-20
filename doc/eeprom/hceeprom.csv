@@ -223,3 +223,6 @@ Addr,Name,Len,Type,Description
 0xC3B,NV_PANE2ROTSET_HI,4,i,high 32 bits of pane 2 PlotChoice rotation mask
 0xC40,NV_PANE3ROTSET_HI,4,i,high 32 bits of pane 3 PlotChoice rotation mask
 0xC45,NV_MESHWATCHLIST,120,s,comma-separated Meshtastic node IDs to draw neighbour links for
+0xCBE,NV_PIAWAREHOST,36,s,"user's PiAware ADS-B receiver host name or IP, else unused"
+0xCE3,NV_ONTA_MODES,1,i,ONTA mode filter bitmask (see ONTAMB_* in ontheair.cpp)
+0xCE5,NV_ONTA_BANDS,4,i,"ONTA band filter bitmask, 1 bit per HamBandSetting"

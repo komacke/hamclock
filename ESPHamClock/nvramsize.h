@@ -388,6 +388,13 @@ static const uint8_t nv_sizes[NV_N] = {
     // 255 -- appended so all prior EEPROM addresses remain unchanged
     NV_MESHWATCHLIST_LEN,       // NV_MESHWATCHLIST
 
+    // 256 -- appended so all prior EEPROM addresses remain unchanged
+    NV_PIAWAREHOST_LEN,         // NV_PIAWAREHOST
+
+    // 257 -- appended so all prior EEPROM addresses remain unchanged
+    1,                          // NV_ONTA_MODES
+    4,                          // NV_ONTA_BANDS
+
 };
 
 #endif // _NVRAMSIZE_H
