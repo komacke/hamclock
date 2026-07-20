@@ -438,6 +438,8 @@ static void drawMapPopup(void)
     char storm_l1[36], storm_l2[36], storm_l3[36];
     bool have_storm = getStormMapMenuInfo (map_popup.ll,
                     storm_l1, sizeof(storm_l1), storm_l2, sizeof(storm_l2), storm_l3, sizeof(storm_l3));
+    char storm_url[100];
+    bool have_storm_url = have_storm && getStormTropicalTidbitsURL (map_popup.ll, storm_url, sizeof(storm_url));
 
     // launch-site POI info, if the tap landed near a launch pad
     char launch_l1[52], launch_l2[52], launch_l3[36];
@@ -449,11 +451,16 @@ static void drawMapPopup(void)
     MenuItem mitems[20];
     int n_menu = 0;
     int mi_wiki = -1;                                           // set below iff a Wikipedia item is added
+    int mi_stormurl = -1;                                       // set below iff a storm web link is added
 
     if (have_storm) {
         mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, storm_l1, 0};
         mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, storm_l2, 0};
         mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, storm_l3, 0};
+        if (have_storm_url) {
+            mi_stormurl = n_menu;
+            mitems[n_menu++] = {MENU_TOGGLE, false, 3, ZINDENT, "Open Tropical Tidbits", 0};
+        }
         mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, "-------------", 0};
     }
 
@@ -508,6 +515,10 @@ static void drawMapPopup(void)
         // open the launch site's Wikipedia page if requested
         if (mi_wiki >= 0 && mitems[mi_wiki].set && launch_wiki)
             openURL (launch_wiki);
+
+        // open the storm's Tropical Tidbits satellite loop page if requested
+        if (mi_stormurl >= 0 && mitems[mi_stormurl].set)
+            openURL (storm_url);
 
         // reset else other stuff
         if (mitems[mi_rst].set) {

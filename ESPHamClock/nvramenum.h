@@ -385,6 +385,9 @@ typedef enum {
     // 255 -- appended so all prior EEPROM addresses remain unchanged
     NV_MESHWATCHLIST,             // comma-separated Meshtastic node IDs to draw neighbour links for
 
+    // 256 -- appended so all prior EEPROM addresses remain unchanged
+    NV_PIAWAREHOST,                // user's PiAware ADS-B receiver host name or IP, else unused
+
 	NV_N
 
 } NV_Name;

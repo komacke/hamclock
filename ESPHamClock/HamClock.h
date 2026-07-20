@@ -162,6 +162,7 @@ typedef struct {
 #define NV_RIGHOST_LEN          18
 #define NV_FLRIGHOST_LEN        18
 #define NV_COREMAPSTYLE_LEN     10
+#define NV_PIAWAREHOST_LEN      36
 
 
 /* allows reading from array, WiFiClient or FILE
@@ -2533,6 +2534,7 @@ extern bool checkStormsTouch (const SCoord &s, const SBox &box);
 extern const char *getStormHoverLabel (const LatLong &ll);
 extern bool getStormPaneHover (const SCoord &ms, LatLong *ll, char *label, size_t label_len);
 extern bool stormsActive (void);
+extern bool getStormTropicalTidbitsURL (const LatLong &ll, char *url, size_t url_len);
 extern bool getStormMapMenuInfo (const LatLong &ll, char *line1, size_t line1_len,
         char *line2, size_t line2_len, char *line3, size_t line3_len);
 extern uint16_t stormCategoryColor (uint8_t cat, uint16_t wind_kt);
@@ -2773,6 +2775,7 @@ extern bool useGeoIP(void);
 extern bool useGPSDTime(void);
 extern bool useGPSDLoc(void);
 extern const char *getGPSDHost(void);
+extern const char *getPiAwareHost(void);
 extern bool useNMEATime(void);
 extern bool useNMEALoc(void);
 extern const char *getNMEAFile(void);
