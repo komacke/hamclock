@@ -11,7 +11,7 @@
 #define ADSB_ICON_H             14
 #define ADSB_ICON_BPR           ((ADSB_ICON_W + 7)/8) // bytes per bitmap row
 #define ADSB_ICON_GAP           3               // gap below MOTD icon
-#define ADSB_ICON_C_DEFAULT     GRAY             // color when using adsb.lol (no PiAware configured)
+#define ADSB_ICON_C_DEFAULT     RA8875_YELLOW    // color when using adsb.lol (no PiAware configured)
 #define ADSB_ICON_C_PIAWARE     RA8875_GREEN     // color when hyperlinking to a configured PiAware receiver
 SBox adsb_btn_b;
 
@@ -34,16 +34,31 @@ static const uint8_t adsb_plane[ADSB_ICON_BPR*ADSB_ICON_H] PROGMEM = {
     0xf0, 0x03,
 };
 
-// Windy.com label -- opens https://www.windy.com centered on DE, sits just below the ADS-B icon.
-// shown as small blue "WIND" text (rather than an icon) in the smallest available font. "WINDY"
-// was tried first but its extra letter pushed the centered text wide enough to overlap the UTC
-// button to the right, hence the shorter "WIND".
-// there are only ~14px of clearance between the bottom of the (now smaller) ADS-B icon and the
-// top of auxtime_b (the date line) before this location starts getting overdrawn, so this stays small.
-#define WINDY_LABEL              "WIND"
-#define WINDY_ICON_GAP           6               // gap below ADS-B icon -- keep minimal, see above
-#define WINDY_ICON_C             RA8875_BLUE
+// Windy.com wind icon -- opens https://www.windy.com centered on DE, sits just below the ADS-B icon.
+#define WINDY_ICON_W            14
+#define WINDY_ICON_H            14
+#define WINDY_ICON_BPR          ((WINDY_ICON_W + 7)/8) // bytes per bitmap row
+#define WINDY_ICON_GAP          3               // gap below ADS-B icon
+#define WINDY_ICON_C            RA8875_CYAN
 SBox windy_btn_b;
+
+// wind gust breeze streams icon with top swirl curl, one bit per pixel.
+static const uint8_t windy_icon[WINDY_ICON_BPR*WINDY_ICON_H] PROGMEM = {
+    0x80, 0x01,
+    0x40, 0x02,
+    0x7c, 0x00,
+    0x00, 0x00,
+    0x00, 0x00,
+    0xfe, 0x0f,
+    0x00, 0x38,
+    0x00, 0x30,
+    0x00, 0x00,
+    0x00, 0x06,
+    0xf8, 0x03,
+    0x00, 0x00,
+    0x00, 0x00,
+    0x00, 0x00,
+};
 
 // format flags
 uint8_t de_time_fmt;                            // one of DETIME_*
@@ -155,28 +170,30 @@ void drawADSBIcon()
     }
 }
 
-/* draw the Windy.com text label immediately below the ADS-B airplane icon. always shown --
+/* draw the Windy.com wind icon immediately below the ADS-B airplane icon. always shown --
  * tapping it opens https://www.windy.com centered on DE's location. should be called right
  * after drawADSBIcon() since it positions itself relative to adsb_btn_b.
  */
 void drawWindyIcon()
 {
-    // smallest available font so "WINDY" fits in the tight space below the ADS-B icon.
-    selectFontStyle (LIGHT_FONT, FAST_FONT);
-    uint16_t w, h;
-    getTextBounds (WINDY_LABEL, &w, &h);
-
-    // center the label below the airplane while retaining one clickable bounding box.
-    windy_btn_b.x = adsb_btn_b.x + (adsb_btn_b.w - w)/2;
+    // center the wind icon below the airplane while retaining one clickable bounding box.
+    windy_btn_b.x = adsb_btn_b.x + (adsb_btn_b.w - WINDY_ICON_W)/2;
     windy_btn_b.y = adsb_btn_b.y + adsb_btn_b.h + WINDY_ICON_GAP;
-    windy_btn_b.w = w;
-    windy_btn_b.h = h;
+    windy_btn_b.w = WINDY_ICON_W;
+    windy_btn_b.h = WINDY_ICON_H;
 
-    // erase the old label, then draw the new one in blue.
+    // erase the old icon, then paint set bitmap pixels in cyan.
     tft.fillRect (windy_btn_b.x, windy_btn_b.y, windy_btn_b.w, windy_btn_b.h, RA8875_BLACK);
-    tft.setTextColor (WINDY_ICON_C);
-    tft.setCursor (windy_btn_b.x, windy_btn_b.y);
-    tft.print (WINDY_LABEL);
+    for (uint16_t row = 0; row < WINDY_ICON_H; row++) {
+        for (uint16_t byte_col = 0; byte_col < WINDY_ICON_BPR; byte_col++) {
+            uint8_t bits = pgm_read_byte (&windy_icon[row*WINDY_ICON_BPR + byte_col]);
+            for (uint16_t bit = 0; bit < 8; bit++) {
+                uint16_t col = 8*byte_col + bit;
+                if (col < WINDY_ICON_W && (bits & (1U << bit)))
+                    tft.drawPixel (windy_btn_b.x + col, windy_btn_b.y + row, WINDY_ICON_C);
+            }
+        }
+    }
 }
 
 /* function given to TimeLib's setSyncProvider() to resync its time base occasionally.
