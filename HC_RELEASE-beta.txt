@@ -1,5 +1,8 @@
 Changes with latest release:
-- Added Sat Alerts via Hams.at
-- Added plane icon to launch to ADSB
-- Added Planets Display in Setup
+- Add Sat Alerts via Hams.at
+- Add plane icon to launch to ADSB
+- Add Planets Display in Setup
+- Add POTA spot support
+- Add Meshtastic watch support
 - improve display refresh performance
+- improve icons
