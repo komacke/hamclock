@@ -13,6 +13,7 @@ static const char sf_page[] = "/solar-flux/solarflux-99.txt";
 static const char drap_page[] = "/drap/stats.txt";
 static const char kp_page[] = "/geomag/kindex.txt";
 static const char xray_page[] = "/xray/xray.txt";
+static const char proton_page[] = "/proton/protons.txt";
 static const char noaaswx_page[] = "/NOAASpaceWX/noaaswx.txt";
 static const char aurora_page[] = "/aurora/aurora.txt";
 static const char dst_page[] = "/dst/dst.txt";
@@ -25,6 +26,7 @@ static SunSpotData ssn_cache;
 static SolarFluxData sf_cache;
 static DRAPData drap_cache;
 static XRayData xray_cache;
+static ProtonData proton_cache;
 static KpData kp_cache;
 static NOAASpaceWxData noaasw_cache = {0, false, {'R', 'S', 'G'}, {}};
 static AuroraData aurora_cache;
@@ -705,7 +707,10 @@ bool retrieveKp (KpData &kp)
         const int now_i = KP_NHD*KP_VPD-1;              // last historic is now
         for (kp_i = 0; kp_i < KP_NV && getTCPLine (kp_client, line, sizeof(line), NULL); kp_i++) {
             kp_cache.x[kp_i] = (kp_i-now_i)/(float)KP_VPD;
-            kp_cache.p[kp_i] = atof(line);
+            float p = atof(line);
+            if (p < 0 || p > 9)                         // guard missing-data sentinels (eg unpublished
+                p = kp_i > 0 ? kp_cache.p[kp_i-1] : 0;   // future predictions); repeat prior value
+            kp_cache.p[kp_i] = p;
         }
 
         // record sw
@@ -955,6 +960,89 @@ static bool checkForNewXRay (void)
 
     XRayData xray;
     return (retrieveXRay (xray));
+}
+
+/* retrieve solar proton flux (>= 10 MeV, GOES integral, pfu) history, else use cache.
+ * N.B. expected server format is PROTON_NV lines, oldest first, each containing a single
+ *      decimal pfu value (not logged) at the same cadence/window as xray_page.
+ * return whether transaction was ok (even if data was not)
+ */
+bool retrieveProtonFlux (ProtonData &proton)
+{
+    // check cache first
+    if (myNow() < proton_cache.next_update) {
+        proton = proton_cache;
+        return (true);
+    }
+
+    // get fresh
+    WiFiClient proton_client;
+    char line[100];
+    bool ok = false;
+
+    proton_cache.data_ok = false;
+
+    Serial.println(proton_page);
+    if (proton_client.connect(backend_host, backend_port)) {
+        updateClocks(false);
+
+        // query web page
+        httpHCGET (proton_client, backend_host, proton_page);
+
+        // skip response header
+        if (!httpSkipHeader (proton_client)) {
+            Serial.print ("Proton: header short\n");
+            goto out;
+        }
+
+        // transaction successful even if data is not
+        ok = true;
+
+        // read lines into proton array, same age scale as XRayData.
+        // N.B. reject the whole response the instant a line doesn't parse as a plain
+        //      leading number -- eg an HTML error/redirect page from a missing server
+        //      page -- rather than silently treating it as a low reading. This is what
+        //      makes an absent /proton/protons.txt page show "No data" instead of a
+        //      bogus rising line.
+        int proton_i;
+        for (proton_i = 0; proton_i < PROTON_NV; proton_i++) {
+            if (!getTCPLine (proton_client, line, sizeof(line), NULL))
+                break;
+            char *endptr;
+            float pfu = strtof (line, &endptr);
+            if (endptr == line) {
+                Serial.printf ("Proton: bad line: %s\n", line);
+                break;
+            }
+            if (pfu <= 0)                               // guard log10(0) for legit tiny/zero readings
+                pfu = 1e-3;
+            proton_cache.p[proton_i] = log10f(pfu);
+            proton_cache.x[proton_i] = (proton_i-PROTON_NV)/6.0;      // 6 entries per hour, matches xray
+        }
+
+        // capture iff we found all
+        if (proton_i == PROTON_NV) {
+            proton_cache.data_ok = true;
+            proton = proton_cache;
+        } else {
+            Serial.printf ("Proton: data short %d of %d\n", proton_i, PROTON_NV);
+        }
+
+    } else {
+
+        Serial.print ("Proton: connection failed\n");
+    }
+
+out:
+
+    // set next update
+    proton_cache.next_update = ok ? nextRetrieval (PLOT_CH_NOAASPW, PROTON_INTERVAL)
+                                   : nextWiFiRetry (PLOT_CH_NOAASPW);
+
+    // clean up
+    updateClocks(false);
+    proton_client.stop();
+    return (ok);
 }
 
 /* retrieve BzBt data and SPCWX_BZBT if it's time, else use cache.
