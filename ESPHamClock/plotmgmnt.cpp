@@ -488,6 +488,13 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
             return(true);
         }
         break;
+
+    case PLOT_CH_NOAASPW:
+        if (!in_top) {
+            plotRSGHistory();
+            return(true);
+        }
+        break;
     case PLOT_CH_FLUX:
         if (!in_top) {
             plotServerFile ("/solar-flux/solarflux-history.txt", "10.7 cm Solar Flux History", "Year");

@@ -2254,6 +2254,7 @@ extern void prepPlotBox (const SBox &box);
 
 extern void plotMapData (const char title[], const char x_label[], float x_data[], float y_data[],int n_data);
 extern void plotServerFile (const char *filename, const char title[], const char x_label[]);
+extern void plotRSGHistory (void);              // NOAA-style stacked R/S/G history graph on map_b
 
 
 
@@ -3069,6 +3070,16 @@ typedef struct {
     float s[XRAY_NV];                           // short xray value
 } XRayData;
 
+// solar proton flux (>= 10 MeV, GOES integral), same cadence/count as XRayData for time alignment
+#define PROTON_NV               XRAY_NV                 // n points to collect, same window as xray
+#define PROTON_INTERVAL         XRAY_INTERVAL           // polling interval, secs
+typedef struct {
+    time_t next_update;                         // when to try to get new data
+    bool data_ok;                               // set when data are known good
+    float x[PROTON_NV];                         // age, hours ago -- matches XRayData::x
+    float p[PROTON_NV];                         // log10(pfu), >= 10 MeV integral proton flux
+} ProtonData;
+
 typedef struct {
     time_t next_update;                         // when to try to get new data
     bool data_ok;                               // set when data are known good
@@ -3107,6 +3118,7 @@ extern bool retrieveSunSpots (SunSpotData &ssn);
 extern bool retrieveSolarFlux (SolarFluxData &sf);
 extern bool retrieveDRAP (DRAPData &drap);
 extern bool retrieveXRay (XRayData &xray);
+extern bool retrieveProtonFlux (ProtonData &proton);
 extern bool retrieveKp (KpData &kp);
 extern bool retrieveNOAASWx (NOAASpaceWxData &noaa);
 extern bool retrieveAurora (AuroraData &a);
