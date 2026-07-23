@@ -492,8 +492,11 @@ static void drawHamsatVisAlerts (const SBox &box)
             else
                 // wide pane (1/2/3): same issue as above -- satnames like AO-123 fill the whole
                 // %-6.6s field with no trailing pad, so force a literal 1-char gap before the
-                // countdown instead of relying on padding.
-                snprintf (line, sizeof(line), "%-7.7s%-6.6s %s", a.callsign, a.satname, cd);
+                // countdown instead of relying on padding. callsign is trimmed to 6 (not 7) so a
+                // literal 1-char gap can likewise be forced between it and satname -- otherwise a
+                // 7+ char callsign (eg a portable suffix like LA/DF2ET/P) fills %-7.7s with no
+                // trailing pad and runs straight into the satname (eg "LA/DF2EFO-29").
+                snprintf (line, sizeof(line), "%-6.6s %-6.6s %s", a.callsign, a.satname, cd);
             #define SOON_SECS       (15*60)            // "starting soon" threshold, seconds
             uint16_t line_color;
             if (a.aos_at && a.aos_at <= now && (a.los_at == 0 || a.los_at > now))
