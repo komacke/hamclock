@@ -3,6 +3,7 @@ Changes with latest release:
 - Add plane icon to launch to ADSB
 - Add Planets Display in Setup
 - Add POTA spot support
+- Add proton data plots
 - Add Meshtastic watch support
 - improve display refresh performance
 - improve icons
