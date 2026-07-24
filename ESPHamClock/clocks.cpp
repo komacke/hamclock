@@ -1081,6 +1081,9 @@ void updateClocks(bool all)
     if (hide_clocks)
         return;
 
+    // update status items under callsign (uptime, rotating message, version)
+    updateCallsignStatus (all);
+
     // get user's UTC time now, get out fast if still same second
     time_t t_wo = nowWO();
     if ((t_wo%60) == prev_sc && !all)

@@ -820,6 +820,7 @@ extern void newDX (LatLong &ll, const char grid[MAID_CHARLEN], const char *overr
 extern void drawDXPath(void);
 extern bool screenIsLocked(void);
 extern time_t getUptime (uint16_t *days, uint8_t *hrs, uint8_t *mins, uint8_t *secs);
+extern void updateCallsignStatus (bool force);
 extern void eraseScreen(void);
 extern void setMapTagBox (const char *tag, const SCoord &c, uint16_t r, SBox &box);
 extern void drawMapTag (const char *tag, const SBox &box, uint16_t txt_color = RA8875_WHITE,
