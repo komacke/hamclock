@@ -70,7 +70,7 @@ ifeq ($(shell uname -s), NetBSD)
 endif
 
 # Linux needs libgpiod
-ifeq ($(shell find /usr/lib -name libgpiod.a | wc -l), 1)
+ifeq ($(shell find /usr/lib -name libgpiod.a 2>/dev/null | wc -l), 1)
     LIBS += -lgpiod
 endif
 
