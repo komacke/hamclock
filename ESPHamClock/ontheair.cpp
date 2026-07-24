@@ -26,7 +26,7 @@ static const char onta_file[] = "onta.txt";             // local cache file
 // reference's own prefix (eg "US" from "US-2389").
 static const char onta_parks_page[] = "/ONTA/onta_parks.txt";
 static const char onta_parks_file[] = "onta_parks.txt";
-#define ONTA_PARKS_INTERVAL (12*3600)                    // refresh interval, secs
+#define ONTA_PARKS_INTERVAL ONTA_INTERVAL                    // refresh interval, secs
 static std::unordered_map<std::string, std::string> onta_park_states;
 
 // which activations the op has personally (re)spotted this session -- keyed by
