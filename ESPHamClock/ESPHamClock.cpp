@@ -686,9 +686,7 @@ void loop()
         drawMoreEarth();
 
         // other goodies
-        drawUptime(false);
-        drawRotatingMessage();
-        drawVersion(false);
+        updateCallsignStatus(false);
         followBrightness();
         checkOnAirPin();
         readBME280();
@@ -1604,6 +1602,21 @@ static void drawUptime(bool force)
         tft.printf ("%2dd %2dh", days, hrs);
         prev_h = hrs;
     }
+}
+
+/* update gray status items under callsign (uptime, rotating message, version)
+ */
+void updateCallsignStatus (bool force)
+{
+    FontWeight fw;
+    FontSize fs;
+    getFontStyle (&fw, &fs);
+
+    drawUptime (force);
+    drawRotatingMessage ();
+    drawVersion (force);
+
+    selectFontStyle (fw, fs);
 }
 
 /* given an SCoord in raw coords, return one in app coords
