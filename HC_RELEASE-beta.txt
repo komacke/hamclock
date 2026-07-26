@@ -7,3 +7,4 @@ Changes with latest release:
 - Add Meshtastic watch support
 - improve display refresh performance
 - improve icons
+- fix storms on non-mercator maps
