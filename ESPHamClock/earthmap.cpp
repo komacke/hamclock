@@ -55,6 +55,7 @@ uint16_t EARTH_GRIDC, EARTH_GRIDC00;            // main and highlighted
 bool mapmenu_pending;
 
 static void updateCircumstances();
+static void drawMapGrid();
 
 /* request a fresh visual sweep of the current map without reloading its source data.
  * used to clear old overlays and redraw moving symbols on demand.
@@ -66,6 +67,39 @@ void scheduleMapRedraw (void)
     moremap_active = true;
     next_redraw_ms = 0;
     moremap_generation++;
+}
+
+/* redraw just the given screen box: restore the underlying map pixels then redraw everything
+ * that might legitimately overlay them (grid, paths, planet/DX/sat markers, info box, etc).
+ *
+ * Use this -- instead of scheduleMapRedraw()/scheduleFreshMap() -- to erase a small transient
+ * popup. Those functions only (re)draw overlay symbols once, at the end of a full, multi-frame,
+ * row-by-row sweep of the entire map (see drawMoreEarth() below); if something calls them again
+ * before that sweep finishes (e.g. a user tapping open/closed a planet popup faster than a sweep
+ * completes) the sweep restarts from the top and the end-of-sweep symbol redraw keeps getting
+ * starved, which is what let old overlay data (planet dots, DX/sat markers, paths, etc) disappear,
+ * partially or completely, until a sweep was finally left undisturbed long enough to finish.
+ * This function instead does its work synchronously and immediately, with no dependency on the
+ * sweep's progress, so it can't be interrupted or starved no matter how quickly it's re-invoked.
+ */
+void redrawMapBox (const SBox &box)
+{
+    for (uint16_t y = box.y; y < box.y + box.h; y++)
+        for (uint16_t x = box.x; x < box.x + box.w; x++)
+            drawMapCoord (x, y);
+
+    if (core_map != CM_USER) {
+        drawMapGrid();
+        drawSatPathAndFoot();
+        if (waiting4DXPath())
+            drawDXPath();
+        drawPSKPaths();
+        drawAllSymbols();
+        drawSatName();
+        drawInfoBox();
+    }
+
+    tft.drawPR();
 }
 
 
