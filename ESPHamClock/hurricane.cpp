@@ -215,8 +215,7 @@ static bool parseStormsFile (FILE *fp)
 
             // record current position (fcst_hour==0)
             if (fcst_hour == 0) {
-                sp->cur_ll.lat_d = lat;
-                sp->cur_ll.lng_d = lon;
+                sp->cur_ll = LatLong (lat, lon);
                 if (advisory[0])
                     quietStrncpy (sp->advisory, advisory, sizeof(sp->advisory));
             }
@@ -430,9 +429,8 @@ static void drawStormDirectionArrow (const Storm &st)
     const StormPoint &p_prev = st.pts[st.n_pts - 2];
     const StormPoint &p_last = st.pts[st.n_pts - 1];
 
-    LatLong ll_prev, ll_last;
-    ll_prev.lat_d = p_prev.lat;  ll_prev.lng_d = p_prev.lon;
-    ll_last.lat_d = p_last.lat;  ll_last.lng_d = p_last.lon;
+    LatLong ll_prev (p_prev.lat, p_prev.lon);
+    LatLong ll_last (p_last.lat, p_last.lon);
 
     SCoord sc_prev, sc_last;
     ll2s (ll_prev, sc_prev, 1);
@@ -456,8 +454,7 @@ static void drawStormDirectionArrow (const Storm &st)
     float turn_rate = 0.0f;
     if (st.n_pts >= 3) {
         const StormPoint &p_prev2 = st.pts[st.n_pts - 3];
-        LatLong ll_prev2;
-        ll_prev2.lat_d = p_prev2.lat;  ll_prev2.lng_d = p_prev2.lon;
+        LatLong ll_prev2 (p_prev2.lat, p_prev2.lon);
         SCoord sc_prev2;
         ll2s (ll_prev2, sc_prev2, 1);
         if (overMap(sc_prev2)) {
@@ -558,9 +555,8 @@ void drawStormsOnMap (void)
             const StormPoint &p0 = st.pts[j-1];
             const StormPoint &p1 = st.pts[j];
 
-            LatLong ll0, ll1;
-            ll0.lat_d = p0.lat;  ll0.lng_d = p0.lon;
-            ll1.lat_d = p1.lat;  ll1.lng_d = p1.lon;
+            LatLong ll0 (p0.lat, p0.lon);
+            LatLong ll1 (p1.lat, p1.lon);
 
             SCoord a, b;
             ll2s (ll0, a, 1);
@@ -577,9 +573,7 @@ void drawStormsOnMap (void)
         // 2. category-colored dot at each position; the current position is flagged
         for (int j = 0; j < st.n_pts; j++) {
             const StormPoint &pt = st.pts[j];
-            LatLong ll;
-            ll.lat_d = pt.lat;
-            ll.lng_d = pt.lon;
+            LatLong ll (pt.lat, pt.lon);
             uint16_t color = stormCategoryColor (pt.category, pt.wind_kt);
             drawStormDot (ll, color, pt.fcst_hour == 0);
         }
