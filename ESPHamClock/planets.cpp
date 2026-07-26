@@ -310,8 +310,13 @@ static void showPlanetPopup (int pid, const SCoord &s)
     };
     waitForUser (dismiss_ui);
 
-    // erase by forcing a fresh map redraw
-    scheduleFreshMap ();
+    // erase just the popup box and redraw anything that overlays it, synchronously.
+    // N.B. do NOT use scheduleFreshMap()/scheduleMapRedraw() here: those only redraw overlay
+    // symbols (planet dots, DX/sat markers, paths, etc) once, at the end of a multi-frame,
+    // row-by-row sweep of the whole map. If the user taps open/closed another planet popup
+    // before that sweep finishes, the sweep restarts from scratch and the symbol redraw never
+    // gets to run, which is what caused the overlay data to disappear (partially or completely).
+    redrawMapBox (popup_b);
 }
 
 /* check for a tap on a planet marker. return whether handled.
