@@ -498,7 +498,7 @@ static StringPrompt string_pr[N_SPR] = {
 
     // "page 4" -- index 3
 
-    {3, { 10, R2Y(0), 190, PR_H}, {210, R2Y(0), 600, PR_H}, "hams.at key:  ", hamsat_key, NV_HAMSATKEY_LEN, 0, 0,
+    {3, { 10, R2Y(0), 140, PR_H}, {160, R2Y(0), 490, PR_H}, "hams.at key:  ", hamsat_key, NV_HAMSATKEY_LEN, 0, 0,
                 "Enter your hams.at API key for personalized satellite activation match%/visibility, "
                 "or leave blank"},
 
