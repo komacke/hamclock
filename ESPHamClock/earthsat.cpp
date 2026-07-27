@@ -1780,6 +1780,168 @@ void updateSatPath()
     }
 }
 
+/* find the raw screen bounding box of sat s's footprint (all N_FOOT loci), ignoring any
+ * OFFSCRN points. return whether any valid points were found.
+ */
+static bool satFootBBox (SatState &s, SBox &bb)
+{
+    bool any = false;
+    uint16_t x0 = 0, y0 = 0, x1 = 0, y1 = 0;           // will be set by first valid point
+
+    for (int alt_i = 0; alt_i < N_FOOT; alt_i++) {
+        for (uint16_t foot_i = 0; foot_i < s.n_foot[alt_i]; foot_i++) {
+            SCoord &sf = s.foot[alt_i][foot_i];
+            if (sf.x == OFFSCRN || sf.y == OFFSCRN)
+                continue;
+            if (!any) {
+                x0 = x1 = sf.x;
+                y0 = y1 = sf.y;
+                any = true;
+            } else {
+                if (sf.x < x0) x0 = sf.x;
+                if (sf.x > x1) x1 = sf.x;
+                if (sf.y < y0) y0 = sf.y;
+                if (sf.y > y1) y1 = sf.y;
+            }
+        }
+    }
+
+    if (any) {
+        bb.x = x0;
+        bb.y = y0;
+        bb.w = x1 - x0 + 1;
+        bb.h = y1 - y0 + 1;
+    }
+    return (any);
+}
+
+/* grow box a to also include box b (b must be valid; a is assumed valid iff *have is true) */
+static void growSBox (SBox &a, const SBox &b, bool *have)
+{
+    if (!*have) {
+        a = b;
+        *have = true;
+        return;
+    }
+    uint16_t x0 = a.x < b.x ? a.x : b.x;
+    uint16_t y0 = a.y < b.y ? a.y : b.y;
+    uint16_t x1 = (a.x+a.w) > (b.x+b.w) ? (a.x+a.w) : (b.x+b.w);
+    uint16_t y1 = (a.y+a.h) > (b.y+b.h) ? (a.y+a.h) : (b.y+b.h);
+    a.x = x0;
+    a.y = y0;
+    a.w = x1 - x0;
+    a.h = y1 - y0;
+}
+
+/* small box around s.path[0] -- the "now" dot marking the satellite's current position -- sized
+ * to comfortably cover the filled circle drawn there. return whether it's valid (on screen).
+ */
+static bool satNowBBox (SatState &s, SBox &bb)
+{
+    if (!s.path || s.n_path < 1)
+        return (false);
+    SCoord &now = s.path[0];
+    if (now.x == OFFSCRN || now.y == OFFSCRN)
+        return (false);
+
+    int r = 2*getRawPathWidth(s.cs) + 4;                 // matches fillCircleRaw radius, plus pad
+    bb.x = now.x > (uint16_t)r ? now.x - r : 0;
+    bb.y = now.y > (uint16_t)r ? now.y - r : 0;
+    bb.w = 2*r;
+    bb.h = 2*r;
+    return (true);
+}
+
+/* lightweight alternative to a full map sweep: recompute each active sat's position/footprint
+ * and redraw only the screen region that actually needs it -- the union of where the footprint(s)
+ * and current-position marker used to be and where they are now -- via redrawMapBox(). This lets
+ * the footprint and satellite dot track the satellite's motion much more often than
+ * EARTH_REDRAW_INTERVAL_MS without paying for a full, whole-map, pixel-by-pixel resweep each time.
+ * N.B. intentionally ignores the rest of s.path[] (the orbit track) -- its shape barely changes
+ * over the short intervals this is meant to run at, so it's left to the normal full sweep to refresh.
+ */
+void updateSatFootprintFast()
+{
+    if (!obs || core_map == CM_USER)
+        return;
+
+    // a full sweep recomputes the satellite's position immediately but doesn't paint it until
+    // the sweep finishes several loop() iterations later. if we ran during that window we'd
+    // erase based on a position that was never actually painted, leaving the truly-old footprint
+    // on screen -- so just skip this cycle and try again on the next timer tick.
+    if (mapSweepActive())
+        return;
+
+    // union of every current (soon to be stale) footprint + now-dot box, so we know what to erase
+    SBox stale_b = {0,0,0,0};
+    bool have_b = false;
+    for (int i = 0; i < MAX_ACTIVE_SATS; i++) {
+        SatState &s = sat_state[i];
+        if (!s.sat || !SAT_NAME_IS_SET(s))
+            continue;
+        SBox bb;
+        if (satFootBBox (s, bb))
+            growSBox (stale_b, bb, &have_b);
+        if (satNowBBox (s, bb))
+            growSBox (stale_b, bb, &have_b);
+    }
+
+    if (!have_b)
+        return;                                          // nothing currently shown, nothing to do
+
+    // recompute position, footprint (and path, cheap either way)
+    updateSatPath();
+
+    // grow to also cover the new footprint + now-dot location(s)
+    for (int i = 0; i < MAX_ACTIVE_SATS; i++) {
+        SatState &s = sat_state[i];
+        if (!s.sat || !SAT_NAME_IS_SET(s))
+            continue;
+        SBox bb;
+        if (satFootBBox (s, bb))
+            growSBox (stale_b, bb, &have_b);
+        if (satNowBBox (s, bb))
+            growSBox (stale_b, bb, &have_b);
+    }
+
+    // small margin for line width, in the same raw units as stale_b
+    #define SFF_MARGIN 6
+    int32_t rx0 = (int32_t)stale_b.x - SFF_MARGIN;
+    int32_t ry0 = (int32_t)stale_b.y - SFF_MARGIN;
+    int32_t rx1 = (int32_t)(stale_b.x + stale_b.w) + SFF_MARGIN;
+    int32_t ry1 = (int32_t)(stale_b.y + stale_b.h) + SFF_MARGIN;
+    if (rx0 < 0) rx0 = 0;
+    if (ry0 < 0) ry0 = 0;
+
+    // s.foot[]/s.path[] are in *raw* framebuffer coordinates (from ll2sRaw()), but
+    // redrawMapBox()/drawMapCoord() work in *logical* app coordinates -- these only coincide
+    // when tft.SCALESZ == 1. Convert down to logical space (floor the top/left, ceil the
+    // bottom/right so the region fully covers the raw pixels) before clipping to map_b.
+    int scl = tft.SCALESZ > 0 ? tft.SCALESZ : 1;
+    int32_t x0 = rx0 / scl;
+    int32_t y0 = ry0 / scl;
+    int32_t x1 = (rx1 + scl - 1) / scl;
+    int32_t y1 = (ry1 + scl - 1) / scl;
+
+    if (x0 < map_b.x) x0 = map_b.x;
+    if (y0 < map_b.y) y0 = map_b.y;
+    if (x1 > map_b.x + map_b.w) x1 = map_b.x + map_b.w;
+    if (y1 > map_b.y + map_b.h) y1 = map_b.y + map_b.h;
+    if (x1 <= x0 || y1 <= y0)
+        return;
+
+    SBox box;
+    box.x = (uint16_t)x0;
+    box.y = (uint16_t)y0;
+    box.w = (uint16_t)(x1 - x0);
+    box.h = (uint16_t)(y1 - y0);
+    redrawMapBox (box);
+
+    if (debugLevel (DEBUG_ESATS, 1))
+        Serial.printf ("SAT: fast foot refresh box %u,%u %ux%u (scale %d)\n",
+                                                            box.x, box.y, box.w, box.h, scl);
+}
+
 /* draw the entire sat paths and footprints, connecting points with lines.
  */
 void drawSatPathAndFoot()

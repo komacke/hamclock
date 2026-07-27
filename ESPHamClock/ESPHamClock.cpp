@@ -685,6 +685,16 @@ void loop()
         // display more of earth map
         drawMoreEarth();
 
+        // refresh just the satellite footprint(s) at a much tighter cadence than the full map
+        // sweep, without the cost of a full sweep (see updateSatFootprintFast())
+        #define SAT_FOOT_FAST_MS 5000U
+        static uint32_t sat_foot_ms;
+        uint32_t now_ms = millis();
+        if (now_ms - sat_foot_ms >= SAT_FOOT_FAST_MS) {
+            sat_foot_ms = now_ms;
+            updateSatFootprintFast();
+        }
+
         // other goodies
         updateCallsignStatus(false);
         followBrightness();
