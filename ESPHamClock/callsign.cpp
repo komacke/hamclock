@@ -220,7 +220,7 @@ static void drawCallsign (bool all)
     // start with largest font and keep shrinking and trying 2 lines until fits
     const SBox &box = cs_info.box;              // handy
     selectFontStyle (BOLD_FONT, LARGE_FONT);
-    if (!drawBoxText (false, box, slash0, fg_c, box.h/2+20, 0, 0, rainbow)) {
+    if (!drawBoxText (false, box, slash0, fg_c, box.h/2+16, 0, 0, rainbow)) {
         // try smaller font
         selectFontStyle (BOLD_FONT, SMALL_FONT);
         if (!drawBoxText (false, box, text, fg_c, box.h/2+10, 0, 0, rainbow)) {

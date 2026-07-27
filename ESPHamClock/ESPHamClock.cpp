@@ -1333,8 +1333,8 @@ static void drawVersion (bool draw)
         uint16_t vw = getTextWidth (ver);
         tft.setTextColor (col);
         tft.setCursor (version_b.x+version_b.w-vw, version_b.y+1);      // right justify
-        // clear a bit beyond box.h to catch descenders from prior strings
-        tft.fillRect (version_b.x, version_b.y, version_b.w, version_b.h+2, RA8875_BLACK);
+        // clear from cs_info.box bottom down through status box to catch any descenders
+        tft.fillRect (version_b.x, cs_info.box.y+cs_info.box.h, version_b.w, CSINFO_DROP+CSINFO_H+2, RA8875_BLACK);
         // drawSBox (version_b, RA8875_GREEN);         // RBF
         tft.print (ver);
     }
@@ -1495,8 +1495,8 @@ static void drawRotatingMessage()
     selectFontStyle (LIGHT_FONT, FAST_FONT);
     tft.setTextColor (show_red ? RA8875_RED : GRAY);
     uint16_t sw = getTextWidth(str);
-    // clear a bit beyond box.h to catch descenders (p, g, q, y) from prior strings
-    tft.fillRect (wifi_b.x, wifi_b.y, wifi_b.w, wifi_b.h+2, RA8875_BLACK);
+    // clear from cs_info.box bottom down through status box to catch any descenders
+    tft.fillRect (wifi_b.x, cs_info.box.y+cs_info.box.h, wifi_b.w, CSINFO_DROP+CSINFO_H+2, RA8875_BLACK);
     tft.setCursor (wifi_b.x+(wifi_b.w-sw)/2, wifi_b.y+1);
     tft.print(str);
 }
@@ -1511,8 +1511,8 @@ static void prepUptime()
     const uint16_t y = cs_info.box.y+cs_info.box.h+CSINFO_DROP;
     const uint16_t w = uptime_b.w - UPTIME_INDENT;
 
-    // clear a bit beyond CSINFO_H to catch descenders from prior strings
-    tft.fillRect (x, y, w, CSINFO_H+2, RA8875_BLACK);             // Skip "Up"
+    // clear from cs_info.box bottom down through status box to catch any descenders
+    tft.fillRect (x, cs_info.box.y+cs_info.box.h, w, CSINFO_DROP+CSINFO_H+2, RA8875_BLACK);             // Skip "Up"
     // drawSBox (uptime_b, RA8875_GREEN);                       // RBF
 
     selectFontStyle (LIGHT_FONT, FAST_FONT);
