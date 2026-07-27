@@ -1,2 +1,3 @@
 Changes with latest release:
 - clean stray pixels in status
+- snappier refresh of sat tracks
