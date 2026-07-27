@@ -1,10 +1,2 @@
 Changes with latest release:
-- Add Sat Alerts via Hams.at
-- Add plane icon to launch to ADSB
-- Add Planets Display in Setup
-- Add POTA spot support
-- Add proton data plots
-- Add Meshtastic watch support
-- improve display refresh performance
-- improve icons
-- fix storms on non-mercator maps
+- no changes from 4.28 yet
