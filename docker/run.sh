@@ -5,10 +5,10 @@ if [ -z "$HC_SIZE" ]; then
     HC_SIZE=2400x1440
 fi
 
-if [ -z "$BACKEND_HOST" -a -e /opt/hamclock/backend_host ]; then
-    BACKEND_HOST="$(grep -v '^#' /opt/hamclock/backend_host)"
-fi
-if [ -n "$BACKEND_HOST" ]; then
+OVERRIDE_BACKEND_HOST="$(grep -v '^#' /opt/hamclock/backend_host | head -n 1)"
+if [ -n "$OVERRIDE_BACKEND_HOST" ]; then
+    BACKEND_ARG="-b $OVERRIDE_BACKEND_HOST"
+elif [ -n "$BACKEND_HOST" ]; then
     BACKEND_ARG="-b $BACKEND_HOST"
 fi
 
