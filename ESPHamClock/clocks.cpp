@@ -593,6 +593,11 @@ static void drawAuxTime (bool all, const time_t &t_wo, const tmElements_t &tm_wo
     #define _UCHW       13                                              // approx char width
     #define _UCCD       8                                               // descent
     static int prev_day;                                                // note new day for many options
+    static AuxTimeFormat prev_auxtime = AUXT_N;                         // track format changes
+    if (prev_auxtime != auxtime) {
+        all = true;
+        prev_auxtime = auxtime;
+    }
     int day = t_wo / (3600*24);
     int year = tm_wo.Year + 1970;
     selectFontStyle (LIGHT_FONT, SMALL_FONT);
@@ -1137,7 +1142,7 @@ void updateClocks(bool all)
             // just came back on, show and update state
             Serial.printf ("time: back ok\n");
             drawUTCButton();
-            tft.fillRect(clock_b.x+2*clock_b.w/3+34, clock_b.y, 25, HMS_H+4, RA8875_BLACK); // erase ?
+            tft.fillRect(clock_b.x+2*clock_b.w/3+34, clock_b.y, 25, auxtime_b.y - clock_b.y, RA8875_BLACK); // erase ?
 
             time_was_bad = false;
         }
@@ -1167,7 +1172,7 @@ void updateClocks(bool all)
         snprintf (buf, sizeof(buf), "%02d:%02d", tm_wo.Hour, tm_wo.Minute);
         uint16_t w = 135;
         int16_t x = clock_b.x+2*clock_b.w/3-w;
-        tft.fillRect (x, clock_b.y, w, HMS_H+2, RA8875_BLACK);
+        tft.fillRect (x, clock_b.y, w, auxtime_b.y - clock_b.y, RA8875_BLACK);
         tft.setCursor(x, clock_b.y+HMS_H);
         tft.setTextColor(HMS_C);
         tft.print(buf);
