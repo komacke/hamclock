@@ -258,6 +258,8 @@ static void showPlanetPopup (int pid, const SCoord &s)
     PlanetNow pn;
     computePlanet ((PlanetId)pid, myNow(), pn);
 
+    finishMapSweepNow();
+
     SBox popup_b;
     popup_b.w = 150;
     popup_b.h = 80;

@@ -57,6 +57,12 @@ bool mapmenu_pending;
 static void updateCircumstances();
 static void drawMapGrid();
 
+void finishMapSweepNow (void)
+{
+	while (moremap_active)
+		drawMoreEarth();
+}
+
 /* request a fresh visual sweep of the current map without reloading its source data.
  * used to clear old overlays and redraw moving symbols on demand.
  */

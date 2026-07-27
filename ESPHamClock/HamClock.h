@@ -1517,6 +1517,7 @@ extern SCircle moon_c;
 extern uint8_t flash_crc_ok;
 
 extern void drawMoreEarth (void);
+extern void finishMapSweepNow (void);
 extern void eraseDEMarker (void);
 extern void eraseDEAPMarker (void);
 extern void drawDEMarker (bool force);
