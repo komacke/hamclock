@@ -237,8 +237,11 @@ void drawPlanetsOnMap (void)
         LatLong ll (pn.sub_lat, pn.sub_lng);
         SCoord sc;
         ll2s (ll, sc, PLANET_R+1);
-        if (sc.x == 0 && sc.y == 0)
-            continue;                                       // off zoomed/rotated map
+        //if (sc.x == 0 && sc.y == 0)
+        //     continue;                                       // off zoomed/rotated map
+
+	if (!overMap(sc))
+           continue;
 
         tft.fillCircle (sc.x, sc.y, PLANET_R, planet_els[i].color);
         tft.drawCircle (sc.x, sc.y, PLANET_R, RA8875_BLACK);
