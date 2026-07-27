@@ -401,11 +401,11 @@ static bool retrieveHamsat (void)
  * drawing
  */
 
-/* format "Hh MMm", "DdHhMMm", "9+", or "NOW" until aos, relative to now.
+/* format "Hh MMm", "DdHhMMm", "9+ days", or "NOW" until aos, relative to now.
  * once a pass is a day or more away, the day count is prefixed onto the existing "Hh MMm" form
  * (eg "5d6h58m") rather than letting hours alone run to 3+ digits ("99h58m" was ambiguous --
  * could mean 99h or actually be several days out, clamped/truncated). once beyond 9 days out,
- * collapse to "9+" rather than growing the day count past 1 digit.
+ * collapse to "9+ days" rather than growing the day count past 1 digit.
  */
 static void formatCountdown (time_t aos, time_t now, char *buf, size_t buflen)
 {
@@ -421,7 +421,7 @@ static void formatCountdown (time_t aos, time_t now, char *buf, size_t buflen)
     // value-range analysis to avoid -Wformat-truncation (same convention used in lightning.cpp)
     #define CD_CLAMP(n,mx) ((n) > (mx) ? (mx) : (n))
     if (days > 9)
-        snprintf (buf, buflen, "9+");
+        snprintf (buf, buflen, "9+ days");
     else if (days > 0)
         snprintf (buf, buflen, "%dd%dh%02dm", CD_CLAMP(days,9), CD_CLAMP(hr,23), mn);
     else if (hr > 0)
