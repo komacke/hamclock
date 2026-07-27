@@ -1535,6 +1535,7 @@ extern void drawSun (void);
 extern void drawMoon (void);
 extern void drawDXInfo (void);
 extern void scheduleMapRedraw (void);
+extern bool mapSweepActive (void);
 extern void redrawMapBox (const SBox &box);
 extern void mm_redraw(void);
 extern bool mm_up (void);
@@ -1605,6 +1606,7 @@ typedef struct {
 extern int getSatFreqs (int norad, SatFreq **fpp);      // caller must free *fpp if return > 0
 
 extern void updateSatPath(void);
+extern void updateSatFootprintFast(void);
 extern void drawSatPathAndFoot(void);
 extern void updateSatPass(void);
 extern bool querySatSelection(void);

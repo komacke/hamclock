@@ -75,6 +75,15 @@ void scheduleMapRedraw (void)
     moremap_generation++;
 }
 
+/* return whether a full, row-by-row map sweep is currently in progress. used by
+ * updateSatFootprintFast() to avoid racing with a sweep that has recomputed the satellite's
+ * position but not yet painted it (see earthsat.cpp).
+ */
+bool mapSweepActive (void)
+{
+    return (moremap_active);
+}
+
 /* redraw just the given screen box: restore the underlying map pixels then redraw everything
  * that might legitimately overlay them (grid, paths, planet/DX/sat markers, info box, etc).
  *
