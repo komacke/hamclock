@@ -1,2 +1,2 @@
 Changes with latest release:
-- no changes from 4.28 yet
+- clean stray pixels in status
