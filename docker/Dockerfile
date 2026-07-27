@@ -1,6 +1,7 @@
 ## PLEASE DON'T CHANGE ANYTHING IN THIS FILE UNLESS YOU'RE developing.
 ## REFER TO THE DOCUMENTATION FOR CONFIGURATION OF YOUR HAMCLOCK!
 FROM alpine:3.23
+ARG GIT_VERSION
 ARG HC_SIZE
 ARG HC_UID
 ARG HC_GID
@@ -22,11 +23,13 @@ RUN addgroup -g $HC_GID hamclock && \
     \
     cp hamclock-contrib/hceeprom.pl ESPHamClock/ && \
     chmod +x ESPHamClock/hceeprom.pl && \
+    echo $GIT_VERSION > git.version && \
     chmod +x run.sh && \
     \
     mkdir -p /opt/hamclock/.hamclock && \
     mkdir -p /opt/hamclock/bin && \
     cd ESPHamClock && \
+    make clean && \
     \
     if [ -n "$HC_SIZE" ]; then \
         make -j 4 hamclock-web-${HC_SIZE} && \

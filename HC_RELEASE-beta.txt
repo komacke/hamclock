@@ -1,2 +1,2 @@
-Changes with latest release
-- fix SDO movies URL since NOAA retired the old site
+Changes with latest release:
+- no changes from 4.28 yet

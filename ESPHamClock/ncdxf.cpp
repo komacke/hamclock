@@ -241,6 +241,10 @@ bool drawNCDXFBox()
         ok = drawNCDXFWx ((BRB_MODE)brb_mode);
         break;
 
+    case BRB_SHOW_LIGHTNING:
+        drawNCDXFLightningStats();
+        break;
+
     case BRB_N:
         
         // lint

@@ -4,6 +4,62 @@
 
 #include "HamClock.h"
 
+// ADS-B airplane icon -- opens https://adsb.lol (or the user's PiAware receiver, if configured in
+// Setup), sits just below the MOTD mailbox icon. kept small (matches MOTD icon size) to leave enough
+// clearance below for the Windy label before hitting auxtime_b (the date line).
+#define ADSB_ICON_W             14
+#define ADSB_ICON_H             14
+#define ADSB_ICON_BPR           ((ADSB_ICON_W + 7)/8) // bytes per bitmap row
+#define ADSB_ICON_GAP           3               // gap below MOTD icon
+#define ADSB_ICON_C_DEFAULT     RA8875_YELLOW    // color when using adsb.lol (no PiAware configured)
+#define ADSB_ICON_C_PIAWARE     RA8875_GREEN     // color when hyperlinking to a configured PiAware receiver
+SBox adsb_btn_b;
+
+// top-down airliner silhouette, one bit per pixel. zero bits are transparent.
+// rows are packed left-to-right, least-significant bit first, like santa.cpp.
+static const uint8_t adsb_plane[ADSB_ICON_BPR*ADSB_ICON_H] PROGMEM = {
+    0xc0, 0x00,
+    0xc0, 0x00,
+    0xc0, 0x00,
+    0xc0, 0x00,
+    0xc0, 0x00,
+    0xe0, 0x01,
+    0xf8, 0x07,
+    0xfc, 0x0f,
+    0xc7, 0x38,
+    0xc0, 0x00,
+    0xc0, 0x00,
+    0xc0, 0x00,
+    0xf0, 0x03,
+    0xf0, 0x03,
+};
+
+// Windy.com wind icon -- opens https://www.windy.com centered on DE, sits just below the ADS-B icon.
+#define WINDY_ICON_W            14
+#define WINDY_ICON_H            14
+#define WINDY_ICON_BPR          ((WINDY_ICON_W + 7)/8) // bytes per bitmap row
+#define WINDY_ICON_GAP          3               // gap below ADS-B icon
+#define WINDY_ICON_C            RA8875_CYAN
+SBox windy_btn_b;
+
+// wind gust breeze streams icon with top swirl curl, one bit per pixel.
+static const uint8_t windy_icon[WINDY_ICON_BPR*WINDY_ICON_H] PROGMEM = {
+    0x80, 0x01,
+    0x40, 0x02,
+    0x7c, 0x00,
+    0x00, 0x00,
+    0x00, 0x00,
+    0xfe, 0x0f,
+    0x00, 0x38,
+    0x00, 0x30,
+    0x00, 0x00,
+    0x00, 0x06,
+    0xf8, 0x03,
+    0x00, 0x00,
+    0x00, 0x00,
+    0x00, 0x00,
+};
+
 // format flags
 uint8_t de_time_fmt;                            // one of DETIME_*
 uint8_t desrss, dxsrss;                         // show actual de/dx sun rise/set else time to
@@ -68,6 +124,76 @@ static void drawUTCButton()
     tft.setCursor(x, clock_b.y+vgap+1);             tft.print(msg[0]);
     tft.setCursor(x, clock_b.y+2*vgap+FFONT_H+1);   tft.print(msg[1]);
     tft.setCursor(x, clock_b.y+3*vgap+2*FFONT_H+1); tft.print(msg[2]);
+
+    // draw the MOTD mailbox icon to the left of the UTC button (or blank slot if no MOTD)
+    drawMOTDIcon();
+
+    // defensively blank the entire icon column below the mailbox down to just above auxtime_b
+    // (the date line, whose top edge sits 48px below clock_b.y by experiment) -- guards against
+    // stale pixels left over from a previous build's differently-sized icons in this same spot.
+    tft.fillRect (motd_btn_b.x-3, motd_btn_b.y, motd_btn_b.w+6, 48, RA8875_BLACK);
+
+    // draw the ADS-B airplane icon just below that -- always shown, opens adsb.lol when tapped
+    drawADSBIcon();
+
+    // draw the Windy.com wind icon just below that -- always shown, opens windy.com when tapped
+    drawWindyIcon();
+}
+
+/* draw the ADS-B airplane icon immediately below the MOTD mailbox icon. always shown
+ * (unlike the MOTD icon, which blanks itself when there's no message) -- tapping it opens
+ * https://adsb.lol, a live ADS-B aircraft tracking site. should be called right after
+ * drawMOTDIcon() since it positions itself relative to motd_btn_b.
+ */
+void drawADSBIcon()
+{
+    // center the wider airplane below the mailbox while retaining one clickable bounding box.
+    adsb_btn_b.x = motd_btn_b.x - (ADSB_ICON_W - motd_btn_b.w)/2;
+    adsb_btn_b.y = motd_btn_b.y + motd_btn_b.h + ADSB_ICON_GAP;
+    adsb_btn_b.w = ADSB_ICON_W;
+    adsb_btn_b.h = ADSB_ICON_H;
+
+    // plane is drawn in a different color once the user has configured a PiAware receiver in Setup
+    uint16_t plane_c = getPiAwareHost()[0] ? ADSB_ICON_C_PIAWARE : ADSB_ICON_C_DEFAULT;
+
+    // erase the old icon, then paint only set bitmap pixels; zero bits remain background.
+    tft.fillRect (adsb_btn_b.x, adsb_btn_b.y, adsb_btn_b.w, adsb_btn_b.h, RA8875_BLACK);
+    for (uint16_t row = 0; row < ADSB_ICON_H; row++) {
+        for (uint16_t byte_col = 0; byte_col < ADSB_ICON_BPR; byte_col++) {
+            uint8_t bits = pgm_read_byte (&adsb_plane[row*ADSB_ICON_BPR + byte_col]);
+            for (uint16_t bit = 0; bit < 8; bit++) {
+                uint16_t col = 8*byte_col + bit;
+                if (col < ADSB_ICON_W && (bits & (1U << bit)))
+                    tft.drawPixel (adsb_btn_b.x + col, adsb_btn_b.y + row, plane_c);
+            }
+        }
+    }
+}
+
+/* draw the Windy.com wind icon immediately below the ADS-B airplane icon. always shown --
+ * tapping it opens https://www.windy.com centered on DE's location. should be called right
+ * after drawADSBIcon() since it positions itself relative to adsb_btn_b.
+ */
+void drawWindyIcon()
+{
+    // center the wind icon below the airplane while retaining one clickable bounding box.
+    windy_btn_b.x = adsb_btn_b.x + (adsb_btn_b.w - WINDY_ICON_W)/2;
+    windy_btn_b.y = adsb_btn_b.y + adsb_btn_b.h + WINDY_ICON_GAP;
+    windy_btn_b.w = WINDY_ICON_W;
+    windy_btn_b.h = WINDY_ICON_H;
+
+    // erase the old icon, then paint set bitmap pixels in cyan.
+    tft.fillRect (windy_btn_b.x, windy_btn_b.y, windy_btn_b.w, windy_btn_b.h, RA8875_BLACK);
+    for (uint16_t row = 0; row < WINDY_ICON_H; row++) {
+        for (uint16_t byte_col = 0; byte_col < WINDY_ICON_BPR; byte_col++) {
+            uint8_t bits = pgm_read_byte (&windy_icon[row*WINDY_ICON_BPR + byte_col]);
+            for (uint16_t bit = 0; bit < 8; bit++) {
+                uint16_t col = 8*byte_col + bit;
+                if (col < WINDY_ICON_W && (bits & (1U << bit)))
+                    tft.drawPixel (windy_btn_b.x + col, windy_btn_b.y + row, WINDY_ICON_C);
+            }
+        }
+    }
 }
 
 /* function given to TimeLib's setSyncProvider() to resync its time base occasionally.
@@ -955,6 +1081,9 @@ void updateClocks(bool all)
     if (hide_clocks)
         return;
 
+    // update status items under callsign (uptime, rotating message, version)
+    updateCallsignStatus (all);
+
     // get user's UTC time now, get out fast if still same second
     time_t t_wo = nowWO();
     if ((t_wo%60) == prev_sc && !all)
@@ -1152,6 +1281,39 @@ void drawDXSunRiseSetInfo()
 bool checkClockTouch (SCoord &s)
 {
     bool ours = false;
+
+    // check MOTD mailbox icon first since it sits inside clock_b and would otherwise be
+    // swallowed by the clock-area dispatch below
+    Serial.printf ("MOTD: checkClockTouch s=(%d,%d) motd_btn_b=(%d,%d %dx%d) present=%d\n",
+                   s.x, s.y, motd_btn_b.x, motd_btn_b.y, motd_btn_b.w, motd_btn_b.h,
+                   motdIsPresent());
+    if (motdIsPresent() && inBox (s, motd_btn_b)) {
+        motdClicked();
+        return (true);
+    }
+
+    // ADS-B airplane icon: always present, opens the user's PiAware receiver if configured in Setup,
+    // else opens adsb.lol centered on DE's location
+    if (inBox (s, adsb_btn_b)) {
+        char url[100];
+        const char *piaware_host = getPiAwareHost();
+        if (piaware_host[0])
+            snprintf (url, sizeof(url), "http://%s/skyaware/", piaware_host);
+        else
+            snprintf (url, sizeof(url), "https://adsb.lol/?lat=%.3f&lon=%.3f&zoom=10",
+                        de_ll.lat_d, de_ll.lng_d);
+        openURL (url);
+        return (true);
+    }
+
+    // Windy wind icon: always present, opens windy.com centered on DE's location
+    if (inBox (s, windy_btn_b)) {
+        char url[100];
+        snprintf (url, sizeof(url), "https://www.windy.com/?%.3f,%.3f,8",
+                    de_ll.lat_d, de_ll.lng_d);
+        openURL (url);
+        return (true);
+    }
 
     if (inBox (s, auxtime_b)) {
 

@@ -3,11 +3,12 @@
 
 #include "HamClock.h"
 
-
+#define DEFAULT_HOST "clearskyinstitute.com"
 // host name and port of backend server
-const char *backend_host = "clearskyinstitute.com";
+const char *backend_host = DEFAULT_HOST;
 int backend_port = 80;
-
+// host name of software server
+const char *software_host = DEFAULT_HOST;
 // IP where server thinks we came from
 char remote_addr[16];                           // INET_ADDRSTRLEN
 
@@ -146,6 +147,76 @@ time_t nextWiFiRetry (const char *str)
 time_t nextWiFiRetry (PlotChoice pc)
 {
     return (nextWiFiRetry (plot_names[pc]));
+}
+
+// ---------------------------------------------------------------------------
+// VOACAP-specific exponential-backoff-with-jitter and per-fleet click throttle.
+// Independent of nextWiFiRetry() so other backends (DEWX, MUF-RT, RSS, ...)
+// keep their existing behavior. Reset on success via resetVOACAPRetry().
+// ---------------------------------------------------------------------------
+
+static time_t voacap_backoff = VOACAP_RETRY_BASE;       // current delay, secs
+static time_t last_voacap_attempt;                      // wall time of last fetch attempt
+
+bool isVOACAPMap (CoreMaps cm)
+{
+    return (cm == CM_MUF_V || cm == CM_PMTOA || cm == CM_PMREL);
+}
+
+bool voacapThrottled (time_t now)
+{
+    // only throttle while in an active failure-backoff cycle.
+    // After a successful fetch, voacap_backoff is reset to VOACAP_RETRY_BASE,
+    // so clicks pass through normally until the next failure.
+    if (voacap_backoff <= VOACAP_RETRY_BASE)
+        return false;
+    return (last_voacap_attempt > 0
+         && (now - last_voacap_attempt) < VOACAP_MIN_INTERVAL);
+}
+
+void noteVOACAPAttempt (time_t now)
+{
+    last_voacap_attempt = now;
+}
+
+time_t lastVOACAPAttempt (void)
+{
+    return last_voacap_attempt;
+}
+
+void resetVOACAPRetry (void)
+{
+    if (voacap_backoff != VOACAP_RETRY_BASE)
+        Serial.printf ("VOACAP: backoff reset (was %ld s, base %d s)\n",
+                       (long)voacap_backoff, VOACAP_RETRY_BASE);
+    voacap_backoff = VOACAP_RETRY_BASE;
+}
+
+/* schedule the next VOACAP retry after a failed fetch.
+ * Doubles backoff up to VOACAP_RETRY_MAX, with +/-25% jitter to avoid
+ * a synchronized fleet hammering the backend. Logs each scheduling.
+ */
+time_t nextVOACAPRetry (const char *str)
+{
+    time_t now = myNow();
+
+    // +/-25% jitter so a herd of HamClocks doesn't sync up
+    long jitter = (long)voacap_backoff / 4;
+    long delay  = (long)voacap_backoff + (random(2*jitter+1) - jitter);
+    if (delay < VOACAP_RETRY_BASE)
+        delay = VOACAP_RETRY_BASE;
+
+    time_t next_try = now + delay;
+
+    Serial.printf ("VOACAP: %s failed; backing off %ld s (cur=%ld, max=%d), next at +%ld\n",
+                   str, delay, (long)voacap_backoff, VOACAP_RETRY_MAX, delay);
+
+    // double for next time, cap at max
+    voacap_backoff *= VOACAP_RETRY_MULT;
+    if (voacap_backoff > VOACAP_RETRY_MAX)
+        voacap_backoff = VOACAP_RETRY_MAX;
+
+    return (next_try);
 }
 
 /* given a plot choice return time of its next update.
@@ -397,7 +468,9 @@ static void initWiFi (bool verbose)
         tftMsg (verbose, 0, "GW: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
         ip = WiFi.dnsIP();
         tftMsg (verbose, 0, "DNS: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-
+        tftMsg (verbose, 0, "BE: %s:%d", backend_host, backend_port);
+        if (strcmp(backend_host,software_host) != 0)
+            tftMsg (verbose, 0, "SE: %s", software_host);
         int rssi;
         bool is_dbm;
         if (readWiFiRSSI(rssi,is_dbm)) {
@@ -726,12 +799,18 @@ void checkBGMap(void)
             else
                 next_map = nextMapUpdate(OTHER_MAPS_INTERVAL);
 
+            if (isVOACAPMap(core_map))
+                resetVOACAPRetry();
+
             // fresh
             map_time = nowWO();                                         // map is now current
             initEarthMap();                                             // restart fresh
 
         } else {
-            next_map = nextWiFiRetry (cm_info[core_map].name);          // schedule retry
+            if (isVOACAPMap(core_map))
+                next_map = nextVOACAPRetry (cm_info[core_map].name);
+            else
+                next_map = nextWiFiRetry (cm_info[core_map].name);      // schedule retry
             if (bc_map)
                 map_time = bc_time;                                     // match bc to avoid immediate retry
             else
@@ -791,13 +870,14 @@ static bool retrieveBandConditions (char *config)
         "%s?YEAR=%d&MONTH=%d&RXLAT=%.3f&RXLNG=%.3f&TXLAT=%.3f&TXLNG=%.3f&UTC=%d&PATH=%d&POW=%d&MODE=%d&TOA=%.1f",
         bc_page, year(t), month(t), dx_ll.lat_d, dx_ll.lng_d, de_ll.lat_d, de_ll.lng_d,
         hour(t), show_lp, bc_power, bc_modevalue, bc_toa);
+    antenna_addargs(query+strlen(query), sizeof(query)-strlen(query));   // add antenna selection arguments to query
 
     // build local cache file name
     char cache_fn[100];
     snprintf (cache_fn, sizeof(cache_fn), "bc-%010u.txt", stringHash(query)); // N.B. see cleanCache() above
 
     // open cache or get fresh
-    FILE *fp = openCachedFile (cache_fn, query, 12*3600L, 100);
+    FILE *fp = openCachedFile (cache_fn, query, 12*3600L, 100, VOACAP_TIMEOUT_MS);
     if (fp) {
 
         char buf[100];
@@ -962,6 +1042,9 @@ static void checkBRB (time_t t)
  */
 void setPlotVisible (PlotChoice pc)
 {
+    if (!PLOT_CH_IS_REAL(pc))
+        return;
+
     // done if the choice is already on display
     if (findPaneChoiceNow (pc) != PANE_NONE)
         return;
@@ -971,10 +1054,9 @@ void setPlotVisible (PlotChoice pc)
     if (pp == PANE_NONE)
         pp = PANE_3;
 
-    // install as the only choice
+    // install as the only choice; set the mask first so setPlotChoice() persists both words
+    plot_rotset[pp] = PLOTBIT(pc);
     (void) setPlotChoice (pp, pc);
-    plot_rotset[pp] = 1 << pc;
-    savePlotOps();
 }
 
 /* set the given pane to the given plot choice now.
@@ -984,6 +1066,10 @@ void setPlotVisible (PlotChoice pc)
  */
 bool setPlotChoice (PlotPane pp, PlotChoice pc)
 {
+    // NONE is a saved Pane 0 sentinel, never a drawable plot choice or array index.
+    if (pp < PANE_0 || pp >= PANE_N || !PLOT_CH_IS_REAL(pc))
+        return (false);
+
     // ignore if new choice is already in some other pane
     PlotPane pp_now = findPaneForChoice (pc);
     if (pp_now != PANE_NONE && pp_now != pp)
@@ -1422,6 +1508,22 @@ void httpHCGET (WiFiClient &client, const char *server, const char *hc_page)
     httpGET (client, server, full_hc_page);
 }
 
+/* issue an HTTPS Get to a /ham/HamClock page named in ram by using a curl command
+ */
+
+bool connecthttpsHCGET (WiFiClient &client, const char *server, const char *hc_page)
+{
+    static const char c1[] = "curl -A \"";  //then platform
+    static const char c2[] = "/";                    //then hc_version
+    static const char c3[] = "\" --max-time 15 --silent --retry 2 https://"; //then server
+    static const char hc[] = "/ham/HamClock";        // then hc_page
+    int memlen = strlen(c1)+strlen(platform)+strlen(c2)+strlen(hc_version)+strlen(c3)+strlen(server)+strlen(hc)+strlen(hc_page)+1;
+    StackMalloc curlbuf(memlen);
+    char *curl = (char *) curlbuf.getMem();
+    snprintf (curl, memlen, "%s%s%s%s%s%s%s%s",c1,platform,c2,hc_version,c3,server,hc, hc_page);
+    printf("wifi: connecting to command %s\n",curl);
+    return (client.connectCommand(curl));
+}
 /* skip the given wifi client stream ahead to just after the first blank line, return whether ok.
  * this is often used so subsequent stop() on client doesn't slam door in client's face with RST.
  * Along the way, if find a header field with the given name (unless NULL) return value in the given string.
@@ -1604,7 +1706,7 @@ static bool updateXRay(const SBox &box)
             // overlay short over long with fixed y axis
             char level_str[10];
             plotXYstr (box, xray.x, xray.l, XRAY_NV, "Hours", "GOES 16 X-Ray", XRAY_LCOLOR, -9, -2, NULL)
-                 && plotXYstr (box, xray.x, xray.s, XRAY_NV, NULL, NULL, XRAY_SCOLOR, -9, -2,     
+                 && plotXYstr (box, xray.x, xray.s, XRAY_NV, NULL, NULL, XRAY_SCOLOR, -9, -2,
                                 xrayLevel(level_str, space_wx[SPCWX_XRAY]));
         }
 
@@ -1780,16 +1882,29 @@ static bool updateBandConditions(const SBox &box, bool force)
     bool io_ok = true;
     if (update_bc) {
 
-        // fresh download
-        if (retrieveBandConditions (config))
-            bc_matrix.next_update = nextRetrieval (PLOT_CH_BC, BC_INTERVAL);
-        else {
-            bc_matrix.next_update = nextWiFiRetry(PLOT_CH_BC);
+        // honor VOACAP rate limit (silent for auto-retry path)
+        time_t now = myNow();
+        if (voacapThrottled(now)) {
+            Serial.printf ("VOACAP: BC throttled, %ld s since last attempt (min %d s)\n",
+                           (long)(now - lastVOACAPAttempt()), VOACAP_MIN_INTERVAL);
+            bc_matrix.next_update = now + VOACAP_MIN_INTERVAL;
+            bc_time = nowWO();          // count as an attempt for map-coordination tdiffs
             io_ok = false;
-        }
+        } else {
+            noteVOACAPAttempt(now);
 
-        // note time of attemp to coordinate with maps
-        bc_time = nowWO();
+            // fresh download
+            if (retrieveBandConditions (config)) {
+                bc_matrix.next_update = nextRetrieval (PLOT_CH_BC, BC_INTERVAL);
+                resetVOACAPRetry();
+            } else {
+                bc_matrix.next_update = nextVOACAPRetry("BC");
+                io_ok = false;
+            }
+
+            // note time of attemp to coordinate with maps
+            bc_time = nowWO();
+        }
     }
 
     // plot
@@ -1919,7 +2034,7 @@ bool checkBCTouch (const SCoord &s, const SBox &b)
             mi.indent = 5;
             mi.label = labels[i];
             snprintf (labels[i], sizeof(labels[i]), "%d watt%s", bc_powers[i],
-                                bc_powers[i] > 1 ? "s" : ""); 
+                                bc_powers[i] > 1 ? "s" : "");
         };
 
         SBox menu_b;
@@ -2031,7 +2146,7 @@ bool checkBCTouch (const SCoord &s, const SBox &b)
             scheduleNewCoreMap(core_map);
         drawDXInfo ();
         (void) updateBandConditions (b, true);
-    
+
     } else if (inBox (s, tl_b)) {
 
         // toggle bc_utc_tl and redraw
@@ -2124,7 +2239,10 @@ void updateWiFi(void)
             if (pc == PLOT_CH_ADIF)      fresh_redraw[PLOT_CH_ADIF] = true;
             if (pc == PLOT_CH_ONTA)      fresh_redraw[PLOT_CH_ONTA] = true;
             if (pc == PLOT_CH_CONTESTS)  fresh_redraw[PLOT_CH_CONTESTS] = true;
+            if (pc == PLOT_CH_ACTIVENETS) fresh_redraw[PLOT_CH_ACTIVENETS] = true;
             if (pc == PLOT_CH_DXPEDS)    fresh_redraw[PLOT_CH_DXPEDS] = true;
+            if (pc == PLOT_CH_STORMS)    fresh_redraw[PLOT_CH_STORMS] = true;
+            if (pc == PLOT_CH_LAUNCHES)  fresh_redraw[PLOT_CH_LAUNCHES] = true;
 
             // go now
             next_update[pp] = 0;
@@ -2139,7 +2257,7 @@ void updateWiFi(void)
                     next_update[pp] = nextPaneUpdate (pc, BC_INTERVAL);
                     fresh_redraw[pc] = false;
                 } else
-                    next_update[pp] = nextWiFiRetry (PLOT_CH_BC);
+                    next_update[pp] = bc_matrix.next_update;     // use schedule set by updateBandConditions
             }
             break;
 
@@ -2283,6 +2401,16 @@ void updateWiFi(void)
             }
             break;
 
+        case PLOT_CH_ACTIVENETS:
+            if (t0 >= next_update[pp]) {
+                if (updateActiveNets(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, ACTIVENETS_INTERVAL);
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
         case PLOT_CH_PSK:
             if (t0 >= next_update[pp]) {
                 if (updatePSKReporter(box, fresh_redraw[pc])) {
@@ -2312,6 +2440,26 @@ void updateWiFi(void)
             }
             break;
 
+        case PLOT_CH_SATACT:
+            if (t0 >= next_update[pp]) {
+                if (updateHamsat(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, 90);     // secs, matches hamsat.cpp cache age
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
+        case PLOT_CH_MESHTASTIC:
+            if (t0 >= next_update[pp]) {
+                if (updateMeshtastic(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, 120);    // secs, matches meshtastic.cpp
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
         case PLOT_CH_ADIF:
             if (t0 >= next_update[pp]) {
                 updateADIF (box, fresh_redraw[pc]);
@@ -2329,10 +2477,48 @@ void updateWiFi(void)
             }
             break;
 
+        case PLOT_CH_HFCOND:
+            if (t0 >= next_update[pp]) {
+                if (updateHFConditions(box))
+                    next_update[pp] = nextPaneUpdate (pc, HQ_INTERVAL);
+                else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
+        case PLOT_CH_VHFCOND:
+            if (t0 >= next_update[pp]) {
+                if (updateVHFConditions(box))
+                    next_update[pp] = nextPaneUpdate (pc, HQ_INTERVAL);
+                else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
         case PLOT_CH_DXPEDS:
             if (t0 >= next_update[pp]) {
                 if (updateDXPeds(box, fresh_redraw[pc])) {
                     next_update[pp] = nextPaneUpdate (pc, DXPEDS_INTERVAL);
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
+        case PLOT_CH_STORMS:
+            if (t0 >= next_update[pp]) {
+                if (updateStorms(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, STORM_INTERVAL);
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
+	case PLOT_CH_LAUNCHES:
+            if (t0 >= next_update[pp]) {
+                if (updateLaunches(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, LAUNCHES_INTERVAL);
                     fresh_redraw[pc] = false;
                 } else
                     next_update[pp] = nextWiFiRetry(pc);
@@ -2348,6 +2534,7 @@ void updateWiFi(void)
             }
             break;
 
+        case PLOT_CH_NONE:     // fallthru -- only possible for inactive Pane 0
         case PLOT_CH_N:
             break;              // lint
         }
@@ -2359,6 +2546,14 @@ void updateWiFi(void)
 
     // freshen RSS
     checkRSS();
+
+    // check for new Message of the Day file on backend
+    checkMOTD();
+
+    // update lightning overlay if due
+    updateLightning();
+
+    checkStormsData();
 
     // maps are checked after each full earth draw -- see drawMoreEarth()
 
@@ -2475,7 +2670,7 @@ void scheduleNewPlot (PlotChoice pc)
                 // just mark for fresh redraw when it's turn comes
                 fresh_redraw[pc] = true;
             }
-        } 
+        }
     } else {
         // currently visible: force fresh redraw now
         fresh_redraw[pc] = true;
@@ -2492,7 +2687,22 @@ void scheduleNewCoreMap (CoreMaps cm)
 
     // update and signal go
     DO_CMROT(cm);
-    next_map = 0;
+
+    // VOACAP-derived maps: rate-limit forced fetches so user clicks can't
+    // bypass the backoff and pound the backend.
+    time_t now = myNow();
+    if (isVOACAPMap(cm) && voacapThrottled(now)) {
+        long since = (long)(now - lastVOACAPAttempt());
+        long wait  = (long)VOACAP_MIN_INTERVAL - since;
+        Serial.printf ("VOACAP: click for %s throttled (%ld s since last, wait %ld s)\n",
+                       cm_info[cm].name, since, wait);
+        mapMsg (3000, "Server Busy Please Wait");
+        // schedule first fetch attempt for end of throttle window so the new
+        // map will retrieve as soon as the rate limit allows
+        next_map = lastVOACAPAttempt() + VOACAP_MIN_INTERVAL;
+    } else {
+        next_map = 0;
+    }
 
     // persist
     saveCoreMaps();
@@ -2502,7 +2712,19 @@ void scheduleNewCoreMap (CoreMaps cm)
  */
 void scheduleFreshMap (void)
 {
+    time_t now = myNow();
+    if (isVOACAPMap(core_map) && voacapThrottled(now)) {
+        long since = (long)(now - lastVOACAPAttempt());
+        long wait  = (long)VOACAP_MIN_INTERVAL - since;
+        Serial.printf ("VOACAP: refresh of %s throttled (%ld s since last, wait %ld s)\n",
+                       cm_info[core_map].name, since, wait);
+        mapMsg (3000, "Server Busy Please Wait");
+        // schedule first fetch attempt for end of throttle window
+        next_map = lastVOACAPAttempt() + VOACAP_MIN_INTERVAL;
+        return;
+    }
     next_map = 0;
+    scheduleMapRedraw();
 }
 
 /* return current NTP response time list.
@@ -2527,6 +2749,32 @@ time_t nextPaneRotation(PlotPane pp)
 void forcePaneRotation (PlotPane pp)
 {
     next_rotation[pp] = 0;
+}
+
+/* immediately step the given pane backward to its previous rotation choice, overriding the
+ * normal timer. unlike forcePaneRotation() (which just zeroes next_rotation[] and lets the next
+ * updateWiFi() pass do the forward step), this must apply the choice change itself since the
+ * automatic path only ever steps forward.
+ * it's ok if pp is not actually rotating -- getPrevRotationChoice() just returns the same choice.
+ */
+void forcePaneRotationPrev (PlotPane pp)
+{
+    PlotChoice pc = plot_ch[pp] = getPrevRotationChoice (pp, plot_ch[pp]);
+    next_rotation[pp] = nextRotation (pp);
+    showRotatingBorder ();
+
+    // same fresh_redraw bookkeeping as the forward path in updateWiFi()
+    if (pc == PLOT_CH_DXCLUSTER)  fresh_redraw[PLOT_CH_DXCLUSTER] = true;
+    if (pc == PLOT_CH_ADIF)       fresh_redraw[PLOT_CH_ADIF] = true;
+    if (pc == PLOT_CH_ONTA)       fresh_redraw[PLOT_CH_ONTA] = true;
+    if (pc == PLOT_CH_CONTESTS)   fresh_redraw[PLOT_CH_CONTESTS] = true;
+    if (pc == PLOT_CH_ACTIVENETS) fresh_redraw[PLOT_CH_ACTIVENETS] = true;
+    if (pc == PLOT_CH_DXPEDS)     fresh_redraw[PLOT_CH_DXPEDS] = true;
+    if (pc == PLOT_CH_STORMS)     fresh_redraw[PLOT_CH_STORMS] = true;
+    if (pc == PLOT_CH_LAUNCHES)   fresh_redraw[PLOT_CH_LAUNCHES] = true;
+
+    // go now
+    next_update[pp] = 0;
 }
 
 /* return pane for which taps are to be ignored because a revert is in progress, if any

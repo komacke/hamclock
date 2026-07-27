@@ -1,0 +1,638 @@
+/* handle Active Nets retrieval and display.
+ *
+ * Polls the local HamClock backend (OHB) once a minute for a CSV snapshot of
+ * currently active NetLogger nets and shows them in a scrolling pane.
+ *
+ * The CSV is produced by a backend cron job and served at activenets_page.
+ * Expected columns (a leading '#' comment line and a header line are skipped):
+ *
+ *     NetName,Frequency,Band,Mode,NetControl,Checkins,Logger,Started
+ *
+ * Each net is drawn as two lines in a small font: the net name (bright white)
+ * with a dimmer supporting line beneath it (frequency, band, mode, check-ins).
+ * The Logger column is intentionally not displayed.
+ */
+
+#include "HamClock.h"
+
+
+#define AN_COLOR        RGB565(80,200,120)      // pane accent (X11 ~ "emerald")
+#define AN_NAME_COLOR   RA8875_WHITE            // net name color
+#define AN_INFO_COLOR   BRGRAY                  // supporting info color
+
+#define AN_START_DY     LISTING_Y0              // dy of first net's name line
+#define AN_GAP_NI       2                       // gap: name bbox bottom -> info top
+#define AN_GAP_BLK      4                       // gap: info bottom -> next net's name
+
+// URL on the backend (OHB) and local cache file name.
+// N.B. httpHCGET() automatically prepends "/ham/HamClock", so this path is
+// relative to that root -- it must NOT repeat the prefix. The file is served at
+// <backend>/ham/HamClock/activenets/activenets.txt
+static const char activenets_page[] = "/activenets/activenets.txt";
+static const char activenets_fn[] = "activenets.txt";
+#define ACTIVENETS_MAXAGE   30                  // re-download when cache older than this, secs
+#define ACTIVENETS_MINSIZ   1                   // accept even an empty (header-only) file
+
+// info about each active net
+typedef struct {
+    char *name;                                 // malloced net name (large line, may be scrubbed to fit)
+    char *info;                                 // malloced supporting info (small line)
+    char *full_name;                            // malloced ORIGINAL net name, unscrubbed -- for web search URL
+    char *ncs;                                  // malloced NetControl callsign ("" if none) -- popup + map label
+    char  grid[MAID_CHARLEN];                   // NCS Maidenhead grid if backend supplied it ("" if not)
+    char  mode[MAX_SPOTMODE_LEN];               // operating mode -- popup
+    char  chk[8];                               // check-in count as text -- popup
+    float kHz;                                  // frequency in kHz -- band color + popup
+    LatLong ll;                                 // NCS location (from grid or call2LL)
+    bool  ll_ok;                                // whether ll/ncs resolved to a usable location
+} ActiveNetEntry;
+
+static ActiveNetEntry *anets;                   // malloced list, count in an_ss.n_data
+static char subtitle[40];                       // credit line under the title
+static ScrollState an_ss;                       // scrolling context
+
+/* free the anets[] list and reset count.
+ */
+static void freeActiveNets (void)
+{
+    for (int i = 0; i < an_ss.n_data; i++) {
+        free (anets[i].name);
+        free (anets[i].info);
+        free (anets[i].full_name);
+        free (anets[i].ncs);
+    }
+    free (anets);
+    anets = NULL;
+    an_ss.n_data = 0;
+}
+
+/* parse a NetLogger frequency string to kHz, for band-color lookup.
+ * Values arrive inconsistently as MHz ("7.153", "146.68") or bare kHz ("7140"),
+ * with or without a unit suffix; the backend normalizes them but either form
+ * may still appear. Disambiguate by magnitude: the lowest ham band is ~1.8 MHz,
+ * so a value < 1000 was entered as MHz and >= 1000 is already kHz. atof() reads
+ * the leading number and ignores any " kHz"/" MHz" suffix.
+ */
+static float anFreq2kHz (const char *s)
+{
+    if (!s || !s[0])
+        return 0.0F;
+    float v = (float) atof (s);
+    if (v <= 0)
+        return 0.0F;
+    return v < 1000.0F ? v*1000.0F : v;
+}
+
+/* measure the currently selected font's ascent (pixels above baseline) and full
+ * glyph height, in logical app coordinates (independent of build resolution).
+ */
+static void fontVMetrics (int &ascent, int &height)
+{
+    const GFXfont *f = tft.getFont();
+    int16_t miny = 0, maxy = 0;
+    for (uint16_t c = f->first; c <= f->last; c++) {
+        const GFXglyph *g = &f->glyph[c - f->first];
+        if (g->yOffset < miny)
+            miny = g->yOffset;
+        if ((int16_t)(g->yOffset + g->height) > maxy)
+            maxy = g->yOffset + g->height;
+    }
+    int sc = tft.SCALESZ > 0 ? tft.SCALESZ : 1;
+    ascent = (-miny) / sc;
+    height = (maxy - miny) / sc;
+}
+
+/* compute the pane's row geometry from the live font metrics.
+ *   block_dy      total vertical pitch of one net entry
+ *   name_base_off baseline of the (large) name line, measured down from block top
+ *   info_base_off baseline of the (small) info line, measured down from block top
+ *   max_vis       number of whole net entries that fit below the title
+ * everything is in logical coordinates so it is correct at every build resolution.
+ */
+static void anGeometry (const SBox &box, int &block_dy, int &name_base_off,
+    int &info_base_off, int &max_vis)
+{
+    int n_asc, n_h, i_asc, i_h;
+
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
+    fontVMetrics (n_asc, n_h);
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
+    fontVMetrics (i_asc, i_h);
+
+    name_base_off = n_asc;                              // name baseline within block
+    info_base_off = n_h + AN_GAP_NI + i_asc;            // info baseline within block
+    block_dy      = n_h + AN_GAP_NI + i_h + AN_GAP_BLK; // total per-net pitch
+
+    max_vis = (box.h - AN_START_DY) / block_dy;
+    if (max_vis < 1)
+        max_vis = 1;
+}
+
+/* draw anets[] in the given pane box.
+ */
+static void drawActiveNetsPane (const SBox &box)
+{
+    // erase
+    prepPlotBox (box);
+
+    // title
+    selectFontStyle (LIGHT_FONT, SMALL_FONT);
+    tft.setTextColor (AN_COLOR);
+    static const char *title = "Nets";
+    uint16_t tw = getTextWidth (title);
+    tft.setCursor (box.x + (box.w-tw)/2, box.y + PANETITLE_H);
+    tft.print (title);
+
+    // subtitle (credit line, like the Launches pane)
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
+    tft.setTextColor (AN_COLOR);
+    uint16_t sw = getTextWidth (subtitle);
+    tft.setCursor (box.x + (box.w-sw)/2, box.y + SUBTITLE_Y0);
+    tft.print (subtitle);
+
+    // compute row geometry from live font metrics
+    int block_dy, name_base_off, info_base_off, max_vis;
+    anGeometry (box, block_dy, name_base_off, info_base_off, max_vis);
+
+    // nothing more if no nets
+    if (an_ss.n_data == 0) {
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        tft.setTextColor (AN_INFO_COLOR);
+        static const char *none = "No active nets";
+        uint16_t nw = getTextWidth (none);
+        tft.setCursor (box.x + (box.w-nw)/2, box.y + AN_START_DY + name_base_off);
+        tft.print (none);
+        return;
+    }
+
+    // show each visible net: name in large font, info beneath in small font
+    uint16_t y0 = box.y + AN_START_DY;
+    int min_i, max_i;
+    if (an_ss.getVisDataIndices (min_i, max_i) > 0) {
+        for (int i = min_i; i <= max_i; i++) {
+            ActiveNetEntry &an = anets[i];
+            int r = an_ss.getDisplayRow (i);
+            uint16_t bt = y0 + r*block_dy;              // top of this net's block
+
+            // net name -- still the brighter (white) of the two lines, but same small font as info
+            selectFontStyle (LIGHT_FONT, FAST_FONT);
+            tft.setTextColor (AN_NAME_COLOR);
+            uint16_t w = getTextWidth (an.name);
+            tft.setCursor (box.x + (box.w-w)/2, bt + name_base_off);
+            tft.print (an.name);
+
+            // supporting info beneath
+            selectFontStyle (LIGHT_FONT, FAST_FONT);
+            tft.setTextColor (AN_INFO_COLOR);
+            w = getTextWidth (an.info);
+            tft.setCursor (box.x + (box.w-w)/2, bt + info_base_off);
+            tft.print (an.info);
+        }
+    }
+
+    // draw scroll controls, if needed
+    an_ss.drawScrollDownControl (box, AN_COLOR, AN_COLOR);
+    an_ss.drawScrollUpControl (box, AN_COLOR, AN_COLOR);
+}
+
+/* scroll up, if appropriate to do so now.
+ */
+static void scrollActiveNetsUp (const SBox &box)
+{
+    if (an_ss.okToScrollUp()) {
+        an_ss.scrollUp();
+        drawActiveNetsPane (box);
+    }
+}
+
+/* scroll down, if appropriate to do so now.
+ */
+static void scrollActiveNetsDown (const SBox &box)
+{
+    if (an_ss.okToScrollDown()) {
+        an_ss.scrollDown();
+        drawActiveNetsPane (box);
+    }
+}
+
+/* split a CSV line in place into up to maxf field pointers; return field count.
+ * handles double-quoted fields containing commas and doubled "" quote escapes.
+ */
+static int splitCSV (char *line, char *fields[], int maxf)
+{
+    int n = 0;
+    char *p = line;
+
+    while (n < maxf) {
+        char *out = p;                          // unescape write position
+        char *start = out;
+        bool inq = false;
+
+        for (;;) {
+            char c = *p;
+            if (inq) {
+                if (c == '"') {
+                    if (p[1] == '"') { *out++ = '"'; p += 2; continue; }  // escaped quote
+                    inq = false; p++; continue;
+                } else if (c == '\0') {
+                    break;
+                } else {
+                    *out++ = c; p++; continue;
+                }
+            } else {
+                if (c == '"') { inq = true; p++; continue; }
+                if (c == ',' || c == '\0') break;
+                *out++ = c; p++; continue;
+            }
+        }
+
+        char sep = *p;
+        *out = '\0';
+        fields[n++] = start;
+        if (sep == '\0')
+            break;
+        p++;                                    // step over the comma
+    }
+
+    return (n);
+}
+
+/* shorten line IN PLACE to fit within box width, assuming the desired font is selected.
+ */
+static void scrubToFit (char *line, const SBox &box)
+{
+    while (getTextWidth (line) >= box.w - 2) {
+        char *right_space = strrchr (line, ' ');
+        if (right_space)
+            *right_space = '\0';                // chop at right-most space
+        else if (strlen(line) > 0)
+            line[strlen(line)-1] = '\0';        // no space: chop last char
+        else
+            break;
+    }
+}
+
+/* build the supporting info line for one net from its CSV fields.
+ * format: "<freq> <band> <mode>", omitting empty pieces.
+ * uses only ASCII so it renders correctly in the small CP437-based font.
+ * N.B. check-in count is intentionally NOT included here -- it's still recorded
+ * in ActiveNetEntry.chk and shown in the hover popup (see anFillInfo()).
+ */
+static void buildInfoLine (char *out, size_t out_l, const char *freq, const char *band,
+    const char *mode, const char *ncs, const char *chk)
+{
+    (void) ncs;                                 // not shown on the pane (kept for popup via caller)
+    (void) chk;                                 // not shown on the pane (kept for popup via caller)
+
+    out[0] = '\0';
+    size_t used = 0;
+
+    // frequency / band / mode are space-separated as a first group
+    #define AN_APP_SP(str)                                                      \
+        do {                                                                    \
+            if ((str) && (str)[0] && used < out_l)                             \
+                used += snprintf (out+used, out_l-used, "%s%s",                 \
+                                  used ? " " : "", (str));                      \
+        } while (0)
+
+    AN_APP_SP (freq);
+    AN_APP_SP (band);
+    AN_APP_SP (mode);
+
+    #undef AN_APP_SP
+}
+
+/* (re)load anets[] from the cached backend file and draw into box.
+ * return whether io ok.
+ */
+static bool retrieveActiveNets (const SBox &box)
+{
+    bool ok = false;
+
+    FILE *fp = openCachedFile (activenets_fn, activenets_page, ACTIVENETS_MAXAGE, ACTIVENETS_MINSIZ);
+    if (!fp) {
+        Serial.printf ("ANET: %s not available\n", activenets_fn);
+        return (false);
+    }
+
+    // look alive
+    updateClocks (false);
+
+    // start fresh
+    freeActiveNets();
+
+    // one net per displayed block; size max_vis from live font metrics
+    int block_dy, name_base_off, info_base_off, max_vis;
+    anGeometry (box, block_dy, name_base_off, info_base_off, max_vis);
+    an_ss.init (max_vis, 0, 0, an_ss.DIR_TOPDOWN);
+
+    // set the font used for width scrubbing of the info line
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
+
+    // getting this far counts as a successful transaction (file may legitimately be empty)
+    ok = true;
+
+    char line[300];
+    while (fgets (line, sizeof(line), fp)) {
+
+        chompString (line);
+
+        // skip blank lines and the '#' comment line
+        if (line[0] == '\0' || line[0] == '#')
+            continue;
+
+        // split into fields
+        char *f[9];
+        int nf = splitCSV (line, f, NARRAY(f));
+        if (nf < 5)
+            continue;                           // not a usable data row
+
+        // skip the column header row
+        if (strcmp (f[0], "NetName") == 0)
+            continue;
+
+        // map columns: 0 name, 1 freq, 2 band, 3 mode, 4 ncs, 5 checkins, 6 logger, 7 started, 8 grid
+        const char *name = f[0];
+        const char *freq = nf > 1 ? f[1] : "";
+        const char *band = nf > 2 ? f[2] : "";
+        const char *mode = nf > 3 ? f[3] : "";
+        const char *ncs  = nf > 4 ? f[4] : "";
+        const char *chk  = nf > 5 ? f[5] : "";
+        const char *grid = nf > 8 ? f[8] : "";  // backend-supplied NCS grid (Path B), may be ""
+
+        if (name[0] == '\0')
+            continue;                           // need at least a name
+
+        if (debugLevel (DEBUG_CONTESTS, 1))
+            Serial.printf ("ANET %d: %s | %s %s %s %s %s\n", an_ss.n_data,
+                                name, freq, band, mode, ncs, chk);
+
+        // build supporting info line
+        char info[200];
+        buildInfoLine (info, sizeof(info), freq, band, mode, ncs, chk);
+
+        // scrub each to fit (both now render in FAST_FONT)
+        char nbuf[200];
+        quietStrncpy (nbuf, name, sizeof(nbuf));
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        scrubToFit (nbuf, box);
+        scrubToFit (info, box);
+
+        // append to anets[]
+        anets = (ActiveNetEntry *) realloc (anets, (an_ss.n_data+1) * sizeof(ActiveNetEntry));
+        if (!anets)
+            fatalError ("No memory for %d active nets", an_ss.n_data+1);
+        ActiveNetEntry &an = anets[an_ss.n_data++];
+        an.name = strdup (nbuf);
+        an.info = strdup (info);
+        an.full_name = strdup (name);            // keep unscrubbed original for the URL
+        an.ncs = strdup (ncs);
+
+        // popup fields
+        quietStrncpy (an.mode, mode, sizeof(an.mode));
+        quietStrncpy (an.chk,  chk,  sizeof(an.chk));
+        quietStrncpy (an.grid, grid, sizeof(an.grid));
+        an.kHz = anFreq2kHz (freq);
+
+        // resolve the NCS location: prefer the backend-supplied grid (Path B),
+        // else fall back to a cty.dat lookup of the NCS callsign (Path A).
+        an.ll_ok = false;
+        if (an.grid[0] && maidenhead2ll (an.ll, an.grid))
+            an.ll_ok = true;
+        else if (an.ncs[0] && call2LL (an.ncs, an.ll))   // call2LL normalizes ll for us
+            an.ll_ok = true;
+    }
+
+    fclose (fp);
+
+    // build subtitle -- credit line, same spot/style as the Launches pane's credit
+    snprintf (subtitle, sizeof(subtitle), "Credit: NetLogger.org");
+
+    an_ss.scrollToNewest();
+
+    Serial.printf ("ANET: found %d in %s\n", an_ss.n_data, activenets_fn);
+    return (ok);
+}
+
+/* poll the backend for active nets and show in the given pane box.
+ * called about once a minute via ACTIVENETS_INTERVAL; openCachedFile() rate-limits
+ * the actual network fetch to no more than once per ACTIVENETS_MAXAGE seconds.
+ */
+bool updateActiveNets (const SBox &box, bool fresh)
+{
+    (void) fresh;       // we rebuild from cache every call; nothing extra needed when freshly exposed
+
+    bool ok = retrieveActiveNets (box);
+    if (ok)
+        drawActiveNetsPane (box);
+    else
+        plotMessage (box, AN_COLOR, "Active Nets error");
+
+    return (ok);
+}
+
+/* build a Google search URL for the given net name: spaces -> '+', everything
+ * else URL-unsafe percent-encoded, "amateur radio" appended -- same scheme
+ * NetLogger's own website uses for its (www) links.
+ */
+static void buildNetSearchURL (const char *netname, char *out, size_t out_l)
+{
+    size_t used = snprintf (out, out_l, "%s", "https://www.google.com/search?q=");
+
+    for (const char *p = netname; *p && used + 4 < out_l; p++) {
+        char c = *p;
+        if (c == ' ')
+            out[used++] = '+';
+        else if (isalnum((unsigned char)c) || c=='-' || c=='_' || c=='.' || c=='~')
+            out[used++] = c;
+        else
+            used += snprintf (out+used, out_l-used, "%%%02X", (unsigned char)c);
+    }
+
+    used += snprintf (out+used, out_l-used, "+amateur+radio");
+    out[out_l-1] = '\0';
+}
+
+/* ask "Open webpage?" return whether user confirmed.
+ * mirrors the static RUSure() pattern in ESPHamClock.cpp, adapted locally
+ * since that one isn't exposed outside its file. kept deliberately short and
+ * fixed-size (no net name) so it never depends on, or is sized by, pane width.
+ */
+static bool confirmOpenNetWeb (const SBox &box)
+{
+    static const char *q = "Open webpage?";
+    #define AN_CONFIRM_INDENT  3                 // left-justified, matches other small menu indents
+
+    MenuItem mitems[] = {
+        {MENU_BLANK, false, 0, 0, NULL, 0},
+        {MENU_LABEL, false, 0, AN_CONFIRM_INDENT, q, 0},
+        {MENU_BLANK, false, 0, 0, NULL, 0},
+    };
+    const int n_m = NARRAY(mitems);
+
+    SBox menu_b = {box.x, box.y, 0, 0};         // shrink-wrap, anchored at pane origin
+    SBox ok_b;
+
+    MenuInfo menu = {menu_b, ok_b, UF_NOCLOCKS, M_CANCELOK, 1, n_m, mitems};
+    return (runMenu (menu));
+}
+
+/* return true if user is interacting with the active nets pane (scroll), false to let
+ * the caller bring up the pane-choice menu.
+ * N.B. we assume s is within box.
+ */
+bool checkActiveNetsTouch (const SCoord &s, const SBox &box)
+{
+    if (s.y < box.y + PANETITLE_H) {
+        if (an_ss.checkScrollUpTouch (s, box)) {
+            scrollActiveNetsUp (box);
+            return (true);
+        }
+        if (an_ss.checkScrollDownTouch (s, box)) {
+            scrollActiveNetsDown (box);
+            return (true);
+        }
+        // not ours -- caller will offer the pane-choice menu
+        return (false);
+    }
+
+    // below the title -- check whether a net row was tapped
+    int block_dy, name_base_off, info_base_off, max_vis;
+    anGeometry (box, block_dy, name_base_off, info_base_off, max_vis);
+    (void) name_base_off;
+    (void) info_base_off;
+    (void) max_vis;
+
+    if (s.y < box.y + AN_START_DY)
+        return (false);                          // subtitle strip, not a row
+
+    int vis_row = (s.y - (box.y + AN_START_DY)) / block_dy;
+    int net_i;
+    if (an_ss.findDataIndex (vis_row, net_i) && net_i < an_ss.n_data) {
+        if (confirmOpenNetWeb (box)) {
+            char url[300];
+            buildNetSearchURL (anets[net_i].full_name, url, sizeof(url));
+            Serial.printf ("ANET: opening %s\n", url);
+            openURL (url);
+        }
+        return (true);
+    }
+
+    return (false);
+}
+
+
+/* ---------------------------------------------------------------------------
+ * Map plotting and hover support.
+ *
+ * Each active net is plotted on the map at its Net Control Station location
+ * using the standard band-colored spot dot/label. Hovering a net -- either its
+ * row in the pane or its dot on the map -- rings it in red and pops up an info
+ * box (see infobox.cpp) showing the NCS call, "NCS" tag, freq, mode, etc.
+ * --------------------------------------------------------------------------- */
+
+/* fill a public ActiveNetInfo from one internal entry (for the info popup). */
+static void anFillInfo (const ActiveNetEntry &an, ActiveNetInfo *info)
+{
+    quietStrncpy (info->name, an.full_name, sizeof(info->name));   // full, untruncated name
+    quietStrncpy (info->ncs,  an.ncs,  sizeof(info->ncs));
+    quietStrncpy (info->grid, an.grid, sizeof(info->grid));
+    quietStrncpy (info->mode, an.mode, sizeof(info->mode));
+    quietStrncpy (info->chk,  an.chk,  sizeof(info->chk));
+    info->kHz = an.kHz;
+    info->ll  = an.ll;
+}
+
+/* build a minimal DXSpot from one net so we can reuse the standard spot drawer.
+ * single-ended: rx == tx so no path is implied (we never call the path drawer).
+ */
+static void anToSpot (const ActiveNetEntry &an, DXSpot &sp)
+{
+    sp = DXSpot{};                                       // value-init (DXSpot is non-trivial: has LatLong members)
+    quietStrncpy (sp.tx_call, an.ncs[0] ? an.ncs : an.full_name, sizeof(sp.tx_call));
+    quietStrncpy (sp.tx_grid, an.grid, sizeof(sp.tx_grid));
+    quietStrncpy (sp.mode,    an.mode, sizeof(sp.mode));
+    sp.tx_ll = an.ll;
+    sp.rx_ll = an.ll;
+    sp.kHz   = an.kHz;
+    sp.spotted = 0;
+}
+
+/* draw every located net on the map as a band-colored spot dot/label.
+ * called from drawMainPageMap() regardless of hover. No-op unless the pane is up.
+ */
+void drawActiveNetsOnMap (void)
+{
+    if (findPaneChoiceNow (PLOT_CH_ACTIVENETS) == PANE_NONE)
+        return;                                  // only when the pane is actually on screen
+
+    for (int i = 0; i < an_ss.n_data; i++) {
+        if (!anets[i].ll_ok)
+            continue;
+        DXSpot sp;
+        anToSpot (anets[i], sp);
+        drawSpotLabelOnMap (sp, LOME_TXEND, LOMD_ALL);   // band-colored dot + optional call label
+    }
+}
+
+/* if from_ll is within MAX_CSR_DIST of a net's NCS location, return that net's
+ * mark location and popup info. Used for hovering the dot on the map.
+ */
+bool getClosestActiveNet (LatLong &from_ll, LatLong *mark_ll, ActiveNetInfo *info)
+{
+    if (findPaneChoiceNow (PLOT_CH_ACTIVENETS) == PANE_NONE)
+        return (false);                          // only when the pane is actually on screen
+
+    int best = -1;
+    float best_d = 1e10F;
+    for (int i = 0; i < an_ss.n_data; i++) {
+        if (!anets[i].ll_ok)
+            continue;
+        float d = anets[i].ll.GSD (from_ll);
+        if (d < best_d) {
+            best_d = d;
+            best = i;
+        }
+    }
+
+    if (best < 0 || best_d*ERAD_M >= MAX_CSR_DIST)
+        return (false);
+
+    *mark_ll = anets[best].ll;
+    anFillInfo (anets[best], info);
+    return (true);
+}
+
+/* if ms is hovering over a net row in the Active Nets pane, return that net's
+ * mark location and popup info. Used for hovering a row in the list.
+ */
+bool getActiveNetsPaneInfo (const SCoord &ms, LatLong *mark_ll, ActiveNetInfo *info)
+{
+    if (an_ss.n_data == 0)
+        return (false);
+
+    PlotPane pp = findPaneChoiceNow (PLOT_CH_ACTIVENETS);
+    if (pp == PANE_NONE)
+        return (false);
+    const SBox &box = plot_b[pp];
+    if (!inBox (ms, box) || ms.y < box.y + AN_START_DY)
+        return (false);
+
+    // same row geometry the draw and touch paths use
+    int block_dy, name_base_off, info_base_off, max_vis;
+    anGeometry (box, block_dy, name_base_off, info_base_off, max_vis);
+    (void) name_base_off;
+    (void) info_base_off;
+    (void) max_vis;
+
+    int vis_row = (ms.y - (box.y + AN_START_DY)) / block_dy;
+    int net_i;
+    if (!an_ss.findDataIndex (vis_row, net_i) || net_i < 0 || net_i >= an_ss.n_data)
+        return (false);
+    if (!anets[net_i].ll_ok)
+        return (false);                          // nothing to ring/pop without a location
+
+    *mark_ll = anets[net_i].ll;
+    anFillInfo (anets[net_i], info);
+    return (true);
+}

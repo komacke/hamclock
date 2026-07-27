@@ -1,22 +1,34 @@
-## HamClock Live Web from Clear Sky Institute - Docker
+# HamClock Client
 
-This repo contains the source code for Clear Sky Institute's HamClock v4.22. It also includes the hamclock-contrib zip-file contents.
+[![C++11 web](https://img.shields.io/github/actions/workflow/status/openhamclock/hamclock/compile-web.yml?branch=main&label=C%2B%2B11%20web&logo=cplusplus&style=flat)](https://github.com/openhamclock/hamclock/actions/workflows/compile-web.yml) [![C++11 Pi](https://img.shields.io/github/actions/workflow/status/openhamclock/hamclock/compile-fb0.yml?branch=main&label=C%2B%2B11%20Pi&logo=raspberrypi&style=flat)](https://github.com/openhamclock/hamclock/actions/workflows/compile-fb0.yml)
 
-The main contribution is to create a dockerized deployment of the web version of HamClock.
+This repository is the primary source for ongoing maintenance of the HamClock Client,
+aka the HamClock "frontend", and often just referred to as "HamClock".
 
-## How to use it
+It is intended as a reference implementation for use with backend servers
+that are compatible with the original Clear Sky Institute service and the evolving backend standards
+being developed by the [Open Hamclock Standards](https://github.com/openhamclock/hamclock-standards) project.
 
-Grab the ```manage-hc-docker.sh``` file from the releases page. That file has a version in the name. I recommend renaming it or do it all at once with a curl:
-```
-curl -sLo manage-hc-docker.sh 'https://github.com/komacke/hamclock/releases/download/v4.22.0/manage-hc-docker-v4.22.0.sh'
-chmod +x manage-hc-docker.sh
-```
+See [doc](./doc/) for all the information and documentation related to installing, using, and developing HamClock.
 
-See the commands available with ```./manage-hc-docker.sh help``` and do an install with ```./manage-hc-docker.sh install```.
+The HamClock Client was originally created by Clear Sky Institute, and made available under an [MIT License](./LICENSE).
+This repository was started with the source code for Clear Sky Institute's HamClock v4.22, the final version they created.
 
-NOTE: you'll likely want to use the -b option to set the backend server.
-NOTE: you can select from the 4 possible sizes with the -s option: ```800x480 1600x960 2400x1440 3200x1920```
+An archive of historical HamClock Client releases up to 4.22 is available at <https://github.com/openhamclock/hamclock-client-archive>.
 
-## Preconfigure it on a first run
+## Contributing
 
-The first time you run it, you can preconfigure some of your personal settings. Look for the [config.env.example](https://github.com/komacke/hamclock/blob/main/docker/config.env.example) file. Name it config.env and put it in the same folder with your manage-hc-docker.sh. Edit it as you like and it will pre-configure your hamclock. If you don't use the config.env, you'll get the usual setup screen for a fresh install.
+Bug reports and pull requests are welcome on GitHub at
+<https://github.com/openhamclock/hamclock/issues>
+
+## Related
+
+* [HamClock Standards](https://github.com/openhamclock/hamclock-standards) - specifications source
+* [HamClock Client](https://github.com/openhamclock/hamclock) - reference frontend implementation source
+    * includes Raspberry Pi/Debian and Docker installers
+    * [HamClockLauncher](https://github.com/huberthickman/HamClockLauncher) - macOS frontend installer/launcher source
+    * also many appliances available for sale, with HamClock pre-installed and automatically maintained
+* Open Hamclock Backend project
+    * <https://ohb.works/> - main site
+    * <https://github.com/openhamclock/open-hamclock-backend> - source
+* [hamclock.com](https://hamclock.com) backend

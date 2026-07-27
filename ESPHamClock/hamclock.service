@@ -1,0 +1,28 @@
+# --- SETUP INSTRUCTIONS ---
+# 1. Create the directory: 
+#          mkdir -p ~/.config/systemd/user/
+# 2. Place this file as: 
+#          cp hamclock.server ~/.config/systemd/user/
+# 3. Reload the daemon:  
+#          systemctl --user daemon-reload
+# 4. Enable the service: 
+#          systemctl --user enable hamclock.service
+# 5. Start it now:       
+#          systemctl --user start hamclock.service
+#
+# NOTE: This service waits for the 'graphical-session' to be active, 
+# ensuring compatibility across X11/Wayland and Debian/Fedora.
+# --------------------------
+
+[Unit]
+Description=HamClock Autostart
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hamclock
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

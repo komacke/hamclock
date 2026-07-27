@@ -3,7 +3,7 @@
  */
 
 #include "HamClock.h"
-
+#include <map>
 
 
 // platform
@@ -244,7 +244,7 @@ bool parseWebCommand (WebArgs &wa, char line[], size_t line_len)
         case PWC_LOOKING_4_NAME:
             if (*line == '=') {
                 if (name[0] == '\0') {
-                    strcpy (line, "missing name");
+                    quietStrncpy (line0, "missing name", line_len);
                     return (false);
                 }
                 *line = '\0';                                   // terminate name
@@ -279,7 +279,7 @@ bool parseWebCommand (WebArgs &wa, char line[], size_t line_len)
     }
 
     // should never get here
-    strcpy (line, "Bogus syntax");
+    quietStrncpy (line0, "Bogus syntax", line_len);
     return (false);
 }
 
@@ -302,6 +302,25 @@ static bool atoiOnly (const char *str, int *ip)
     return (false);
 }
 
+
+/* convert the given string to float.
+ * return whether the string was entirely valid digits.
+ */
+static bool atofOnly (const char *str, float *fp)
+{
+    if (str == NULL)
+        return (false);
+
+    char *endp;
+	float f;
+    f = (float) strtod (str, &endp);
+    if (*str != '\0' && *endp == '\0') {
+        *fp = f;
+        return (true);
+    }
+
+    return (false);
+}
 
 /* convert a hex digit to its numeric value.
  * N.B. assumes ASCII encoding.
@@ -400,7 +419,7 @@ static void reportPaneChoices (WiFiClient &client, PlotPane pp)
         snprintf (buf, sizeof(buf), " %s", plot_names[pc_now]);
         client.print (buf);
         for (int i = 0; i < PLOT_CH_N; i++) {
-            if (i != pc_now && plot_rotset[pp] & (1<<i)) {
+            if (i != pc_now && plot_rotset[pp] & PLOTBIT(i)) {
                 snprintf (buf, sizeof(buf), " %s", plot_names[i]);
                 client.print (buf);
             }
@@ -796,7 +815,7 @@ static bool getWiFiOnTheAir (WiFiClient &client, char line[], size_t line_len)
     }
 
     // list
-    spotsHelper (client, NULL, 0, line, line_len);
+    spotsHelper (client, spots, nspots, line, line_len);
 
     return (true);
 }
@@ -1347,6 +1366,55 @@ static bool getWiFiSatellite (WiFiClient &client, char *line, size_t ll)
     snprintf (line, ll, "1.3GHzDoppler %.6f kHz\n", -sn.rate*1.3e6/3e8);   client.print(line);
     snprintf (line, ll, "10GHzDoppler  %.6f kHz\n", -sn.rate*1e7/3e8);     client.print(line);
 
+    // real-frequency Doppler for the current satellite's active transmitters, if known.
+    // RX = where to tune to hear the downlink; TX = where to transmit so the bird receives
+    // its nominal uplink. Based on the live range rate (sn.rate, + = receding).
+    {
+        SatFreq *fl = NULL;
+        int nfl = getSatFreqs (sn.norad, &fl);
+        const double dop = sn.rate / 2.99792458e8;      // fractional Doppler, + = receding
+        int shown = 0;
+        for (int i = 0; i < nfl; i++) {
+            SatFreq *sf = &fl[i];
+            if (strcmp (sf->status, "active") != 0)     // operate active transmitters only
+                continue;
+            int t = ++shown;
+            char key[24];
+
+            snprintf (key, sizeof(key), "Tx%dMode", t);
+            snprintf (line, ll, "%-14s%s\n", key, sf->mode[0] ? sf->mode : "-");
+            client.print (line);
+
+            // downlink: observed lower when receding
+            if (sf->dl_lo > 0) {
+                if (sf->dl_hi > 0 && sf->dl_hi != sf->dl_lo) {
+                    snprintf (key, sizeof(key), "Tx%dRXloMHz", t);
+                    snprintf (line, ll, "%-14s%.6f\n", key, sf->dl_lo*(1-dop)/1e6); client.print (line);
+                    snprintf (key, sizeof(key), "Tx%dRXhiMHz", t);
+                    snprintf (line, ll, "%-14s%.6f\n", key, sf->dl_hi*(1-dop)/1e6); client.print (line);
+                } else {
+                    snprintf (key, sizeof(key), "Tx%dRXMHz", t);
+                    snprintf (line, ll, "%-14s%.6f\n", key, sf->dl_lo*(1-dop)/1e6); client.print (line);
+                }
+            }
+
+            // uplink: transmit higher when receding
+            if (sf->ul_lo > 0) {
+                if (sf->ul_hi > 0 && sf->ul_hi != sf->ul_lo) {
+                    snprintf (key, sizeof(key), "Tx%dTXloMHz", t);
+                    snprintf (line, ll, "%-14s%.6f\n", key, sf->ul_lo*(1+dop)/1e6); client.print (line);
+                    snprintf (key, sizeof(key), "Tx%dTXhiMHz", t);
+                    snprintf (line, ll, "%-14s%.6f\n", key, sf->ul_hi*(1+dop)/1e6); client.print (line);
+                } else {
+                    snprintf (key, sizeof(key), "Tx%dTXMHz", t);
+                    snprintf (line, ll, "%-14s%.6f\n", key, sf->ul_lo*(1+dop)/1e6); client.print (line);
+                }
+            }
+        }
+        if (fl)
+            free (fl);
+    }
+
     // add table of next several events, if any
     time_t *rises, *sets;
     float *razs, *sazs;
@@ -1690,7 +1758,7 @@ static bool getWiFiVOACAP (WiFiClient &client, char *line, size_t line_len)
     int hr_now = bc_utc_tl ? utc_hour_now : de_hour_now;
 
     // display matrix -- rotated with same layout as plotBandConditions()
-    char buf[100];
+    char buf[128];
     int buf_l = 0;
     for (int p_row = 0; p_row < BMTRX_COLS; p_row++) {  // print 1 row for each matrix column
         int m_col = BMTRX_COLS - 1 - p_row;             // convert to bm col with 10 (last col) on top
@@ -1707,7 +1775,7 @@ static bool getWiFiVOACAP (WiFiClient &client, char *line, size_t line_len)
             // bc_matrix is a matrix of 24 rows of UTC 0 .. 23, 8 columns of bands 80-40-30-20-17-15-12-10.
             uint8_t rel = bc_matrix.m[m_row][m_col];
 
-            buf_l += snprintf (buf+buf_l, sizeof(buf)-buf_l, "%3d", rel);
+            buf_l += snprintf (buf+buf_l, sizeof(buf)-buf_l, "%4d", rel);
         }
 
         // finish with band freq
@@ -1724,9 +1792,9 @@ static bool getWiFiVOACAP (WiFiClient &client, char *line, size_t line_len)
     for (int p_col = 0; p_col < BMTRX_ROWS; p_col++) {
         int hr = (hr_now + p_col) % 24;
         if ((hr%4) != 0)
-            buf_l += snprintf (buf+buf_l, sizeof(buf)-buf_l, "   ");
+            buf_l += snprintf (buf+buf_l, sizeof(buf)-buf_l, "    ");
         else
-            buf_l += snprintf (buf+buf_l, sizeof(buf)-buf_l, "%3d", hr);
+            buf_l += snprintf (buf+buf_l, sizeof(buf)-buf_l, "%4d", hr);
     }
     client.println (buf);
 
@@ -2437,6 +2505,353 @@ static bool setWiFiRotator (WiFiClient &client, char line[], size_t line_len)
     }
 }
 
+/*
+ * get supported parameter values from server
+ */
+ 
+/* helper function to parse returned records */
+bool extract_columns(const char *s, std::string& a, std::string& b, std::string& c)
+{
+    const char *p = s;
+    const char *comma1 = strchr(p, ',');
+    if (!comma1) return false;
+
+    const char *comma2 = strchr(comma1 + 1, ',');
+    if (!comma2) return false;
+
+    a = std::string(p, comma1);
+    b = std::string(comma1 + 1, comma2);
+    c = std::string(comma2 + 1);
+    return true;
+} 
+void antennas_supported_values (
+                const std::map<std::string, std::string>& remoteinput,
+                std::map<std::string, std::string>& remoteout)
+{
+    // prep
+    WiFiClient compat_client;
+    char line[256];
+    line[0] = '\0';
+    // reset count and index
+    char compat_pagehead[]="/fetchBandConditions.pl?INFOREQUEST=1";
+	
+	std::string compat_page = compat_pagehead;
+	for (const auto& kv : remoteinput) {
+		const std::string& key = kv.first;
+		const std::string& val = kv.second;
+
+		compat_page += '&';
+		compat_page += key;
+		compat_page += '=';
+		compat_page += val;		
+	}
+	
+    Serial.println(compat_page.c_str());
+    if (compat_client.connect(backend_host, backend_port)) {
+
+        // fetch feed page
+        httpHCGET (compat_client, backend_host, compat_page.c_str());
+
+        // skip response header
+        if (!httpSkipHeader (compat_client)) {
+            Serial.println ("compat header short");
+            goto out;
+        }
+        std::string    parm;
+		std::string    inval;
+		std::string    outval;
+        // get lines 
+        while (1) {
+            if (!getTCPLine (compat_client, line, sizeof(line), NULL))
+                goto out;
+            Serial.printf ("Fetched %s\n", line);
+			if (extract_columns(line,parm,inval,outval)) {
+				// only update if key already exists in remoteout
+				if (remoteout.count(parm) > 0) {
+					remoteout[parm] = outval;
+				}
+				Serial.printf ("parsed%s,%s,%s\n",parm.c_str(),inval.c_str(),outval.c_str());
+			}
+        }
+    }
+  out:
+    compat_client.stop();
+    return;
+}
+
+
+/*
+ * remote command to serve the mobile dashboard
+ */
+
+static bool getWiFiDashboardGui (WiFiClient &client, char line[], size_t line_len)
+{
+    client.println ("HTTP/1.0 200 OK");
+    sendUserAgent (client);
+    client.println ("Content-Type: text/html; charset=utf-8");
+    client.println ("Cache-Control: no-store");
+    client.println ("Connection: close\r\n");
+    client.print (dashboard_html);
+    Serial.printf ("Served dashboard.html\n");
+    return (true);
+}
+
+
+/*
+ * remote command to list antennas
+ */
+
+ 
+ static bool getWiFiAntennasGui (WiFiClient &client, char line[], size_t line_len)
+ {
+
+	client.println ("HTTP/1.0 200 OK");
+	sendUserAgent (client);
+	client.println ("Content-Type: text/html; charset=utf-8");
+	client.println ("Cache-Control: no-store");
+	client.println ("Connection: close\r\n");
+	client.print (antennas_html);
+	Serial.printf ("Served antennas.html\n");
+	return (true);
+ }
+
+/*
+ * remote command to list antennas
+ */
+
+ 
+ static bool getWiFiAntennas (WiFiClient &client, char line[], size_t line_len)
+ {
+	char buf[100];
+
+    startPlainText (client);    
+	
+    std::map<std::string, std::string> remotevals;
+    std::map<std::string, std::string> supportedvals;	
+	
+    remotevals["ANTDEDXCONTROL"]    = std::to_string(antennas_dedx_control);
+	supportedvals["ANTDEDXCONTROL"] = "0";
+    remotevals["ANTDEINDEX"]    = std::to_string(antennas_de);
+	supportedvals["ANTDEINDEX"] = "0";
+    remotevals["ANTDXINDEX"]    = std::to_string(antennas_dx);
+	supportedvals["ANTDXINDEX"] = "0";	
+
+    snprintf(buf, sizeof(buf), "%.1f", antennas_de_az);
+    remotevals["ANTDEAZ"] = buf;
+	supportedvals["ANTDEAZ"] = "0.0";	
+	
+    snprintf(buf, sizeof(buf), "%.1f", antennas_dx_az);
+    remotevals["ANTDXAZ"] = buf;	
+	supportedvals["ANTDXAZ"] = "0.0";			
+	
+	
+	antennas_supported_values(remotevals,supportedvals);	
+
+ 
+	client.println ("get antennas: ");
+    client.print("backend server: ");
+	client.print(backend_host);
+	client.println(", supported values below shown in []");
+
+	snprintf (buf, sizeof(buf), "antdedxcontrol: %u [%s]", 
+		antennas_dedx_control,supportedvals["ANTDEDXCONTROL"].c_str()) ;
+	client.println(buf);
+	
+    int supported_dedx_control = atoi(supportedvals["ANTDEDXCONTROL"].c_str());
+	snprintf (buf, sizeof(buf), "antdeindex   set to %u [%s] and will %sbe used", 
+		antennas_de,supportedvals["ANTDEINDEX"].c_str(), (supported_dedx_control & 1)?"":"not ");
+	client.println(buf);
+ 
+	snprintf (buf, sizeof(buf), "antdeaz      set to %.1f [%s] and will %sbe used", 
+		antennas_de_az,supportedvals["ANTDEAZ"].c_str(), (supported_dedx_control & 1)?"":"not ");
+	client.println(buf);
+
+	snprintf (buf, sizeof(buf), "antdxindex   set to %u [%s] and will %sbe used", 
+		antennas_dx,supportedvals["ANTDXINDEX"].c_str(), (supported_dedx_control & 2)?"":"not ");
+	client.println(buf);	
+	
+	snprintf (buf, sizeof(buf), "antdxaz      set to %.1f [%s] and will %sbe used", 
+		antennas_dx_az,supportedvals["ANTDXAZ"].c_str(), (supported_dedx_control & 1)?"":"not ");
+	client.println(buf);	
+	
+
+	return (true);
+ }
+ 
+static bool getWiFiAntennalist (WiFiClient &client, char line[], size_t line_len)
+ {
+	char buf[100];
+
+    startPlainText (client);    
+ 
+	client.println ("list antennas: ");
+
+	size_t i=0;
+	bool rc=true;
+	while (rc) {
+		rc = antenna_getline(buf,sizeof(buf),i++);
+		if (rc)
+			client.println(buf);
+	}
+	return (true);
+ }
+ 
+/*
+ * remote command to setW
+ * set_antennas?antdeindex=n,antdxindex=n,antdedxcontrol=n
+ */
+ static bool setWiFiAntennas (WiFiClient &client, char line[], size_t line_len)
+ {
+	WebArgs wa;
+    wa.nargs = 0;
+    wa.name[wa.nargs++] = "antdeindex";
+    wa.name[wa.nargs++] = "antdxindex";
+    wa.name[wa.nargs++] = "antdedxcontrol";
+    wa.name[wa.nargs++] = "antdeaz";
+    wa.name[wa.nargs++] = "antdxaz";
+	
+	// parse
+	if (!parseWebCommand (wa, line, line_len))
+		return (false);
+	const char *ant_de_index     = wa.value[0];
+	const char *ant_dx_index     = wa.value[1];
+	const char *ant_dedx_control = wa.value[2];
+	const char *ant_de_az        = wa.value[3];
+	const char *ant_dx_az        = wa.value[4];	
+
+	int    ant_de_index_int=0;
+	int    ant_dx_index_int=0;	
+	int    ant_dedx_control_int=0;
+	float  ant_de_az_f=0.0;
+	float  ant_dx_az_f=0.0;	
+	
+	bool      ant_de_index_update=false;
+	bool      ant_dx_index_update=false;
+	bool      ant_dedx_control_update=false;	
+	bool      ant_de_az_update=false;
+	bool      ant_dx_az_update=false;
+
+		
+	// validate 
+	if (ant_dedx_control) {	
+		bool ant_dedx_control_ok = atoiOnly (ant_dedx_control, &ant_dedx_control_int);	
+		if (!ant_dedx_control_ok) {
+			strcpy (line, "ant_dedx_control must be a number");
+			return (false);
+		}
+		if (ant_dedx_control_int < 0 || ant_dedx_control_int > 3) {
+			strcpy (line, "antxrx must be  [0..3]");
+			return (false);
+		}
+		ant_dedx_control_update=true;
+	}
+	
+	if (ant_de_index) {	
+		bool ant_de_index_ok = atoiOnly (ant_de_index, &ant_de_index_int);	
+		if (!ant_de_index_ok) {
+			strcpy (line, "antdeindex must be a number");
+			return (false);
+		}
+		if (!antenna_validindex(ant_de_index_int)) {
+			strcpy (line, "antdeindex must be a valid index\nlist valid indexes with command list_antennas");
+			return (false);
+		}
+		ant_de_index_update=true;
+	}	
+	
+	if (ant_dx_index) {	
+		bool ant_dx_index_ok = atoiOnly (ant_dx_index, &ant_dx_index_int);	
+		if (!ant_dx_index_ok) {
+			strcpy (line, "antdxindex must be a number");
+			return (false);
+		}
+		if (!antenna_validindex(ant_dx_index_int)) {
+			strcpy (line, "antdxindex must be a valid index\nlist valid indexes with command list_antennas");
+			return (false);
+		}
+		ant_dx_index_update=true;
+	}	
+
+	if (ant_de_az) {
+		bool ant_de_az_ok = atofOnly (ant_de_az, &ant_de_az_f);	
+		if (!ant_de_az_ok) {
+			strcpy (line, "antdeaz must be a floating point number");
+			return (false);
+		}
+		if ( ant_de_az_f < 0.0 || ant_de_az_f > 360.0) {
+			strcpy (line, "antdeaz must be in range [0.0..360.0]");
+			return (false);
+		}
+		ant_de_az_update=true;
+	}		
+	if (ant_dx_az) {
+		bool ant_dx_az_ok = atofOnly (ant_dx_az, &ant_dx_az_f);	
+		if (!ant_dx_az_ok) {
+			strcpy (line, "antdxaz must be a floating point number");
+			return (false);
+		}
+		if ( ant_dx_az_f < 0.0 || ant_dx_az_f > 360.0) {
+			strcpy (line, "antdxaz must be in range [0.0..360.0]");
+			return (false);
+		}
+		ant_dx_az_update=true;
+	}	
+	// execute
+	if (ant_dedx_control_update) {
+		antennas_dedx_control = (uint8_t) ant_dedx_control_int;
+        NVWriteUInt8 (NV_ANT_DEDX_CONTROL, antennas_dedx_control);		
+	}
+	if (ant_de_index_update) {
+		antennas_de = (uint16_t) ant_de_index_int;
+        NVWriteUInt16 (NV_ANT_DE_INDEX, antennas_de);		
+	}
+	if (ant_dx_index_update) {
+		antennas_dx = (uint16_t) ant_dx_index_int;
+        NVWriteUInt16 (NV_ANT_DX_INDEX, antennas_dx);		
+	}
+	if (ant_de_az_update) {
+		antennas_de_az = ant_de_az_f;
+        NVWriteFloat (NV_ANT_DE_AZ, antennas_de_az);		
+	}
+	if (ant_dx_az_update) {
+		antennas_dx_az = ant_dx_az_f;
+        NVWriteFloat (NV_ANT_DX_AZ, antennas_dx_az);		
+	}
+	
+	if (ant_dedx_control_update || ant_de_index_update || ant_dx_index_update || ant_de_az_update || ant_dx_az_update) {
+		startPlainText (client);
+        char buf[100];
+
+		if (ant_dedx_control_update) {
+			snprintf (buf, sizeof(buf), "antdedxcontrol set to %u", antennas_dedx_control);
+			client.println(buf);
+		}
+		if (ant_de_index_update) {
+			snprintf (buf, sizeof(buf), "antdeindex   set to %u", antennas_de);
+			client.println(buf);
+		}
+		if (ant_dx_index_update) {
+			snprintf (buf, sizeof(buf), "antdxindex   set to %u", antennas_dx);
+			client.println(buf);
+		}		
+		if (ant_de_az_update) {
+			snprintf (buf, sizeof(buf), "antdeaz   set to %.1f", antennas_de_az);
+			client.println(buf);
+		}	
+		if (ant_dx_az_update) {
+			snprintf (buf, sizeof(buf), "antdxaz   set to %.1f", antennas_dx_az);
+			client.println(buf);
+		}	
+		
+		client.println("ok");
+		return (true);
+	}
+
+	// nothing to execute
+	strcpy (line, "no parameters given");
+	return (false);
+ }
+ 
 /* remote command to set display on/off/idle times
  * on=HR:MN&off=HR:MN&day=[Sun..Sat]&idle=mins
  */
@@ -3005,7 +3420,8 @@ static bool setWiFiADIF (WiFiClient &client, char line[], size_t line_len)
         // assign if not already
         if (adif_pp == PANE_NONE && setPlotChoice (pp, PLOT_CH_ADIF)) {
             adif_pp = pp;
-            plot_rotset[adif_pp] |= (1 << PLOT_CH_ADIF);
+            plot_rotset[adif_pp] |= PLOTBIT(PLOT_CH_ADIF);
+            savePlotOps();
         }
 
         // create GenReader using existing client
@@ -3416,7 +3832,7 @@ static bool setWiFiPane (WiFiClient &client, char line[], size_t line_len)
             // find tok in plot_names
             PlotChoice tok_pc = PLOT_CH_NONE;
             for (int i = 0; i < PLOT_CH_N; i++) {
-                if (strcmp (tok_copy, plot_names[i]) == 0) {
+                if (PLOT_CH_IS_REAL(i) && strcmp (tok_copy, plot_names[i]) == 0) {
                     tok_pc = (PlotChoice)i;
                     break;
                 }
@@ -3429,7 +3845,7 @@ static bool setWiFiPane (WiFiClient &client, char line[], size_t line_len)
             }
 
             // ok on PANE_0?
-            if (pp == PANE_0 && ((1<<tok_pc) & ~PANE_0_CH_MASK) != 0) {
+            if (pp == PANE_0 && (PLOTBIT(tok_pc) & ~PANE_0_CH_MASK) != 0) {
                 strcpy (line, "not supported on Pane 0");
                 return (false);
             }
@@ -3464,9 +3880,9 @@ static bool setWiFiPane (WiFiClient &client, char line[], size_t line_len)
         }
 
         // build candidate rotset
-        uint32_t new_rotset = 0;
+        PlotMask new_rotset = 0;
         for (int i = 0; i < n_pc; i++)
-            new_rotset |= (1 << pc[i]);
+            new_rotset |= PLOTBIT(pc[i]);
 
         // ok! engage new rotset and show first in list
         plot_rotset[pp] = new_rotset;
@@ -4293,6 +4709,9 @@ typedef struct {
     const char *help;                                   // more info if available
 } CmdTble;
 static const CmdTble command_table[] = {
+    { "antennas.html ",     getWiFiAntennasGui,    "antennas widget to administer antenna information" },	
+    { "dashboard.html ",    getWiFiDashboardGui,   "mobile dashboard for HamClock REST data" },
+    { "get_antennas.txt ",  getWiFiAntennas,       "Get antenna information from hamclock and backend" },
     { "get_capture.bmp ",   getWiFiCaptureBMP,     "get live screen shot in bmp format" },
     { "get_config.txt ",    getWiFiConfig,         "get current display settings" },
     { "get_contests.txt ",  getWiFiContests,       "get current list of contests" },
@@ -4311,8 +4730,10 @@ static const CmdTble command_table[] = {
     { "get_sys.txt ",       getWiFiSys,            "get system stats" },
     { "get_time.txt ",      getWiFiTime,           "get current time" },
     { "get_voacap.txt ",    getWiFiVOACAP,         "get current band conditions matrix" },
+    { "list_antennas.txt ", getWiFiAntennalist,    "list antenna indexes and description" },
     { "set_adif?",          setWiFiADIF,           "pane=[0123] (POST)" },
     { "set_alarm?",         setWiFiAlarm,          "state=off|armed&time=HR:MN&utc=yes|no" },
+    { "set_antennas?",      setWiFiAntennas,       "antdeindex=n&antdxindex=n&antdedxcontrol=n&antdeaz=n.n&antdxaz=n.n" },	
     { "set_auxtime?",       setWiFiAuxTime,        "format=[one_from_menu]" },
     { "set_bmp?",           setWiFiloadBMP,        "pane=[1,2,3,map]&fit=[resize,crop,fill][&off] (POST)" },
     { "set_cluster?",       setWiFiCluster,        "host=xxx&port=yyy" },
@@ -4710,9 +5131,10 @@ static bool runDemoChoice (DemoChoice choice, bool &slow, char msg[], size_t msg
             } else {
                 // select an appropriate choice for PANE_0
                 PlotChoice pc0 = getAnyAvailablePane0Choice();
+                if (pc0 != PLOT_CH_NONE)
+                    plot_rotset[PANE_0] = PLOTBIT(pc0);   // no auto rotation
                 ok = pc0 != PLOT_CH_NONE && setPlotChoice (PANE_0, pc0);
                 if (ok) {
-                    plot_rotset[PANE_0] = (1 << pc0);   // no auto rotation
                     logPaneRotSet (PANE_0, pc0);
                     demoMsg (ok, choice, msg, msg_len, "Pane 0 now %s", plot_names[pc0]);
                 } else
@@ -4724,9 +5146,9 @@ static bool runDemoChoice (DemoChoice choice, bool &slow, char msg[], size_t msg
     case DEMO_PANE1:
         {
             PlotChoice pc = getAnyAvailableChoice();
+            plot_rotset[PANE_1] = PLOTBIT(pc);   // no auto rotation
             ok = setPlotChoice (PANE_1, pc);
             if (ok) {
-                plot_rotset[PANE_1] = (1 << pc);   // no auto rotation
                 logPaneRotSet (PANE_1, pc);
                 demoMsg (ok, choice, msg, msg_len, "Pane 1 now %s", plot_names[pc]);
             } else
@@ -4737,9 +5159,9 @@ static bool runDemoChoice (DemoChoice choice, bool &slow, char msg[], size_t msg
     case DEMO_PANE2:
         {
             PlotChoice pc = getAnyAvailableChoice();
+            plot_rotset[PANE_2] = PLOTBIT(pc);   // no auto rotation
             ok = setPlotChoice (PANE_2, pc);
             if (ok) {
-                plot_rotset[PANE_2] = (1 << pc);   // no auto rotation
                 logPaneRotSet (PANE_2, pc);
                 demoMsg (ok, choice, msg, msg_len, "Pane 2 now %s", plot_names[pc]);
             } else
@@ -4750,9 +5172,9 @@ static bool runDemoChoice (DemoChoice choice, bool &slow, char msg[], size_t msg
     case DEMO_PANE3:
         {
             PlotChoice pc = getAnyAvailableChoice();
+            plot_rotset[PANE_3] = PLOTBIT(pc);   // no auto rotation
             ok = setPlotChoice (PANE_3, pc);
             if (ok) {
-                plot_rotset[PANE_3] = (1 << pc);   // no auto rotation
                 logPaneRotSet (PANE_3, pc);
                 demoMsg (ok, choice, msg, msg_len, "Pane 3 now %s", plot_names[pc]);
             } else

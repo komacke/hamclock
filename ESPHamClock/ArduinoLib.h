@@ -14,7 +14,7 @@
 
 #if defined(ESP8266)
   #define _IS_ESP8266
-#else   
+#else
   #define _IS_UNIX
 #endif
 
@@ -40,7 +40,7 @@
     #endif
 #endif
 
-    
+
 #if (defined(__arm__) || defined(__aarch64__)) && defined(_IS_LINUX)
   #if defined(__has_include)
       #if __has_include(<gpiod.h>) || __has_include(<bcm_host.h>) || __has_include(<pigpio.h>)
@@ -65,7 +65,7 @@
       #define _NATIVE_GPIOD_LINUX             // gpiod is sufficiently mature to use
   #endif
 #endif
-    
+
 
 #if defined(__has_include)
   #if defined(_IS_FREEBSD) && __has_include(<dev/iicbus/iic.h>)
@@ -96,9 +96,9 @@
 
 
 // tcp ports
-#define RESTFUL_PORT    8080    
-#define LIVEWEB_RW_PORT 8081    
-#define LIVEWEB_RO_PORT 8082    
+#define RESTFUL_PORT    8080
+#define LIVEWEB_RW_PORT 8081
+#define LIVEWEB_RO_PORT 8082
 
 // character codes for tft.get/putChar(), mostly ASCII control plus a few more
 #define CHAR_NONE       0
@@ -178,6 +178,7 @@ extern void setX11FullScreen (bool);
 extern void setDemoMode(bool on);
 extern void setCenterLng (int16_t l);
 extern const char *backend_host;
+extern const char *software_host;
 extern int backend_port;
 extern int liveweb_ro_port;
 extern int liveweb_rw_port;
@@ -193,11 +194,12 @@ extern time_t usr_datetime;
 extern const char *getI2CFilename(void);
 extern bool GPIOOk(void);
 extern const char *hc_version;
+extern bool version_https;
 extern std::string our_dir;
 extern void doExit(void);
 extern bool testPassword (const char *category, const char *candidate_pw);
 extern const char *pw_file;
-extern void NVReadX11Geom (int &x, int &y, int &w, int &h);
+extern bool NVReadX11Geom (int &x, int &y, int &w, int &h);
 extern void NVWriteX11Geom (int x, int y, int w, int h);
 extern char *strTrimAll (char *str);
 

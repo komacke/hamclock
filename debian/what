@@ -1,0 +1,478 @@
+#!/bin/bash
+#
+# Copyright (c) 2026 Keith Maton G6NHU
+# https://qso365.co.uk
+#
+# Permission is granted to use, copy, modify and distribute this script,
+# provided that this notice is retained.
+# You may not misrepresent the original authorship of this work.
+#
+
+GITHUB_RAW_URL="https://raw.githubusercontent.com/openhamclock/hamclock/refs/heads/main/debian/what"
+SELF_UPDATE_FLAG="WHAT_SELF_UPDATED"
+
+HAMCLOCK_BIN="/usr/local/bin/hamclock"
+HOSTS_FILE="/etc/hosts"
+DOMAIN="clearskyinstitute.com"
+OHB_FIX_SCRIPT="/usr/local/bin/ohb"
+
+# Work out which user's home to use when run via sudo
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+    USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+else
+    USER_HOME="$HOME"
+fi
+
+DESKTOP_FILE="$USER_HOME/Desktop/hamclock.desktop"
+AUTOSTART_FILE="$USER_HOME/.config/autostart/hamclock.desktop"
+XFCE_PANEL_DIR="$USER_HOME/.config/xfce4/panel"
+RUNNER_FILE="/usr/local/bin/hamclock-runner"
+XRANDR_WRAPPER_FILE="/usr/local/bin/hamclock-xrandr-wrapper"
+SERVICE_FILE="/etc/systemd/system/hamclock.service"
+CRON_SPOOL_DIR="/var/spool/cron/crontabs"
+ETC_CRONTAB="/etc/crontab"
+CRON_D_DIR="/etc/cron.d"
+
+# Format:
+# "Name|IP|hostname|port|updates"
+BACKENDS=(
+    "Open HamClock backend|44.32.64.64|ohb.hamclock.app|80|yes"
+    "Hamclock.com backend|3.128.20.228|hamclock.com|80|yes"
+    "CSI backend|77.167.43.150|clearskyinstitute.com|80|yes"
+)
+
+# Must be run as root
+if [ "$EUID" -ne 0 ]; then
+    echo "Please run with sudo."
+    exit 1
+fi
+
+self_update() {
+    local script_path remote_tmp script_name flag_value
+
+    flag_value=$(printenv "$SELF_UPDATE_FLAG" 2>/dev/null || true)
+    if [ -n "$flag_value" ]; then
+        return 0
+    fi
+
+    script_path=$(readlink -f "$0" 2>/dev/null)
+    if [ -z "$script_path" ] || [ ! -f "$script_path" ] || [ ! -w "$script_path" ]; then
+        return 0
+    fi
+
+    remote_tmp=$(mktemp) || {
+        echo "Warning: could not create temporary file for update check. Continuing."
+        return 0
+    }
+
+    if command -v curl >/dev/null 2>&1; then
+        if ! curl -fsSL "$GITHUB_RAW_URL" -o "$remote_tmp"; then
+            rm -f "$remote_tmp"
+            echo "Warning: update check failed. Continuing with installed version."
+            return 0
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if ! wget -qO "$remote_tmp" "$GITHUB_RAW_URL"; then
+            rm -f "$remote_tmp"
+            echo "Warning: update check failed. Continuing with installed version."
+            return 0
+        fi
+    else
+        rm -f "$remote_tmp"
+        echo "Warning: neither curl nor wget is available. Skipping update check."
+        return 0
+    fi
+
+    if ! head -n 1 "$remote_tmp" | grep -q '^#!/bin/bash'; then
+        rm -f "$remote_tmp"
+        echo "Warning: downloaded update does not look valid. Continuing with installed version."
+        return 0
+    fi
+
+    if cmp -s "$script_path" "$remote_tmp"; then
+        rm -f "$remote_tmp"
+        return 0
+    fi
+
+    chmod 755 "$remote_tmp"
+
+    if ! mv "$remote_tmp" "$script_path"; then
+        rm -f "$remote_tmp"
+        echo "Warning: failed to update $script_path. Continuing with installed version."
+        return 0
+    fi
+
+    script_name=$(basename "$script_path")
+    echo "A newer version of $script_name was found and installed."
+    echo "Restarting with the updated version..."
+
+    printf -v "$SELF_UPDATE_FLAG" '%s' 1
+    export "$SELF_UPDATE_FLAG"
+
+    exec "$script_path" "$@"
+}
+
+self_update "$@"
+
+# Safety checks
+if [ ! -f "$HAMCLOCK_BIN" ]; then
+    echo "Error: $HAMCLOCK_BIN not found."
+    exit 1
+fi
+
+if [ ! -f "$HOSTS_FILE" ]; then
+    echo "Error: $HOSTS_FILE not found."
+    exit 1
+fi
+
+if ! command -v strings >/dev/null 2>&1; then
+    echo "Error: strings command not found."
+    exit 1
+fi
+
+if ! command -v ps >/dev/null 2>&1; then
+    echo "Error: ps command not found."
+    exit 1
+fi
+
+match_backend_by_target() {
+    local target="$1"
+    local name ip host port updates expected_target
+
+    while IFS='|' read -r name ip host port updates; do
+        [ -n "$name" ] || continue
+        expected_target="${host}:${port}"
+
+        if [ "$target" = "$expected_target" ] || [ "$target" = "$host" ]; then
+            echo "$name"
+            return 0
+        fi
+    done < <(printf '%s\n' "${BACKENDS[@]}")
+
+    return 1
+}
+
+match_backend_by_ip() {
+    local target_ip="$1"
+    local name ip host port updates
+
+    while IFS='|' read -r name ip host port updates; do
+        [ -n "$name" ] || continue
+
+        if [ "$target_ip" = "$ip" ]; then
+            echo "$name"
+            return 0
+        fi
+    done < <(printf '%s\n' "${BACKENDS[@]}")
+
+    return 1
+}
+
+backend_updates_by_name() {
+    local target_name="$1"
+    local name ip host port updates
+
+    while IFS='|' read -r name ip host port updates; do
+        [ -n "$name" ] || continue
+
+        if [ "$target_name" = "$name" ]; then
+            echo "$updates"
+            return 0
+        fi
+    done < <(printf '%s\n' "${BACKENDS[@]}")
+
+    return 1
+}
+
+report_b_target() {
+    local source_label="$1"
+    local target="$2"
+    local matched_name
+
+    matched_name=$(match_backend_by_target "$target")
+
+    if [ -n "$matched_name" ]; then
+        echo "$source_label uses -b $target ($matched_name)."
+    else
+        echo "$source_label uses -b $target (unknown backend)."
+    fi
+}
+
+extract_b_from_line() {
+    sed -nE "s/.*[[:space:]]-b[[:space:]]+([^[:space:]'\";)]*).*/\1/p"
+}
+
+check_file_for_b() {
+    local file="$1"
+    local label="$2"
+    local target
+
+    [ -f "$file" ] || return 1
+
+    target=$(
+        grep -Ev '^[[:space:]]*#' "$file" 2>/dev/null | \
+        grep -E '(^|[[:space:]])-b[[:space:]]+[^[:space:]]+' | \
+        head -n 1 | \
+        extract_b_from_line
+    )
+
+    if [ -n "$target" ]; then
+        report_b_target "$label" "$target"
+        return 0
+    fi
+
+    return 1
+}
+
+prompt_and_fix() {
+    local message="$1"
+    local reply
+
+    echo
+    printf '\033[1m%s\033[0m\n' "$message"
+    echo
+    printf "Would you like to fix this? [Y/n] "
+    read -r reply
+
+    case "$reply" in
+        ""|[Yy])
+            if [ ! -x "$OHB_FIX_SCRIPT" ]; then
+                echo
+                echo "Error: $OHB_FIX_SCRIPT not found or not executable."
+                exit 1
+            fi
+            echo
+            exec "$OHB_FIX_SCRIPT"
+            ;;
+        *)
+            ;;
+    esac
+}
+
+echo "Checking HamClock binary for known backend hostnames..."
+echo
+
+FOUND_BINARY_MATCH=0
+BINARY_HAS_CSI=0
+BINARY_MATCHED_NAME=""
+
+while IFS='|' read -r NAME IP HOST PORT UPDATES; do
+    [ -n "$NAME" ] || continue
+
+    if strings "$HAMCLOCK_BIN" | grep -Fq "$HOST"; then
+        echo "HamClock binary contains backend hostname for $NAME ($HOST:$PORT)."
+        FOUND_BINARY_MATCH=1
+        BINARY_MATCHED_NAME="$NAME"
+        if [ "$HOST" = "clearskyinstitute.com" ]; then
+            BINARY_HAS_CSI=1
+        fi
+    fi
+done < <(printf '%s\n' "${BACKENDS[@]}")
+
+if [ "$FOUND_BINARY_MATCH" -eq 0 ]; then
+    echo "HamClock binary does not appear to contain any configured backend hostnames."
+fi
+
+echo
+echo "Checking running HamClock processes for -b..."
+echo
+
+FOUND_PROCESS=0
+FOUND_B_SWITCH=0
+RUNNING_B_NAME=""
+
+while IFS= read -r PROC_LINE; do
+    [ -n "$PROC_LINE" ] || continue
+    FOUND_PROCESS=1
+
+    BACKEND_ARG=$(printf '%s\n' "$PROC_LINE" | extract_b_from_line)
+
+    if [ -n "$BACKEND_ARG" ]; then
+        FOUND_B_SWITCH=1
+        MATCHED_NAME=$(match_backend_by_target "$BACKEND_ARG")
+
+        if [ -n "$MATCHED_NAME" ]; then
+            RUNNING_B_NAME="$MATCHED_NAME"
+            echo "Running HamClock process is using -b $BACKEND_ARG ($MATCHED_NAME)."
+        else
+            echo "Running HamClock process is using -b $BACKEND_ARG (unknown backend)."
+        fi
+    fi
+done < <(ps -eo args | grep -E '(^|/)(hamclock|hamclock-4k)([[:space:]]|$)' | grep -v grep)
+
+if [ "$FOUND_PROCESS" -eq 0 ]; then
+    echo "No running HamClock process found."
+elif [ "$FOUND_B_SWITCH" -eq 0 ]; then
+    echo "HamClock is running, but no -b switch is in use."
+fi
+
+echo
+echo "Checking /etc/hosts for $DOMAIN..."
+echo
+
+HOSTS_HAS_OVERRIDE=0
+HOSTS_IS_CSI=0
+HOSTS_MATCHED_NAME=""
+
+MATCH_LINE=$(grep -E "^[[:space:]]*[^#].*[[:space:]]$DOMAIN([[:space:]]|$)" "$HOSTS_FILE" | head -n 1)
+
+if [ -z "$MATCH_LINE" ]; then
+    echo "No active /etc/hosts override found for $DOMAIN."
+else
+    HOSTS_HAS_OVERRIDE=1
+    FOUND_IP=$(printf '%s\n' "$MATCH_LINE" | awk '{print $1}')
+    MATCHED_NAME=$(match_backend_by_ip "$FOUND_IP")
+    HOSTS_MATCHED_NAME="$MATCHED_NAME"
+
+    if [ "$FOUND_IP" = "77.167.43.150" ]; then
+        HOSTS_IS_CSI=1
+    fi
+
+    if [ -n "$MATCHED_NAME" ]; then
+        echo "/etc/hosts maps $DOMAIN to $FOUND_IP ($MATCHED_NAME)."
+    else
+        echo "/etc/hosts maps $DOMAIN to unknown IP $FOUND_IP."
+    fi
+fi
+
+echo
+echo "Checking launcher and config files for -b..."
+echo
+
+FOUND_FILE_B=0
+FILE_B_NAME=""
+
+if check_file_for_b "$DESKTOP_FILE" "$DESKTOP_FILE"; then
+    FOUND_FILE_B=1
+    target=$(grep -Ev '^[[:space:]]*#' "$DESKTOP_FILE" 2>/dev/null | grep -E '(^|[[:space:]])-b[[:space:]]+[^[:space:]]+' | head -n 1 | extract_b_from_line)
+    FILE_B_NAME=$(match_backend_by_target "$target")
+fi
+
+if check_file_for_b "$AUTOSTART_FILE" "$AUTOSTART_FILE"; then
+    FOUND_FILE_B=1
+    if [ -z "$FILE_B_NAME" ]; then
+        target=$(grep -Ev '^[[:space:]]*#' "$AUTOSTART_FILE" 2>/dev/null | grep -E '(^|[[:space:]])-b[[:space:]]+[^[:space:]]+' | head -n 1 | extract_b_from_line)
+        FILE_B_NAME=$(match_backend_by_target "$target")
+    fi
+fi
+
+if check_file_for_b "$RUNNER_FILE" "$RUNNER_FILE"; then
+    FOUND_FILE_B=1
+    if [ -z "$FILE_B_NAME" ]; then
+        target=$(grep -Ev '^[[:space:]]*#' "$RUNNER_FILE" 2>/dev/null | grep -E '(^|[[:space:]])-b[[:space:]]+[^[:space:]]+' | head -n 1 | extract_b_from_line)
+        FILE_B_NAME=$(match_backend_by_target "$target")
+    fi
+fi
+
+if check_file_for_b "$XRANDR_WRAPPER_FILE" "$XRANDR_WRAPPER_FILE"; then
+    FOUND_FILE_B=1
+    if [ -z "$FILE_B_NAME" ]; then
+        target=$(grep -Ev '^[[:space:]]*#' "$XRANDR_WRAPPER_FILE" 2>/dev/null | grep -E '(^|[[:space:]])-b[[:space:]]+[^[:space:]]+' | head -n 1 | extract_b_from_line)
+        FILE_B_NAME=$(match_backend_by_target "$target")
+    fi
+fi
+
+if check_file_for_b "$SERVICE_FILE" "$SERVICE_FILE"; then
+    FOUND_FILE_B=1
+    if [ -z "$FILE_B_NAME" ]; then
+        target=$(grep -Ev '^[[:space:]]*#' "$SERVICE_FILE" 2>/dev/null | grep -E '(^|[[:space:]])-b[[:space:]]+[^[:space:]]+' | head -n 1 | extract_b_from_line)
+        FILE_B_NAME=$(match_backend_by_target "$target")
+    fi
+fi
+
+if [ -d "$XFCE_PANEL_DIR" ]; then
+    while IFS= read -r panel_file; do
+        if check_file_for_b "$panel_file" "$panel_file"; then
+            FOUND_FILE_B=1
+            if [ -z "$FILE_B_NAME" ]; then
+                target=$(grep -Ev '^[[:space:]]*#' "$panel_file" 2>/dev/null | grep -E '(^|[[:space:]])-b[[:space:]]+[^[:space:]]+' | head -n 1 | extract_b_from_line)
+                FILE_B_NAME=$(match_backend_by_target "$target")
+            fi
+        fi
+    done < <(find "$XFCE_PANEL_DIR" -type f -name '*.desktop')
+fi
+
+if [ -d "$CRON_SPOOL_DIR" ]; then
+    for file in "$CRON_SPOOL_DIR"/*; do
+        [ -f "$file" ] || continue
+        if check_file_for_b "$file" "$file"; then
+            FOUND_FILE_B=1
+            if [ -z "$FILE_B_NAME" ]; then
+                target=$(grep -Ev '^[[:space:]]*#' "$file" 2>/dev/null | grep -E '(^|[[:space:]])-b[[:space:]]+[^[:space:]]+' | head -n 1 | extract_b_from_line)
+                FILE_B_NAME=$(match_backend_by_target "$target")
+            fi
+        fi
+    done
+fi
+
+if check_file_for_b "$ETC_CRONTAB" "$ETC_CRONTAB"; then
+    FOUND_FILE_B=1
+    if [ -z "$FILE_B_NAME" ]; then
+        target=$(grep -Ev '^[[:space:]]*#' "$ETC_CRONTAB" 2>/dev/null | grep -E '(^|[[:space:]])-b[[:space:]]+[^[:space:]]+' | head -n 1 | extract_b_from_line)
+        FILE_B_NAME=$(match_backend_by_target "$target")
+    fi
+fi
+
+if [ -d "$CRON_D_DIR" ]; then
+    for file in "$CRON_D_DIR"/*; do
+        [ -f "$file" ] || continue
+        if check_file_for_b "$file" "$file"; then
+            FOUND_FILE_B=1
+            if [ -z "$FILE_B_NAME" ]; then
+                target=$(grep -Ev '^[[:space:]]*#' "$file" 2>/dev/null | grep -E '(^|[[:space:]])-b[[:space:]]+[^[:space:]]+' | head -n 1 | extract_b_from_line)
+                FILE_B_NAME=$(match_backend_by_target "$target")
+            fi
+        fi
+    done
+fi
+
+if [ "$FOUND_FILE_B" -eq 0 ]; then
+    echo "No launcher or config files were found using -b."
+fi
+
+# Problem detection and fix offers
+PROBLEM_DETECTED=0
+
+# Case 1:
+# Running on CSI with nothing set to change it
+if [ "$BINARY_HAS_CSI" -eq 1 ] && [ "$FOUND_B_SWITCH" -eq 0 ] && [ "$FOUND_FILE_B" -eq 0 ] && { [ "$HOSTS_HAS_OVERRIDE" -eq 0 ] || [ "$HOSTS_IS_CSI" -eq 1 ]; }; then
+    PROBLEM_DETECTED=1
+    prompt_and_fix "Problem detected: HamClock is connected to the original server which stops working in June 2026."
+fi
+
+# Case 2:
+# Only switched by hosts
+if [ "$PROBLEM_DETECTED" -eq 0 ] && [ "$BINARY_HAS_CSI" -eq 1 ] && [ "$FOUND_B_SWITCH" -eq 0 ] && [ "$FOUND_FILE_B" -eq 0 ] && [ "$HOSTS_HAS_OVERRIDE" -eq 1 ] && [ "$HOSTS_IS_CSI" -eq 0 ]; then
+    PROBLEM_DETECTED=1
+    prompt_and_fix "Problem detected: HamClock will not receive updates."
+fi
+
+# Determine effective backend for summary
+EFFECTIVE_BACKEND_NAME=""
+
+if [ -n "$RUNNING_B_NAME" ]; then
+    EFFECTIVE_BACKEND_NAME="$RUNNING_B_NAME"
+elif [ -n "$FILE_B_NAME" ]; then
+    EFFECTIVE_BACKEND_NAME="$FILE_B_NAME"
+elif [ "$HOSTS_HAS_OVERRIDE" -eq 1 ] && [ -n "$HOSTS_MATCHED_NAME" ]; then
+    EFFECTIVE_BACKEND_NAME="$HOSTS_MATCHED_NAME"
+elif [ -n "$BINARY_MATCHED_NAME" ]; then
+    EFFECTIVE_BACKEND_NAME="$BINARY_MATCHED_NAME"
+fi
+
+EFFECTIVE_UPDATES="unknown"
+if [ -n "$EFFECTIVE_BACKEND_NAME" ]; then
+    EFFECTIVE_UPDATES=$(backend_updates_by_name "$EFFECTIVE_BACKEND_NAME")
+fi
+
+# Final summary
+if [ "$PROBLEM_DETECTED" -eq 0 ] && [ "$EFFECTIVE_UPDATES" = "yes" ]; then
+    echo
+    printf '\033[1mYour HamClock is configured correctly, no action needed\033[0m\n'
+fi
+
+if [ "$PROBLEM_DETECTED" -eq 0 ] && [ "$EFFECTIVE_UPDATES" = "no" ]; then
+    prompt_and_fix "Your HamClock is configured correctly but won't receive updates, would you like to fix that by switching server?"
+fi
+
+exit 0

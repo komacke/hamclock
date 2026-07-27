@@ -296,16 +296,9 @@ static void updateMenu (MenuInfo &menu, SBox *pick_boxes, int pick_i, bool kb_fo
         break;
 
     case MENU_AL1OFN:
-        // turn on unconditionally, but turn off only if not the last one
-        if (!mi.set) {
-            mi.set = true;
-            menuDrawItem (mi, pb, false, kb_focus);
-        } else {
-            if (menuCountItemsSet (menu, pick_i) > 1) {
-                mi.set = false;
-                menuDrawItem (mi, pb, false, kb_focus);
-            }
-        }
+        // allow toggle, but Ok is disabled if none are set
+        mi.set = !mi.set;
+        menuDrawItem (mi, pb, false, kb_focus);
         break;
 
     case MENU_0OFN:     // fallthru
@@ -556,6 +549,33 @@ static int tapNavigation (MenuInfo &menu, SBox *pick_boxes, int m_index, const S
     return (m_index);
 }
 
+/* return whether the menu is in a valid state to be closed with Ok.
+ * Currently this means all groups that include at least one MENU_AL1OFN have at least one item set.
+ */
+static bool menuStateOk (MenuInfo &menu)
+{
+    // check each group that contains at least one MENU_AL1OFN
+    for (int i = 0; i < menu.n_items; i++) {
+        if (menu.items[i].type == MENU_AL1OFN) {
+
+            // only mandatory if parent item is set, if any
+            int parent_i = -1;
+            for (int j = i - 1; j >= 0; j--) {
+                if (MENU_ACTIVE(menu.items[j].type) && menu.items[j].indent < menu.items[i].indent) {
+                    parent_i = j;
+                    break;
+                }
+            }
+            if (parent_i >= 0 && !menu.items[parent_i].set)
+                continue;
+
+            if (menuCountItemsSet (menu, i) == 0)
+                return (false);
+        }
+    }
+    return (true);
+}
+
 /* operate the given menu until ok, cancel or timeout.
  * caller passes a box we use for ok so they can use it later with menuRedrawOk if needed.
  * return true if op clicked ok or CR/NL else false for all other cases.
@@ -704,6 +724,9 @@ bool runMenu (MenuInfo &menu)
     if (boxesOverlap (menu.menu_b, map_b))
         tft.drawPR();
 
+    // initial Ok button state
+    menuRedrawOk (menu.ok_b, menuStateOk(menu) ? MENU_OK_OK : MENU_OK_DISABLE);
+
     // set kb focus to first member of first active group, if any
     int focus_idx = -1;
     for (int i = 0; i < menu.n_items; i++) {
@@ -732,6 +755,9 @@ bool runMenu (MenuInfo &menu)
 
         // OK if check for Enter or tap in ok
         if (ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL || inBox (ui.tap, menu.ok_b)) {
+
+            if (!menuStateOk (menu))
+                continue;
 
             // done unless a text field reports an error
             ok = true;
@@ -772,6 +798,9 @@ bool runMenu (MenuInfo &menu)
                     focus_idx = kbNavigation (menu, pick_boxes, focus_idx, ui.kb_char);
             } else
                 focus_idx = tapNavigation (menu, pick_boxes, focus_idx, ui.tap);
+
+            // refresh Ok button state
+            menuRedrawOk (menu.ok_b, menuStateOk(menu) ? MENU_OK_OK : MENU_OK_DISABLE);
         }
     }
 
@@ -781,6 +810,11 @@ bool runMenu (MenuInfo &menu)
     // restore contents
     if (!tft.setBackingStore (backing_store, menu.menu_b.x, menu.menu_b.y, menu.menu_b.w, menu.menu_b.h))
         fatalError ("mem pixel restore failed %d x %d", menu.menu_b.w, menu.menu_b.h);
+
+    // If the menu was over the map, publish the restored pixels immediately.
+    // On lazy redraw paths, otherwise the browser can still be looking at a dead menu.
+    if (boxesOverlap (menu.menu_b, map_b))
+        tft.drawPR();
 
     // record settings
     Serial.printf ("Menu result after %s:\n", ok ? "Ok" : "Cancel");
@@ -835,6 +869,11 @@ void menuRedrawOk (SBox &ok_b, MenuOkState oks)
         tft.setTextColor (MENU_BGC);
         fillSBox (ok_b, MENU_ERRC);
         drawSBox (ok_b, MENU_FGC);
+        break;
+    case MENU_OK_DISABLE:
+        tft.setTextColor (GRAY);
+        fillSBox (ok_b, MENU_BGC);
+        drawSBox (ok_b, GRAY);
         break;
     }
 

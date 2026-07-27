@@ -157,9 +157,12 @@ static bool drawIB_City (LatLong &ll, SCoord &ms, const SBox &info_b, uint16_t &
                 ll = city_ll;
                 ms = city_ms;
                 names_w = max_cl * 6;           // * font width
+                uint16_t names_x = map_b.x + (map_b.w-names_w)/2;
                 // dot
                 tft.fillCircle (city_ms.x, city_ms.y, CDOT_R, RA8875_RED);
-                // name, assuming background is already erased
+                // name background
+                tft.fillRect (names_x, names_y, names_w, 14, RA8875_BLACK);
+                // name
                 uint16_t c_w = getTextWidth (city);
                 tft.setCursor (map_b.x + (map_b.w-c_w)/2, names_y + 3);
                 tft.print(city);
@@ -415,6 +418,104 @@ static void drawIB_DX (const SBox &minfo_b, const DXSpot &dx_s, const LatLong &d
     drawSBox (minfo_b, getBandColor(dx_s.kHz));
 }
 
+/* draw info for an Active Net, centered on its Net Control Station.
+ */
+static void drawIB_Net (const SBox &minfo_b, const ActiveNetInfo &ni)
+{
+    char buf[IB_MAXCHARS+1];
+    uint16_t tx = minfo_b.x;
+    uint16_t ty = minfo_b.y + 2;
+    uint16_t tw;
+    tft.setTextColor (RA8875_WHITE);
+
+    // NCS callsign on the first row
+    snprintf (buf, sizeof(buf), "%.*s", IB_MAXCHARS, ni.ncs[0] ? ni.ncs : "(net)");
+    tw = getTextWidth (buf);
+    tft.setCursor (tx + (view_btn_b.w-tw)/2, ty);
+    tft.printf (buf);
+
+    // "NCS" tag directly under the callsign
+    static const char ncs_tag[] = "NCS";
+    tw = getTextWidth (ncs_tag);
+    tft.setCursor (tx + (view_btn_b.w-tw)/2, ty += IB_LINEDY);
+    tft.printf (ncs_tag);
+
+    // grid under that, if known
+    if (ni.grid[0]) {
+        snprintf (buf, sizeof(buf), "%.4s", ni.grid);
+        tw = getTextWidth (buf);
+        tft.setCursor (tx + (view_btn_b.w-tw)/2, ty += IB_LINEDY);
+        tft.printf (buf);
+    } else
+        ty += IB_LINEDY;
+
+    // mode if known
+    if (!drawIB_Mode (ni.mode, tx+IB_INDENT, IB_LINEDY, ty))
+        ty += IB_LINEDY;
+
+    // frequency
+    drawIB_Freq ((long)(ni.kHz*1000), tx+IB_INDENT, IB_LINEDY, ty);
+
+    // check-in count
+    if (ni.chk[0]) {
+        tft.setCursor (tx+IB_INDENT, ty += IB_LINEDY);
+        tft.printf ("Ck %6.6s", ni.chk);
+    }
+
+    // local time, distance/bearing and weather at the NCS
+    drawIB_LMT (ni.ll, tx+IB_INDENT, IB_LINEDY, ty);
+    drawIB_DB  (ni.ll, tx+IB_INDENT, IB_LINEDY, ty);
+    drawIB_WX  (ni.ll, tx+IB_INDENT, IB_LINEDY, minfo_b.y+minfo_b.h-IB_LINEDY, ty);
+
+    // border in band color
+    drawSBox (minfo_b, getBandColor (ni.kHz));
+}
+
+/* draw info for a Meshtastic node, same layout convention as drawIB_Net()
+ */
+static void drawIB_Mesh (const SBox &minfo_b, const MeshInfo &mi)
+{
+    char buf[IB_MAXCHARS+1];
+    uint16_t tx = minfo_b.x;
+    uint16_t ty = minfo_b.y + 2;
+    uint16_t tw;
+    tft.setTextColor (RA8875_WHITE);
+
+    // short name on the first row
+    snprintf (buf, sizeof(buf), "%.*s", IB_MAXCHARS, mi.short_name[0] ? mi.short_name : "(node)");
+    tw = getTextWidth (buf);
+    tft.setCursor (tx + (view_btn_b.w-tw)/2, ty);
+    tft.printf (buf);
+
+    // "MESH" tag directly under the name
+    static const char mesh_tag[] = "MESH";
+    tw = getTextWidth (mesh_tag);
+    tft.setCursor (tx + (view_btn_b.w-tw)/2, ty += IB_LINEDY);
+    tft.printf (mesh_tag);
+
+    // battery
+    ty += IB_LINEDY;
+    tft.setCursor (tx+IB_INDENT, ty);
+    if (mi.battery_level < 0)
+        tft.printf ("Batt ?");
+    else if (mi.battery_level >= 101)
+        tft.printf ("PWR %.2fV", mi.voltage);
+    else
+        tft.printf ("Batt %d%%", mi.battery_level);
+
+    // link count
+    tft.setCursor (tx+IB_INDENT, ty += IB_LINEDY);
+    tft.printf ("%d link%s", mi.n_links, mi.n_links == 1 ? "" : "s");
+
+    // local time, distance/bearing and weather at the node
+    drawIB_LMT (mi.ll, tx+IB_INDENT, IB_LINEDY, ty);
+    drawIB_DB  (mi.ll, tx+IB_INDENT, IB_LINEDY, ty);
+    drawIB_WX  (mi.ll, tx+IB_INDENT, IB_LINEDY, minfo_b.y+minfo_b.h-IB_LINEDY, ty);
+
+    // border -- not a ham band, use the pane's own accent color
+    drawSBox (minfo_b, RGB565(180,140,255));
+}
+
 /* draw info box for an arbitrary cursor location, not a spot
  */
 static void drawIB_Loc (const SBox &minfo_b, const LatLong &ll, const SCoord &ms)
@@ -515,11 +616,39 @@ void drawInfoBox()
                                     || getOnTheAirPaneSpot (ms, &dx_s, &dxc_ll)
                                     || getADIFPaneSpot (ms, &dx_s, &dxc_ll)
                                 );
+    char storm_pane_label[40];
+    bool over_storm_pane = over_app && !over_map && !over_dxped && !over_pane
+                                && getStormPaneHover (ms, &dxc_ll, storm_pane_label, sizeof(storm_pane_label));
+    char launch_pane_label[80];
+    bool over_launch_pane = over_app && !over_map && !over_dxped && !over_pane && !over_storm_pane
+                                && getLaunchPaneHover (ms, &dxc_ll, launch_pane_label, sizeof(launch_pane_label));
+    ActiveNetInfo net_info;
+    LatLong net_ll;
+    bool over_net_map  = over_map && !over_psk && !over_dxped && !over_spot
+                                && getClosestActiveNet (ll, &net_ll, &net_info);
+
+    char hamsat_pane_label[40];
+    bool over_hamsat_pane = over_app && !over_map && !over_dxped && !over_pane
+                                && !over_storm_pane && !over_launch_pane
+                                && getHamsatPaneHover (ms, &dxc_ll, hamsat_pane_label, sizeof(hamsat_pane_label));
+
+    bool over_net_pane = over_app && !over_map && !over_dxped && !over_pane
+                                && !over_storm_pane && !over_launch_pane && !over_hamsat_pane
+                                && getActiveNetsPaneInfo (ms, &net_ll, &net_info);
+    bool over_net = over_net_map || over_net_pane;
+    MeshInfo mesh_info;
+    LatLong mesh_ll;
+    bool over_mesh_map  = over_map && !over_psk && !over_dxped && !over_spot && !over_net
+                                && getClosestMeshtasticNode (ll, &mesh_ll, &mesh_info);
+    bool over_mesh_pane = over_app && !over_map && !over_dxped && !over_pane
+                                && !over_storm_pane && !over_launch_pane && !over_net
+                                && getMeshtasticPaneInfo (ms, &mesh_ll, &mesh_info);
+    bool over_mesh = over_mesh_map || over_mesh_pane;
     bool over_sdo = over_app && !over_map && (pp = findPaneChoiceNow(PLOT_CH_SDO)) != PANE_NONE
                         && inBox (ms, plot_b[pp]);
     bool over_moon = over_app && !over_map && (pp = findPaneChoiceNow(PLOT_CH_MOON)) != PANE_NONE
                         && inBox (ms, plot_b[pp]);
-    bool draw_info = over_map || over_psk || over_spot || over_pane || over_dxped;
+    bool draw_info = over_map || over_psk || over_spot || over_pane || over_dxped || over_net || over_mesh;
 
     // erase any previous city then reset was_city as flag for next time
     if (was_city) {
@@ -551,6 +680,69 @@ void drawInfoBox()
         drawIB_MapMarker (dxc_ll, minfo_b, false);
     else if (dxp)
         drawIB_MapMarker (dxp->ll, minfo_b, true);
+    else if (over_net)
+        drawIB_MapMarker (net_ll, minfo_b, over_net_pane);   // pane-hover always rings; map-hover skips if under box
+    else if (over_mesh)
+        drawIB_MapMarker (mesh_ll, minfo_b, over_mesh_pane);
+
+    // hovering a storm name in the Storms pane: just ring it on the map and name it in the bar,
+    // no info dropdown (there is no map location under the cursor to describe)
+    if (over_storm_pane) {
+        drawIB_MapMarker (dxc_ll, minfo_b, true);
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        names_w = getTextWidth (storm_pane_label);
+        tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+        tft.print (storm_pane_label);
+        was_city = true;
+    }
+
+    // hovering a launch listing in the Launches pane: ring the launch site on the
+    // map and name it in the bar, same idea as the Storms pane above
+    if (over_launch_pane) {
+        drawIB_MapMarker (dxc_ll, minfo_b, true);
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        names_w = getTextWidth (launch_pane_label);
+        tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+        tft.print (launch_pane_label);
+        was_city = true;
+    }
+
+    // hovering an alert row in the Sat Alerts pane: ring the station's grid location on the
+    // map and name it in the bar, same idea as Storms/Launches above
+    if (over_hamsat_pane) {
+        drawIB_MapMarker (dxc_ll, minfo_b, true);
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        names_w = getTextWidth (hamsat_pane_label);
+        tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+        tft.print (hamsat_pane_label);
+        was_city = true;
+    }
+
+    // hovering a net (its dot on the map or its row in the pane): show the FULL net
+    // name in the bar -- the pane truncates it. Ring (above) and detail popup (below)
+    // still draw too.
+    if (over_net) {
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        names_w = getTextWidth (net_info.name);
+        tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+        tft.print (net_info.name);
+        was_city = true;
+    }
+
+    // hovering a mesh node (its dot on the map or its row in the pane): show its long name
+    // in the bar -- the pane truncates it. Ring (above) and detail popup (below) still draw too.
+    if (over_mesh) {
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        names_w = getTextWidth (mesh_info.name);
+        tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+        tft.print (mesh_info.name);
+        was_city = true;
+    }
 
     // that's all folks if no menu
     if (!draw_info)
@@ -572,13 +764,37 @@ void drawInfoBox()
     else if (dxp)
         drawIB_DXPed (minfo_b, dxp, ms);
 
+    else if (over_net)
+        drawIB_Net (minfo_b, net_info);
+
+    else if (over_mesh)
+        drawIB_Mesh (minfo_b, mesh_info);
+
     else if (over_spot || over_pane)
         drawIB_DX (minfo_b, dx_s, dxc_ll);
 
     else if (over_map) {
 
-        // move ll to city and draw if interested
-        was_city = drawIB_City (ll, ms, minfo_b, names_w, names_y);
+        // storm hover wins over city name when cursor is close to a current storm position
+        const char *storm_label = getStormHoverLabel (ll);
+        const char *launch_label = storm_label ? NULL : getLaunchHoverLabel (ll);
+        if (storm_label) {
+            tft.fillCircle (ms.x, ms.y, CDOT_R, RA8875_RED);
+            names_w = getTextWidth (storm_label);
+            tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+            tft.print (storm_label);
+            was_city = true;
+        } else if (launch_label) {
+            // cursor is over a launch-site marker: name it in the bar
+            tft.fillCircle (ms.x, ms.y, CDOT_R, RA8875_RED);
+            names_w = getTextWidth (launch_label);
+            tft.setCursor (map_b.x + (map_b.w - names_w)/2, names_y + 3);
+            tft.print (launch_label);
+            was_city = true;
+        } else {
+            // move ll to city and draw if interested
+            was_city = drawIB_City (ll, ms, minfo_b, names_w, names_y);
+        }
 
         drawIB_Loc (minfo_b, ll, ms);
     }

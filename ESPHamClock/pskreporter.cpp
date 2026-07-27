@@ -27,6 +27,16 @@ static int n_malloced;                          // total n malloced in reports[]
 static int spot_maxrpt[HAMBAND_N];              // indices into reports[] for the farthest spot per band
 static PSKBandStats bstats[HAMBAND_N];          // band stats
 
+// PSK fetch scheduling with per-endpoint failure backoff. This is deliberately
+// independent of the generic nextWiFiRetry() so that a slow or unresponsive PSK
+// endpoint backs off exponentially instead of being retried every ~15 s forever.
+#define PSK_TIMEOUT_MS  15000                   // socket timeout for the PSK endpoint, ms
+#define PSK_RETRY_BASE  30                      // initial retry backoff after a failure, secs
+#define PSK_RETRY_MAX   (20*60)                 // cap on the backoff, secs
+#define PSK_RETRY_MULT  2                       // backoff multiplier per consecutive failure
+static time_t psk_next_fetch;                   // wall time when the next network fetch is allowed
+static time_t psk_backoff;                      // current failure backoff, secs (0 when healthy)
+
 // layout
 #define SUBHEAD_DYUP 15                         // distance up from bottom to subheading
 #define TBLHGAP (PLOTBOX123_W/20)               // table horizontal gap
@@ -225,6 +235,7 @@ static bool retrievePSK (void)
 {
     // get fresh
     WiFiClient psk_client;
+    psk_client.setTimeout (PSK_TIMEOUT_MS);             // bound the wait for a slow endpoint
     bool ok = false;
 
     // query type
@@ -268,8 +279,9 @@ static bool retrievePSK (void)
             goto out;
         }
 
-        // consider io ok
-        ok = true;
+        // N.B. ok is set only after we confirm the whole body arrived; see below.
+        // A malformed line below still goes to out with ok == false (a failure),
+        // which lets the backoff engage instead of caching a bad/partial response.
 
         // reset lists
         n_reports = 0;
@@ -288,9 +300,22 @@ static bool retrievePSK (void)
             DXSpot new_sp = {};
             long posting_temp;
             long Hz_temp;
-            if (sscanf (line, "%ld,%6[^,],%11[^,],%6[^,],%11[^,],%7[^,],%ld,%f", &posting_temp,
-                            new_sp.tx_grid, new_sp.tx_call, new_sp.rx_grid, new_sp.rx_call,
-                            new_sp.mode, &Hz_temp, &new_sp.snr) != 8) {
+            char txcall_temp[64], rxcall_temp[64]; // Large enough to hold long calls prior to trim
+            int count = sscanf(line, "%ld,%6[^,],%63[^,],%6[^,],%63[^,],%7[^,],%ld,%f",
+                            &posting_temp,
+                            new_sp.tx_grid,
+                            txcall_temp,
+                            new_sp.rx_grid,
+                            rxcall_temp,
+                            new_sp.mode,
+                            &Hz_temp,
+                            &new_sp.snr);
+            if (count == 8) {
+                strncpy(new_sp.tx_call, txcall_temp, 10);
+                new_sp.tx_call[10] = '\0';
+                strncpy(new_sp.rx_call, rxcall_temp, 10);
+                new_sp.rx_call[10] = '\0';
+            } else {
                 Serial.printf ("PSK: %s\n", line);
                 goto out;
             }
@@ -374,6 +399,15 @@ static bool retrievePSK (void)
             n_reports++;
         }
 
+        // We asked for "Connection: close", so a complete response ends with the
+        // server closing the socket (connected() now false). If it is still open
+        // the read loop above ended on a timeout -- the endpoint didn't respond in
+        // time -- so treat that as a failure rather than caching a partial result.
+        // N.B. an empty-but-complete response (0 reports) still counts as success.
+        ok = !psk_client.connected();
+        if (!ok)
+            Serial.print ("PSK: response stalled, endpoint too slow\n");
+
     } else
         Serial.print ("PSK: Spots connection failed\n");
 
@@ -399,36 +433,86 @@ out:
     return (ok);
 }
 
+/* call after a successful fetch: clear any backoff and resume the normal cadence.
+ */
+static void resetPSKRetry (void)
+{
+    if (psk_backoff)
+        Serial.printf ("PSK: recovered, backoff cleared\n");
+    psk_backoff = 0;
+    psk_next_fetch = myNow() + PSK_INTERVAL;
+}
+
+/* call after a failed fetch: schedule the next attempt using exponential backoff
+ * with +/-25% jitter so a fleet of clients doesn't resynchronize on the backend.
+ */
+static void schedulePSKRetry (void)
+{
+    if (psk_backoff < PSK_RETRY_BASE)
+        psk_backoff = PSK_RETRY_BASE;
+
+    long jitter = psk_backoff / 4;
+    long delay  = psk_backoff + (random(2*jitter + 1) - jitter);
+    if (delay < PSK_RETRY_BASE)
+        delay = PSK_RETRY_BASE;
+    psk_next_fetch = myNow() + delay;
+
+    Serial.printf ("PSK: fetch failed, backing off %ld s (cur %ld, max %d)\n",
+                        delay, (long)psk_backoff, PSK_RETRY_MAX);
+
+    psk_backoff *= PSK_RETRY_MULT;
+    if (psk_backoff > PSK_RETRY_MAX)
+        psk_backoff = PSK_RETRY_MAX;
+}
+
 /* query PSK reporter etc for new reports, draw results and return whether all ok
  */
 bool updatePSKReporter (const SBox &box, bool force)
 {
-    // save last retrieval settings to know whether reports[] can be reused
-    static time_t next_update;                          // don't update faster than PSK_INTERVAL
+    // settings used for the reports[] we currently hold
     static uint8_t my_psk_mask;                         // setting used for reports[]
     static uint32_t my_psk_bands;                       // setting used for reports[]
     static uint16_t my_psk_maxage_mins;                 // setting used for reports[]
-    static bool last_ok;                                // used to force retry
+    static bool last_ok;                                // result of last real fetch
 
-    // just use cache if settings all match and not too old
-    if (!force && last_ok && reports && n_malloced > 0 && myNow() < next_update
-                            && my_psk_mask == psk_mask && my_psk_maxage_mins == psk_maxage_mins
-                            && my_psk_bands == psk_bands) {
-        drawPSKPane (box);
-        return (true);
+    // A change of query settings invalidates our cached reports[] and means the
+    // user is actively asking for new data, so fetch now and cancel any backoff.
+    // N.B. keyed on settings, NOT on force: force can stay set across failures, so
+    // resetting on force would let it defeat the backoff and hammer the backend.
+    if (my_psk_mask != psk_mask || my_psk_maxage_mins != psk_maxage_mins
+                                || my_psk_bands != psk_bands) {
+        my_psk_mask = psk_mask;
+        my_psk_maxage_mins = psk_maxage_mins;
+        my_psk_bands = psk_bands;
+        psk_backoff = 0;                                // healthy again
+        psk_next_fetch = 0;                             // allow a fetch right now
     }
 
-    // save settings
-    my_psk_mask = psk_mask;
-    my_psk_maxage_mins = psk_maxage_mins;
-    my_psk_bands = psk_bands;
-    next_update = myNow() + PSK_INTERVAL;;
+    // Decide whether to fetch now. An active failure backoff (psk_backoff > 0) is
+    // ALWAYS honored so a slow or down endpoint can't be hammered -- in particular
+    // force does not override it, since force can stay set across the dispatcher's
+    // ~15 s retries. When healthy we still honor the normal PSK_INTERVAL unless the
+    // caller forced a refresh (e.g. the pane was just selected). Otherwise just
+    // redraw what we have and report the last real result.
+    if (myNow() < psk_next_fetch && (psk_backoff > 0 || !force)) {
+        drawPSKPane (box);
+        return (last_ok);
+    }
 
-    // get fresh
+    // time to fetch fresh
     last_ok = retrievePSK();
+
+    // reschedule: normal cadence on success, exponential backoff on failure
+    if (last_ok)
+        resetPSKRetry();
+    else
+        schedulePSKRetry();
 
     // display whatever we got regardless
     drawPSKPane (box);
+
+    if (last_ok && findPaneForChoice(PLOT_CH_PSK) != PANE_NONE)
+        scheduleMapRedraw();
 
     // reply
     return (last_ok);

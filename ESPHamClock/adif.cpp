@@ -85,6 +85,7 @@ static bool showing_set_adif;                           // set when not checking
 static bool newfile_pending;                            // set when find new file while scrolled away
 static FileSignature fsig;                              // used to decide whether to read file again
 static int n_adif_bad;                                  // n bad spots found, global to maintain context
+static uint32_t adif_generation;                        // increment whenever adif_spots is reloaded
 
 
 /* save sort and file name
@@ -391,6 +392,7 @@ void loadADIFFile (GenReader &gr, int &n_good, int &n_bad)
 
     // note new source type ready
     showing_set_adif = gr.isClient();
+    adif_generation++;
     
     // final message
     mapMsg (1000, "Loaded ADIF file");
@@ -412,7 +414,10 @@ void updateADIF (const SBox &box, bool refresh)
     }
 
     // check for changed file
+    uint32_t prev_generation = adif_generation;
     freshenADIFFile();
+    if (adif_generation != prev_generation && findPaneForChoice(PLOT_CH_ADIF) != PANE_NONE)
+        scheduleMapRedraw();
 
     // update symbol and hold
     adif_ss.drawNewSpotsSymbol (newfile_pending, false);

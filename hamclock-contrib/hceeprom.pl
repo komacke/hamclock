@@ -1,6 +1,8 @@
 #!/usr/bin/perl
 # read or edit HamClock's eeprom file IN PLACE
-# version 1.33
+# version 2.01 
+# revision log:
+#   2026: updated to handle optional nvram .h files
 
 use strict;
 use warnings;
@@ -14,8 +16,12 @@ my $INDENT = "                                          ";
 # default locations
 my $eefile = "$ENV{HOME}/.hamclock/eeprom";
 my $srcdir = "$ENV{PWD}";
+my $hhfile1 = "nvramlen.h";
+my $hhfile2 = "nvramenum.h";
 my $hhfile = "HamClock.h";
+
 my $nvfile = "nvram.cpp";
+my $nvh    = "nvramsize.h";
 
 # crack args
 my ($verbose, $byname, $byaddr, $palA, $palB, $help, $nvname, $nvvalu, $deptoo);
@@ -44,7 +50,7 @@ while (<$EE>) {
     my ($addr, $value) = (hex($1), hex($2));
     # just use first occurance because of old bug
     $eeprom[$addr] = $value unless exists $eeprom[$addr];
-    # printf STDERR "%X %X\n", $addr, $eeprom[$addr];
+    #printf STDERR "%X %X\n", $addr, $eeprom[$addr];
 }
 close $EE;
 
@@ -52,38 +58,57 @@ close $EE;
 if ($palA) { &showPalette(0xF92); exit 0; }
 if ($palB) { &showPalette(0xFC9); exit 0; }
 
-# read HamClock.h
-my %hhdefs;                     # misc #define values in case NV*LEN uses one
-my %hhlen;                      # length given symbolic *_LEN name
-my %hhdesc;                     # description from comments in enum NV_Name
-open my $HH, "<", "$srcdir/$hhfile" or die "$srcdir/$hhfile: $!\n";
-while (<$HH>) {
-    chomp();
-    if (/^#define\s+(\S+)\s+(\d+)/) {
-        # capture all numeric #defines
-        my ($nam, $val) = ($1, $2);
-        $hhdefs{$nam} = $val;
-        # printf STDERR "DEF  %s %s\n", $nam, $val;
+
+
+
+sub parse_hhfile {
+    my ($filepath, $hhdefs, $hhlen, $hhdesc) = @_;
+
+    open my $HH, "<", $filepath or do {
+        warn "Skipping $filepath: $!\n";
+        return;
+    };
+
+    while (<$HH>) {
+        chomp();
+        if (/^#define\s+(\S+)\s+(\d+)/) {
+            # capture all numeric #defines
+            my ($nam, $val) = ($1, $2);
+            $hhdefs->{$nam} = $val;
+        }
+        if (/^#define\s+(NV_\S+)\s+(\S+)/) {
+            # capture all NV_ #defines, use $hhdefs if value is another define
+            my ($nam, $val) = ($1, $2);
+            $val = $hhdefs->{$val} if defined($hhdefs->{$val});  # indirection
+            $hhlen->{$nam} = $val;
+        }
+        if (/^\s*(NV_[^,]+),\s*\/\/\s*(.*)/) {
+            # capture NV descriptions
+            my ($nam, $desc) = ($1, $2);
+            $hhdesc->{$nam} = $desc;
+        }
     }
-    if (/^#define\s+(NV_\S+)\s+(\S+)/) {
-        # capture all NV_ #defines, use $hhdefs if value is another define
-        my ($nam, $val) = ($1, $2);
-        $val = $hhdefs{$val} if (defined($hhdefs{$val}));  # indirection
-        $hhlen{$nam} = $val;
-        # printf STDERR "NV  %s %s\n", $nam, $hhlen{$nam};
-    }
-    if (/^\s*(NV_[^,]+),\s*\/\/\s*(.*)/) {
-        # capture NV descriptions
-        my ($nam, $desc) = ($1, $2);
-        $hhdesc{$nam} = $desc;
-        # printf STDERR "DES %s %s\n", $nam, $hhdesc{$nam};
-    }
+    close $HH;
 }
-close $HH;
+
+# call for each file, skipping missing ones
+my %hhdefs;
+my %hhlen;
+my %hhdesc;
+
+my @hhfiles = ($hhfile1, $hhfile2, $hhfile);  # hamclock.h files
+for my $file (@hhfiles) {
+    parse_hhfile("$srcdir/$file", \%hhdefs, \%hhlen, \%hhdesc);
+}
 
 # read nvram.cpp into hash %addr of address of first byte and hash %size of n bytes given name
 my %addr;                       # first EEPROM address given name
 my %size;                       # n bytes given name
+#
+# Old versions have one file nvram.cpp with all the information
+# new versions have 
+
+# open up nvram.cpp to get value of $NV_BASE
 open my $NV, "<", "$srcdir/$nvfile" or die "$srcdir/$nvfile: $!\n";
 my $offset = 1;                 # start with cookie
 my $NV_BASE;
@@ -91,6 +116,33 @@ while (<$NV>) {
     chomp();
     $NV_BASE = int($1) if (/^#define\s+NV_BASE\s+(\d+)/);
     next unless (defined($NV_BASE));
+    last
+}
+close $NV;
+
+
+#
+# size initializers are moved to nvramsize header - process them if present
+if (open my $NV, "<", "$srcdir/$nvh") {
+    while (<$NV>) {
+        chomp();
+        next unless (/^\s+([^,]+),\s+\/\/ (NV_\S+)/);
+        my ($nbytes, $nam) = ($hhlen{$1} // $1, $2);
+        $addr{$nam} = $offset + $NV_BASE;
+        $size{$nam} = $nbytes;
+        $offset += 1 + $nbytes;     # cookie and length
+        # printf STDERR "%s %x\n", $nam, $addr{$nam};
+    }
+    close $NV;
+}
+
+# read size initializers - skipping past anylines before NV_BASE for compatibility 
+my $NV_BASE_TOSS;
+open $NV, "<", "$srcdir/$nvfile" or die "$srcdir/$nvfile: $!\n";
+while (<$NV>) {
+    chomp();
+    $NV_BASE_TOSS = int($1) if (/^#define\s+NV_BASE\s+(\d+)/);
+    next unless (defined($NV_BASE_TOSS));
     next unless (/^\s+([^,]+),\s+\/\/ (NV_\S+)/);
     my ($nbytes, $nam) = ($hhlen{$1} // $1, $2);
     $addr{$nam} = $offset + $NV_BASE;
@@ -99,6 +151,7 @@ while (<$NV>) {
     # printf STDERR "%s %x\n", $nam, $addr{$nam};
 }
 close $NV;
+
 
 # read all .cpp to get type from NVRead/Write
 my %type;                       # hash of type given name
@@ -255,6 +308,7 @@ sub NVprint
     my $nam = shift;
     my $typ = &getType ($nam);
 
+    #print " > $indent $nam $typ <";
     # find starting addr and size
     my $addr = $addr{$nam};
     $addr or die "$nam not defined\n";

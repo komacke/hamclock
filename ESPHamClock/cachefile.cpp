@@ -56,7 +56,7 @@ static bool fileAgeOk (const char *path, int max_age)
 /* open the given local file or download fresh if too old or too small.
  * if download fails retain fn as long as it's large enough, tolerating too old.
  */
-FILE *openCachedFile (const char *fn, const char *url, int max_age, int min_size)
+FILE *openCachedFile (const char *fn, const char *url, int max_age, int min_size, int to_ms)
 {
     // try local first
     char fn_path[1000];
@@ -77,6 +77,8 @@ FILE *openCachedFile (const char *fn, const char *url, int max_age, int min_size
 
     // download
     WiFiClient cache_client;
+    if (to_ms > 0)
+        cache_client.setTimeout(to_ms);
     Serial.println (url);
     if (cache_client.connect(backend_host, backend_port)) {
 

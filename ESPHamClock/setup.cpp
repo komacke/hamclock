@@ -48,10 +48,13 @@ static bool good_wpa;
 static char wifi_ssid[NV_WIFI_SSID_LEN];
 static char wifi_pw[NV_WIFI_PW_LEN];
 static char dx_login[NV_DXLOGIN_LEN];
+static char hamsat_key[NV_HAMSATKEY_LEN];
+static char mesh_watchlist[NV_MESHWATCHLIST_LEN];    // comma-separated Meshtastic node IDs
 static char dx_host[NV_DXHOST_LEN];
 static char rot_host[NV_ROTHOST_LEN];
 static char rig_host[NV_RIGHOST_LEN];
 static char flrig_host[NV_FLRIGHOST_LEN];
+static char piaware_host[NV_PIAWAREHOST_LEN];  // optional PiAware ADS-B receiver host/IP; blank == unused
 static char gpsd_host[NV_GPSDHOST_LEN];
 static char nmea_file[NV_NMEAFILE_LEN];
 static char ntp_host[NV_NTPHOST_LEN];
@@ -379,12 +382,15 @@ typedef enum {
     RIGHOST_SPR,
     FLRIGPORT_SPR,
     FLRIGHOST_SPR,
+    PIAWAREHOST_SPR,
     ADIFFN_SPR,
     ADIFWL_SPR,
     ONTAWL_SPR,
 
     // page "4"
+    HAMSATKEY_SPR,
     CENTERLNG_SPR,
+    MESHWATCH_SPR,
     I2CFN_SPR,
     BME76DT_SPR,
     BME76DP_SPR,
@@ -476,6 +482,10 @@ static StringPrompt string_pr[N_SPR] = {
     {2, {310, R2Y(2), 60, PR_H}, {360, R2Y(2), 300, PR_H}, "host:", flrig_host, NV_FLRIGHOST_LEN, 0, 0,
                 "Enter the IP address or DNS host name for connecting to flrig"},
 
+    {2, {310, R2Y(3), 130, PR_H}, {452, R2Y(3), 208, PR_H}, "PiAware host:", piaware_host, NV_PIAWAREHOST_LEN, 0, 0,
+                "Enter the IP address or DNS host name of a local PiAware ADS-B receiver to use for the "
+                "ADS-B airplane icon instead of adsb.lol; leave blank to use adsb.lol"},
+
     {2, {100, R2Y(4), 60, PR_H}, {160, R2Y(4), 580, PR_H}, "file:", adif_fn, NV_ADIFFN_LEN, 0, 0,
                 "Enter the path name to the ADIF file; "
                 "you may use environment variables or ~ to refer to your home directory"},
@@ -488,9 +498,17 @@ static StringPrompt string_pr[N_SPR] = {
 
     // "page 4" -- index 3
 
-    {3, {10,  R2Y(0), 240, PR_H}, {250, R2Y(0), 100, PR_H}, "Map center longitude:", NULL, 0, 0, 0,
+    {3, { 10, R2Y(0), 140, PR_H}, {160, R2Y(0), 490, PR_H}, "hams.at key:  ", hamsat_key, NV_HAMSATKEY_LEN, 0, 0,
+                "Enter your hams.at API key for personalized satellite activation match%/visibility, "
+                "or leave blank"},
+
+    {3, {10,  R2Y(1), 240, PR_H}, {250, R2Y(1), 100, PR_H}, "Map center longitude:", NULL, 0, 0, 0,
                 "Enter the desired center longitude for the Mercator map projection in decimal degrees; "
                 "use - or suffix W for west"},
+
+    {3, {400, R2Y(1), 130, PR_H}, {530, R2Y(1), 280, PR_H}, "Mesh watch:", mesh_watchlist, NV_MESHWATCHLIST_LEN, 0, 0,
+                "Enter comma-separated Meshtastic node IDs (decimal) to draw neighbour links for on the "
+                "map and Mesh Net pane, or leave blank to show node positions only"},
 
     {3, {350, R2Y(2),  70, PR_H}, {440, R2Y(2), 360,PR_H},  "name:", i2c_fn, NV_I2CFN_LEN, 0, 0,
                 "Enter the full /dev name for the I2C connection"},
@@ -512,7 +530,6 @@ static StringPrompt string_pr[N_SPR] = {
                 "Enter the percentage of hardware brightness to be used for Dim"},                // shadowed
     {3, {350, R2Y(6),  90, PR_H}, {450, R2Y(6),  80, PR_H}, "Max%:", NULL, 0, 0, 0,
                 "Enter the percentage of hardware brightness to be used for Bright"},             // shadowed
-
 
 
     // "page 5" -- index 4
@@ -629,6 +646,8 @@ typedef enum {
     X11_FULLSCRN_BPR,
     MAXTLEA_BPR,
     MAXTLEB_BPR,
+
+    SHOWPLANETS_BPR,
 
     // page "6" -- color editor
 
@@ -940,6 +959,9 @@ static BoolPrompt bool_pr[N_BPR] = {
     {4, {400, R2Y(11), 190, PR_H},  {590, R2Y(11), 170, PR_H}, false, NULL,
                     maxTLEAges[2], maxTLEAges[3], MAXTLEA_BPR, 0},
                                                 // 4x entangled: FF -> TF -> FT -> TT -> ...
+
+    {4, { 10, R2Y(12), 190, PR_H}, {200, R2Y(12), 170, PR_H}, false, "Show Planets?", "No", "Yes", NOMATE,
+                    "Whether to show the 7 visible planets on the map at their current position"},
 
 
 
@@ -3737,6 +3759,12 @@ static bool validateStringPrompts (bool show_errors)
             badsids[n_badsids++] = FLRIGPORT_SPR;
     }
 
+    // PiAware host is optional -- only validate if the user entered something
+    if (strlen (string_pr[PIAWAREHOST_SPR].v_str) > 0) {
+        if (!hostOK(string_pr[PIAWAREHOST_SPR].v_str, NV_PIAWAREHOST_LEN))
+            badsids[n_badsids++] = PIAWAREHOST_SPR;
+    }
+
     // check for plausible temperature and pressure corrections and file name if used
     if (bool_pr[GPIOOK_BPR].state || bool_pr[I2CON_BPR].state) {
         char *tc_str = string_pr[BME76DT_SPR].v_str;
@@ -3984,6 +4012,19 @@ static void initDXCMD (NV_Name old_e, NV_Name new_e, int cmds_i)
  */
 static void initSetup()
 {
+    // report any active env var overrides regardless of -o flag
+    struct { const char *name; const char *val; } env_vars[] = {
+        { "HAMCLOCK_DX_HOST",        getenv("HAMCLOCK_DX_HOST")        },
+        { "HAMCLOCK_DX_PORT",        getenv("HAMCLOCK_DX_PORT")        },
+        { "HAMCLOCK_X11_FULLSCREEN", getenv("HAMCLOCK_X11_FULLSCREEN") },
+        { "HAMCLOCK_OPT_IN",         getenv("HAMCLOCK_OPT_IN")         },
+        { "HAMCLOCK_AUTO_UPDATE",    getenv("HAMCLOCK_AUTO_UPDATE")    },
+    };
+    for (unsigned i = 0; i < NARRAY(env_vars); i++) {
+        if (env_vars[i].val)
+            ::printf ("Setup: env override: %s=%s\n", env_vars[i].name, env_vars[i].val);
+    }
+
     // init wifi, accept OLD PW if valid
 
     // see if we have a known WPA format
@@ -4176,6 +4217,14 @@ static void initSetup()
         bool_pr[FLRIGUSE_BPR].state = (nv_flrig != 0);
 
 
+    // init optional PiAware ADS-B host; blank means not configured, fall back to adsb.lol
+
+    if (!NVReadString (NV_PIAWAREHOST, piaware_host)) {
+        piaware_host[0] = '\0';
+        NVWriteString (NV_PIAWAREHOST, piaware_host);
+    }
+
+
 
     // init whether to command radio
     uint8_t set_radio;
@@ -4193,13 +4242,35 @@ static void initSetup()
         memset (dx_host, 0, sizeof(dx_host));
         NVWriteString(NV_DXHOST, dx_host);
     }
+    // env var overrides NV but does not persist to NV
+    {
+        const char *env_host = getenv ("HAMCLOCK_DX_HOST");
+        if (env_host) {
+            strncpy (dx_host, env_host, sizeof(dx_host)-1);
+            dx_host[sizeof(dx_host)-1] = '\0';
+        }
+    }
     if (!NVReadString(NV_DXLOGIN, dx_login) || !clusterLoginOk()) {
         setClusterLogin();
         NVWriteString(NV_DXLOGIN, dx_login);
     }
+    if (!NVReadString(NV_HAMSATKEY, hamsat_key)) {
+        memset (hamsat_key, 0, sizeof(hamsat_key));
+        NVWriteString(NV_HAMSATKEY, hamsat_key);
+    }
+    if (!NVReadString(NV_MESHWATCHLIST, mesh_watchlist)) {
+        memset (mesh_watchlist, 0, sizeof(mesh_watchlist));
+        NVWriteString(NV_MESHWATCHLIST, mesh_watchlist);
+    }
     if (!NVReadUInt16(NV_DXPORT, &dx_port)) {
         dx_port = 0;
         NVWriteUInt16(NV_DXPORT, dx_port);
+    }
+    // env var overrides NV but does not persist to NV
+    {
+        const char *env_port = getenv ("HAMCLOCK_DX_PORT");
+        if (env_port)
+            dx_port = (uint16_t)atoi(env_port);
     }
 
     if (!NVReadString(NV_DXWLIST, dx_wlist)) {
@@ -4410,6 +4481,11 @@ static void initSetup()
             tft.X11OptionsEngageNow(getX11FullScreen());
         }
     }
+    // env var overrides NV but does not persist
+    if (getenv ("HAMCLOCK_X11_FULLSCREEN")) {
+        bool_pr[X11_FULLSCRN_BPR].state = true;
+        tft.X11OptionsEngageNow(getX11FullScreen());
+    }
 
     // init and validate daily on-off times
 
@@ -4455,6 +4531,9 @@ static void initSetup()
         logok = 0;
         NVWriteUInt8 (NV_LOGUSAGE, logok);
     }
+    // env var overrides NV but does not persist
+    if (getenv ("HAMCLOCK_OPT_IN"))
+        logok = 1;
     bool_pr[LOGUSAGE_BPR].state = (logok != 0);
 
     uint8_t units;
@@ -4536,6 +4615,13 @@ static void initSetup()
         NVWriteUInt8 (NV_SHOWPIP, show_pip);
     }
     bool_pr[SHOWPIP_BPR].state = (show_pip != 0);
+
+    uint8_t show_planets;
+    if (!NVReadUInt8 (NV_SHOWPLANETS, &show_planets)) {
+        show_planets = 0;
+        NVWriteUInt8 (NV_SHOWPLANETS, show_planets);
+    }
+    bool_pr[SHOWPLANETS_BPR].state = (show_planets != 0);
 
     uint8_t auto_map;
     if (!NVReadUInt8 (NV_AUTOMAP, &auto_map)) {
@@ -4637,6 +4723,13 @@ static void initSetup()
     if (!NVReadInt8 (NV_AUTOUPGRADE, &aup_hr)) {
         aup_hr = autoup_tbl[AUP_OFF].local_hour;
         NVWriteInt8 (NV_AUTOUPGRADE, aup_hr);
+    }
+    // env var overrides NV but does not persist — picks randomly from the
+    // three upgrade times so not all installs hit the server simultaneously
+    if (getenv ("HAMCLOCK_AUTO_UPDATE")) {
+        static const AUTOUP_ID aup_choices[] = { AUP_P1, AUP_P2, AUP_P3 };
+        AUTOUP_ID aup_choice = aup_choices[(unsigned)time(NULL) % 3];
+        aup_hr = autoup_tbl[aup_choice].local_hour;
     }
     for (int i = 0; i < AUP_N; i++) {
         if (aup_hr == autoup_tbl[i].local_hour) {
@@ -5351,6 +5444,8 @@ static void saveParams2NV()
 
     NVWriteUInt16 (NV_DXPORT, dx_port);
     NVWriteString (NV_DXLOGIN, dx_login);
+    NVWriteString (NV_HAMSATKEY, hamsat_key);
+    NVWriteString (NV_MESHWATCHLIST, mesh_watchlist);
 
     NVWriteUInt8 (NV_LOGUSAGE, bool_pr[LOGUSAGE_BPR].state);
     NVWriteUInt8 (NV_LBLSTYLE,
@@ -5375,6 +5470,7 @@ static void saveParams2NV()
     NVWriteUInt8 (NV_FLRIGUSE, bool_pr[FLRIGUSE_BPR].state);
     NVWriteString (NV_FLRIGHOST, flrig_host);
     NVWriteUInt16 (NV_FLRIGPORT, flrig_port);
+    NVWriteString (NV_PIAWAREHOST, piaware_host);
     NVWriteUInt8 (NV_SETRADIO, bool_pr[SETRADIO_BPR].state);
     NVWriteUInt8 (NV_SCROLLDIR, bool_pr[SCROLLDIR_BPR].state);
     NVWriteUInt8 (NV_NEWDXDEWX, bool_pr[NEWDXDEWX_BPR].state);
@@ -5382,6 +5478,7 @@ static void saveParams2NV()
     NVWriteUInt8 (NV_PANEROTP, getPaneRotationPeriod());
     NVWriteUInt8 (NV_MAPROTP, getMapRotationPeriod());
     NVWriteUInt8 (NV_SHOWPIP, showPIP());
+    NVWriteUInt8 (NV_SHOWPLANETS, showPlanets());
     NVWriteUInt8 (NV_AUTOMAP, autoMap());
     NVWriteUInt8 (NV_GRAYDPY, (uint8_t)getGrayDisplay());
     NVWriteUInt8 (NV_QRZID, getQRZId());
@@ -5609,6 +5706,14 @@ const char *getDXClusterHost()
 const char *getGPSDHost()
 {
     return (gpsd_host);
+}
+
+/* return pointer to static storage containing the user's PiAware ADS-B receiver host or IP,
+ * or an empty string if not configured -- caller should treat empty as "use adsb.lol instead".
+ */
+const char *getPiAwareHost()
+{
+    return (piaware_host);
 }
 
 /* return pointer to static storage containing the NMEA host
@@ -6192,6 +6297,13 @@ int getPaneRotationPeriod (void)
 bool showPIP()
 {
     return (bool_pr[SHOWPIP_BPR].state);
+}
+
+/* return whether to show planets on the map
+ */
+bool showPlanets()
+{
+    return (bool_pr[SHOWPLANETS_BPR].state);
 }
 
 /* return whether to run the automatic space weather map detection.

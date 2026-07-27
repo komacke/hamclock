@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name (e.g., v0.0.1)'
+        description: 'Tag name (e.g., v0.0.0 or v0.0b00.0)'
         required: true
         default: 'v0.0.0'
 
@@ -17,17 +17,24 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+            ref: ${{ github.ref_name }}
+            fetch-depth: 0
 
       - name: Prepare assets
         run: |
+          echo "Running on branch: ${{ github.ref_name }}"
+
           # Define asset names with the tag
           TAG="${{ github.event.inputs.tag_name }}"
+          HC_VER_PATTERN='^[0-9]+\.[0-9]+(b[0-9][0-9])?$'
 
           HC_TAG=${TAG%.*}
           HC_TAG=${HC_TAG#v}
           HC_TAG=${HC_TAG#V}
+          # test if HC_TAG is the right format
+          [[ $HC_TAG =~ $HC_VER_PATTERN ]] || exit 1
 
-          REF="${{ github.ref_name }}"
           MGR_NAME="manage-hc-docker-$TAG.sh"
 
           # create a manager with version in the name and file
@@ -38,7 +45,7 @@ jobs:
           echo "TAG=$TAG" > VERSION.txt
 
           # update version in HC source
-          sed -i 's/\(hc_version = "\)[0-9.]\+/\1'$HC_TAG'/' ESPHamClock/version.cpp
+          sed -i 's/\(hc_version = "\)[^"]\+\(".*\)/\1'$HC_TAG'\2/' ESPHamClock/version.cpp
 
           # create the tars and zips
           mkdir dist
@@ -47,7 +54,8 @@ jobs:
 
           # zip file for HamClock upgrades
           zip -r "dist/ESPHamClock-V$HC_TAG.zip" ESPHamClock -x "dist/*"
-          zip -r "dist/hamclock-contrib.zip" hamclock-contrib -x "dist/*"
+          zip -r "dist/hamclock-contrib-V$HC_TAG.zip" hamclock-contrib -x "dist/*"
+          zip -r "dist/hamclock-contrib-V$HC_TAG.zip" hamclock-contrib -x "dist/*"
 
       - name: Create Release and Upload Asset
         env:
@@ -60,8 +68,13 @@ jobs:
 
           # Grabs file from repo tree and uploads with a label
           gh release create $TAG \
-            "./docker/manage-hc-docker-$TAG.sh#Manage HamClock Docker Installs" \
+            "docker/manage-hc-docker-$TAG.sh#Manage HamClock Docker Installs" \
+            "debian/install-hc-rpi#Installer for RPi and other Debian distros" \
             "dist/ESPHamClock-V$HC_TAG.zip#HamClock Source Zip with version" \
-            "dist/hamclock-contrib.zip#HamClock 3rd party contributions" \
+            "old-versions/ESPHamClock-V3.10.zip#HamClock Source Zip for ESP devices" \
+            "old-versions/ohb.hamclock.app_ESPHamClock-V3.10.ino.bin#HamClock ino.bin for ESP devices on OHB" \
+            "dist/hamclock-contrib-V$HC_TAG.zip#HamClock 3rd party contributions" \
+            "doc/HamClockUserGuide.pdf#HamClock User Guide" \
             --title "HamClock Release: $TAG" \
+            --target ${{ github.ref_name }} \
             --generate-notes

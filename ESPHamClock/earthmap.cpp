@@ -38,13 +38,98 @@ uint8_t show_lp;                                // display long path, else short
 
 #define GRAYLINE_COS    (-0.208F)               // cos(90 + grayline angle), we use 12 degs
 #define GRAYLINE_POW    (0.75F)                 // cos power exponent, sqrt is too severe, 1 is too gradual
-static SCoord moremap_s;                        // drawMoreEarth() scanning location 
+static SCoord moremap_s;                        // drawMoreEarth() scanning location
+static bool moremap_active;                     // whether a map sweep is currently in progress
+static uint32_t moremap_generation;             // incremented whenever a new sweep is explicitly scheduled
+static uint32_t next_redraw_ms;                 // next periodic redraw deadline once a sweep completes
+static bool mm_p;                              // mouse moved during a map sweep; redraw again when done
+static uint32_t mm_ms;                         // throttle mouse-driven city hover redraws
+static bool mp_a;                              // map popup menu currently running
+static bool mv_a;                              // map view menu currently running
+#define EARTH_REDRAW_INTERVAL_MS 30000U         // redraw slow-changing map overlays at a conservative cadence
 
 // cached grid colors
 uint16_t EARTH_GRIDC, EARTH_GRIDC00;            // main and highlighted
 
 // flag to defer drawing over map until opportune time:
 bool mapmenu_pending;
+
+static void updateCircumstances();
+static void drawMapGrid();
+
+void finishMapSweepNow (void)
+{
+	while (moremap_active)
+		drawMoreEarth();
+}
+
+/* request a fresh visual sweep of the current map without reloading its source data.
+ * used to clear old overlays and redraw moving symbols on demand.
+ */
+void scheduleMapRedraw (void)
+{
+    moremap_s.x = 0;
+    moremap_s.y = map_b.y;
+    moremap_active = true;
+    next_redraw_ms = 0;
+    moremap_generation++;
+}
+
+/* redraw just the given screen box: restore the underlying map pixels then redraw everything
+ * that might legitimately overlay them (grid, paths, planet/DX/sat markers, info box, etc).
+ *
+ * Use this -- instead of scheduleMapRedraw()/scheduleFreshMap() -- to erase a small transient
+ * popup. Those functions only (re)draw overlay symbols once, at the end of a full, multi-frame,
+ * row-by-row sweep of the entire map (see drawMoreEarth() below); if something calls them again
+ * before that sweep finishes (e.g. a user tapping open/closed a planet popup faster than a sweep
+ * completes) the sweep restarts from the top and the end-of-sweep symbol redraw keeps getting
+ * starved, which is what let old overlay data (planet dots, DX/sat markers, paths, etc) disappear,
+ * partially or completely, until a sweep was finally left undisturbed long enough to finish.
+ * This function instead does its work synchronously and immediately, with no dependency on the
+ * sweep's progress, so it can't be interrupted or starved no matter how quickly it's re-invoked.
+ */
+void redrawMapBox (const SBox &box)
+{
+    for (uint16_t y = box.y; y < box.y + box.h; y++)
+        for (uint16_t x = box.x; x < box.x + box.w; x++)
+            drawMapCoord (x, y);
+
+    if (core_map != CM_USER) {
+        drawMapGrid();
+        drawSatPathAndFoot();
+        if (waiting4DXPath())
+            drawDXPath();
+        drawPSKPaths();
+        drawAllSymbols();
+        drawSatName();
+        drawInfoBox();
+    }
+
+    tft.drawPR();
+}
+
+
+
+void mm_redraw (void)
+{
+    uint32_t now_ms = millis();
+
+    // City hover is cursor-driven. Do not restart an active progressive map sweep;
+    // remember that another sweep is needed and start it as soon as the current one finishes.
+    if (now_ms - mm_ms < 33U || moremap_active) {
+        mm_p = true;
+        return;
+    }
+
+    mm_p = false;
+    scheduleMapRedraw();
+    mm_ms = now_ms;
+}
+
+bool mm_up (void)
+{
+    return (mp_a || mv_a);
+}
 
 // grid spacing, degrees
 #define LL_LAT_GRID     15
@@ -250,7 +335,7 @@ void drawDECalTime(bool center)
 static void drawMaidGridKey()
 {
     // only if selected and using mercator projection
-    if (mapgrid_choice != MAPGRID_MAID || map_proj != MAPP_MERCATOR)
+    if ((mapgrid_choice != MAPGRID_MAID && mapgrid_choice != MAPGRID_MAID4) || map_proj != MAPP_MERCATOR)
         return;
 
 
@@ -268,7 +353,7 @@ static void drawMaidGridKey()
     selectFontStyle (LIGHT_FONT, FAST_FONT);
     tft.setTextColor (RA8875_WHITE);
 
-    // print labels across the top, use latitude of map center then scan lng
+    // print field letter labels across the top, use latitude of map center then scan lng
     uint16_t rowy = map_b.y + MH_TR_DY;
     LatLong ll;
     s2ll (map_b.x+map_b.w/2, map_b.y+map_b.h/2, ll);
@@ -282,7 +367,7 @@ static void drawMaidGridKey()
         }
     }
 
-    // print labels down the right, use lng of map center then scan lat
+    // print field letter labels down the right, use lng of map center then scan lat
     uint16_t colx = map_b.x + map_b.w - MH_RC_W + MH_RC_DX;
     s2ll (map_b.x+map_b.w/2, map_b.y+map_b.h/2, ll);
     for (uint8_t i = 0; i < 18; i++) {
@@ -294,6 +379,7 @@ static void drawMaidGridKey()
             tft.print ((char)('A' + 17 - i));
         }
     }
+
 }
 
 /* check and fix pz to be sure it is legal
@@ -303,6 +389,69 @@ void normalizePanZoom (PanZoom &pz)
     pz.zoom  = CLAMPF (pz.zoom, MIN_ZOOM, MAX_ZOOM);            // N.B. set zoom first
     pz.pan_x = ((pz.pan_x + EARTH_W + EARTH_W/2) % EARTH_W) - EARTH_W/2;
     pz.pan_y = CLAMPF (pz.pan_y, MIN_PANY(pz.zoom), MAX_PANY(pz.zoom));
+}
+
+/* set pz so the given location is at the center of the Mercator map.
+ * N.B. pz zoom is not changed.
+ */
+static void centerMercatorPanZoom (PanZoom &pz, const LatLong &ll)
+{
+    pz.pan_x = roundf (map_b.w*(ll.lng_d - getCenterLng())/360);
+    pz.pan_y = roundf (map_b.h*ll.lat_d/180);
+    normalizePanZoom (pz);
+}
+
+/* Pan, and optionally zoom, the map so the given location is centered.
+ * 'zoom' is clamped to [MIN_ZOOM,MAX_ZOOM]; pass MAX_ZOOM to zoom in as far as possible.
+ * Centering works in Mercator and Robinson projections; zoom is only meaningful in
+ * Mercator so it is left unchanged in other projections. The new view is persisted
+ * to NVRAM and the map is scheduled for a fresh redraw.
+ * Returns true if the view actually changed, else false (e.g. unsupported projection).
+ */
+bool panZoomToLocation (const LatLong &ll, uint8_t zoom)
+{
+    // pan is only supported on the flat projections; nothing sensible to do otherwise
+    if (map_proj != MAPP_MERCATOR && map_proj != MAPP_ROB)
+        return false;
+
+    PanZoom new_pz = pan_zoom;
+
+    // zoom only applies to Mercator
+    if (map_proj == MAPP_MERCATOR)
+        new_pz.zoom = CLAMPF (zoom, MIN_ZOOM, MAX_ZOOM);
+
+    // center the requested location (also normalizes)
+    centerMercatorPanZoom (new_pz, ll);
+
+    // nothing to do if unchanged
+    if (memcmp (&pan_zoom, &new_pz, sizeof(pan_zoom)) == 0)
+        return false;
+
+    // commit, persist and refresh
+    pan_zoom = new_pz;
+    NVWriteUInt8 (NV_ZOOM, pan_zoom.zoom);
+    NVWriteInt16 (NV_PANX, pan_zoom.pan_x);
+    NVWriteInt16 (NV_PANY, pan_zoom.pan_y);
+    initEarthMap();
+    scheduleFreshMap();
+
+    Serial.printf ("PANZOOM: center %.2f,%.2f zoom %d -> pan_x %d pan_y %d\n",
+                   ll.lat_d, ll.lng_d, pan_zoom.zoom, pan_zoom.pan_x, pan_zoom.pan_y);
+    return true;
+}
+
+/* Restore a previously-saved map view (pan and zoom), persist it and refresh the map.
+ * Used to undo a pan/zoom such as the Storms pane "center on storm" action.
+ */
+void restorePanZoom (const PanZoom &pz)
+{
+    pan_zoom = pz;
+    normalizePanZoom (pan_zoom);
+    NVWriteUInt8 (NV_ZOOM, pan_zoom.zoom);
+    NVWriteInt16 (NV_PANX, pan_zoom.pan_x);
+    NVWriteInt16 (NV_PANY, pan_zoom.pan_y);
+    initEarthMap();
+    scheduleFreshMap();
 }
 
 /* draw and operate the map popup menu
@@ -326,18 +475,63 @@ static void drawMapPopup(void)
     MenuFieldType ctr_mft = pan_ok ? (reset_ok ? MENU_01OFN : MENU_TOGGLE) : MENU_IGNORE;
     MenuFieldType rst_mft = reset_ok ? (pan_ok ? MENU_01OFN : MENU_TOGGLE) : MENU_IGNORE;
 
-    MenuItem mitems[] = {
-        {MENU_01OFN, false,          1, ZINDENT, "Set DX", 0},             // 0
-        {MENU_01OFN, false,          1, ZINDENT, "Set DE", 0},             // 1
-        {MENU_BLANK, false,          0, ZINDENT, NULL, 0},                 // 2
-        {z1_mft, pan_zoom.zoom == 1, 2, ZINDENT, "Zoom 1x", 0},            // 3
-        {z2_mft, pan_zoom.zoom == 2, 2, ZINDENT, "Zoom 2x", 0},            // 4
-        {z3_mft, pan_zoom.zoom == 3, 2, ZINDENT, "Zoom 3x", 0},            // 5
-        {z4_mft, pan_zoom.zoom == 4, 2, ZINDENT, "Zoom 4x", 0},            // 6
-        {ctr_mft, false,             4, ZINDENT, "Recenter", 0},           // 7
-        {rst_mft, false,             4, ZINDENT, "Reset", 0},              // 8
-    };
-    const int n_menu = NARRAY(mitems);
+    char storm_l1[36], storm_l2[36], storm_l3[36];
+    bool have_storm = getStormMapMenuInfo (map_popup.ll,
+                    storm_l1, sizeof(storm_l1), storm_l2, sizeof(storm_l2), storm_l3, sizeof(storm_l3));
+    char storm_url[100];
+    bool have_storm_url = have_storm && getStormTropicalTidbitsURL (map_popup.ll, storm_url, sizeof(storm_url));
+
+    // launch-site POI info, if the tap landed near a launch pad
+    char launch_l1[52], launch_l2[52], launch_l3[36];
+    const char *launch_wiki = NULL;
+    bool have_launch = getLaunchMapMenuInfo (map_popup.ll,
+                    launch_l1, sizeof(launch_l1), launch_l2, sizeof(launch_l2),
+                    launch_l3, sizeof(launch_l3), &launch_wiki);
+
+    MenuItem mitems[20];
+    int n_menu = 0;
+    int mi_wiki = -1;                                           // set below iff a Wikipedia item is added
+    int mi_stormurl = -1;                                       // set below iff a storm web link is added
+
+    if (have_storm) {
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, storm_l1, 0};
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, storm_l2, 0};
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, storm_l3, 0};
+        if (have_storm_url) {
+            mi_stormurl = n_menu;
+            mitems[n_menu++] = {MENU_TOGGLE, false, 3, ZINDENT, "Open Tropical Tidbits", 0};
+        }
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, "-------------", 0};
+    }
+
+    if (have_launch) {
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, launch_l1, 0};
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, launch_l2, 0};
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, launch_l3, 0};
+        if (launch_wiki) {
+            mi_wiki = n_menu;
+            mitems[n_menu++] = {MENU_TOGGLE, false, 3, ZINDENT, "Open Launch Complex Wikipedia", 0};
+        }
+        mitems[n_menu++] = {MENU_LABEL, false, 0, ZINDENT, "-------------", 0};
+    }
+
+    int mi_setdx = n_menu;
+    mitems[n_menu++] = {MENU_01OFN, false,          1, ZINDENT, "Set DX", 0};
+    int mi_setde = n_menu;
+    mitems[n_menu++] = {MENU_01OFN, false,          1, ZINDENT, "Set DE", 0};
+    mitems[n_menu++] = {MENU_BLANK, false,          0, ZINDENT, NULL, 0};
+    int mi_zoom1 = n_menu;
+    mitems[n_menu++] = {z1_mft, pan_zoom.zoom == 1, 2, ZINDENT, "Zoom 1x", 0};
+    int mi_zoom2 = n_menu;
+    mitems[n_menu++] = {z2_mft, pan_zoom.zoom == 2, 2, ZINDENT, "Zoom 2x", 0};
+    int mi_zoom3 = n_menu;
+    mitems[n_menu++] = {z3_mft, pan_zoom.zoom == 3, 2, ZINDENT, "Zoom 3x", 0};
+    int mi_zoom4 = n_menu;
+    mitems[n_menu++] = {z4_mft, pan_zoom.zoom == 4, 2, ZINDENT, "Zoom 4x", 0};
+    int mi_ctr = n_menu;
+    mitems[n_menu++] = {ctr_mft, false,             4, ZINDENT, "Recenter", 0};
+    int mi_rst = n_menu;
+    mitems[n_menu++] = {rst_mft, false,             4, ZINDENT, "Reset", 0};
 
     // boxes
     SBox menu_b = {map_popup.s.x, map_popup.s.y, 0, 0};         // shrink wrap
@@ -345,44 +539,56 @@ static void drawMapPopup(void)
 
     // go
     MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 1, n_menu, mitems};
-    if (runMenu (menu)) {
-
-
+    mp_a = true;
+    bool ok = runMenu (menu);
+    mp_a = false;
+    if (ok) {
         // init copy for changes
         PanZoom new_pz = pan_zoom;
 
         // check for new DX or DE, rely on runMenu to never set both
-        if (mitems[0].set)
+        if (mitems[mi_setdx].set)
             newDX (map_popup.ll, NULL, NULL);
-        if (mitems[1].set)
+        if (mitems[mi_setde].set)
             newDE (map_popup.ll, NULL);
 
-        // reset else other stuff
-        if (mitems[8].set) {
+        // open the launch site's Wikipedia page if requested
+        if (mi_wiki >= 0 && mitems[mi_wiki].set && launch_wiki)
+            openURL (launch_wiki);
 
+        // open the storm's Tropical Tidbits satellite loop page if requested
+        if (mi_stormurl >= 0 && mitems[mi_stormurl].set)
+            openURL (storm_url);
+
+        // reset else other stuff
+        if (mitems[mi_rst].set) {
             new_pz.pan_x = new_pz.pan_y = 0;
             new_pz.zoom = MIN_ZOOM;
-
         } else {
-
-            // pan BEFORE changing zoom because that's the zoom at which the location was selected
-            if (mitems[7].set) {
-                new_pz.pan_x += (map_popup.s.x - (map_b.x + map_b.w/2)) / new_pz.zoom;
-                new_pz.pan_y += ((map_b.y + map_b.h/2) - map_popup.s.y) / new_pz.zoom;
-            }
-
             // N.B. rely on menu setup to know these make sense
-            if (mitems[3].set)
+	    uint8_t old_zoom = new_pz.zoom;
+            if (mitems[mi_zoom1].set)
                 new_pz.zoom = MIN_ZOOM;
-            else if (mitems[4].set)
+            else if (mitems[mi_zoom2].set) {
                 new_pz.zoom = MIN_ZOOM + 1;
-            else if (mitems[5].set)
+	    }
+            else if (mitems[mi_zoom3].set) {
                 new_pz.zoom = MIN_ZOOM + 2;
-            else if (mitems[6].set)
+	    }
+            else if (mitems[mi_zoom4].set) {
                 new_pz.zoom = MIN_ZOOM + 3;
+	    }
 
-            // insure still in bounds
-            normalizePanZoom (new_pz);
+	    // Zoom only -> centers on DE
+	    // Recenter only -> centers on clicked map point
+	    // Zoom + Recenter -> zooms and centers on clicked map point
+            bool zoom_changed = new_pz.zoom != old_zoom;
+	    if (mitems[mi_ctr].set)
+	       centerMercatorPanZoom (new_pz, map_popup.ll);
+	    else if (new_pz.zoom > MIN_ZOOM && zoom_changed)
+	       centerMercatorPanZoom (new_pz, de_ll);
+	    else
+               normalizePanZoom (new_pz);
         }
 
         // save and do full update if pz changed
@@ -526,31 +732,21 @@ static void drawTropicsGrid()
     if (lw == 0)
         return;
 
-    if (map_proj != MAPP_MERCATOR) {
-
-        // just 2 lines at lat +- 23.5
-        SCoord s00, s01, s10, s11;
-        ll2sRaw (deg2rad(-23.5F), deg2rad(-180), s00, lw);
-        ll2sRaw (deg2rad(23.5F), deg2rad(-180), s10, lw);
-        for (float lng = -180; lng <= 180; lng += FINESTEP_GRID) {
-            ll2sRaw (deg2rad(-23.5), deg2rad(lng), s01, lw);
-            ll2sRaw (deg2rad(23.5), deg2rad(lng), s11, lw);
-            if (segmentSpanOkRaw (s00, s01, lw))
-                tft.drawLineRaw (s00.x, s00.y, s01.x, s01.y, lw, EARTH_GRIDC);
-            s00 = s01;
-            if (segmentSpanOkRaw (s10, s11, lw))
-                tft.drawLineRaw (s10.x, s10.y, s11.x, s11.y, lw, EARTH_GRIDC);
-            s10 = s11;
-        }
-
-    } else {
-
-        // easy! just 2 straight lines
-        uint16_t y = map_b.y + map_b.h/2 - 23.5F*map_b.h/180;
-        tft.drawLine (map_b.x, y, map_b.x+map_b.w-1, y, lw, EARTH_GRIDC);
-        y = map_b.y + map_b.h/2 + 23.5F*map_b.h/180;
-        tft.drawLine (map_b.x, y, map_b.x+map_b.w-1, y, lw, EARTH_GRIDC);
-
+    // draw 2 lines at lat +- 23.5.
+    // use loop for all projections to correctly handle pan and zoom.
+    // N.B. drawLineRaw avoids double-scaling the line width.
+    SCoord s00, s01, s10, s11;
+    ll2sRaw (deg2rad(-23.5F), deg2rad(-180), s00, lw);
+    ll2sRaw (deg2rad(23.5F), deg2rad(-180), s10, lw);
+    for (float lng = -180; lng <= 180; lng += FINESTEP_GRID) {
+        ll2sRaw (deg2rad(-23.5), deg2rad(lng), s01, lw);
+        ll2sRaw (deg2rad(23.5), deg2rad(lng), s11, lw);
+        if (segmentSpanOkRaw (s00, s01, lw))
+            tft.drawLineRaw (s00.x, s00.y, s01.x, s01.y, lw, EARTH_GRIDC);
+        s00 = s01;
+        if (segmentSpanOkRaw (s10, s11, lw))
+            tft.drawLineRaw (s10.x, s10.y, s11.x, s11.y, lw, EARTH_GRIDC);
+        s10 = s11;
     }
 }
 
@@ -568,6 +764,30 @@ static void drawMapGrid()
 
         drawMaidGridKey();
         drawLLGrid (10, 20);
+        break;
+
+    case MAPGRID_MAID4:
+
+        drawMaidGridKey();
+        // inner grid lines only at max zoom on mercator -- log on state change so we can
+        // diagnose any user reports of inner lines appearing at the wrong zoom or projection
+        {
+            bool show_inner = (pan_zoom.zoom >= MAX_ZOOM && map_proj == MAPP_MERCATOR);
+            static int last_zoom = -1;
+            static int last_proj = -1;
+            static int last_show = -1;
+            if ((int)pan_zoom.zoom != last_zoom || (int)map_proj != last_proj || (int)show_inner != last_show) {
+                Serial.printf ("MAID4: zoom=%d (MAX=%d) proj=%d (MERC=%d) inner=%s\n",
+                               pan_zoom.zoom, MAX_ZOOM, map_proj, MAPP_MERCATOR,
+                               show_inner ? "yes" : "no");
+                last_zoom = pan_zoom.zoom;
+                last_proj = map_proj;
+                last_show = show_inner;
+            }
+            if (show_inner)
+                drawLLGrid (1, 2);      // 4-char squares: 1 deg lat x 2 deg lng -- max zoom mercator only
+        }
+        drawLLGrid (10, 20);            // field boundaries
         break;
 
     case MAPGRID_LATLNG:
@@ -685,7 +905,7 @@ static void updateCircumstances()
 static void drawMapMenuButton()
 {
 
-    if (mapgrid_choice == MAPGRID_MAID && map_proj == MAPP_MERCATOR)
+    if ((mapgrid_choice == MAPGRID_MAID || mapgrid_choice == MAPGRID_MAID4) && map_proj == MAPP_MERCATOR)
         view_btn_b.y = map_b.y + MH_TR_H;
     else
         view_btn_b.y = map_b.y;
@@ -710,14 +930,15 @@ static void drawMapMenu()
     enum MIName {     // menu items -- N.B. must be in same order as mitems[]
         MI_STY_TTL,
             MI_STY_CTY, MI_STY_TER, MI_STY_DRA, MI_STY_MUF, MI_STY_MRT, MI_STY_AUR, MI_STY_WXX,
-            MI_STY_CLO, MI_STY_USR, MI_STY_TOA, MI_STY_REL,
+            MI_STY_CLO, MI_STY_TRP, MI_STY_USR, MI_STY_TOA, MI_STY_REL, 
         MI_GRD_TTL,
-            MI_GRD_NON, MI_GRD_TRO, MI_GRD_LLG, MI_GRD_MAI, MI_GRD_AZM, MI_GRD_CQZ, MI_GRD_ITU,
+            MI_GRD_NON, MI_GRD_TRO, MI_GRD_LLG, MI_GRD_MAI, MI_GRD_MA4, MI_GRD_AZM, MI_GRD_CQZ, MI_GRD_ITU,
         MI_PRJ_TTL,
             MI_PRJ_MER, MI_PRJ_AZM, MI_PRJ_AZ1, MI_PRJ_MOL,
         MI_RSS_YES,
         MI_NON_YES,
         MI_CTY_YES,
+        MI_LTG_YES,
         MI_N
     };
     #define PRI_INDENT 2
@@ -732,6 +953,7 @@ static void drawMapMenu()
             {MENU_AL1OFN, IS_CMROT(CM_AURORA),    1, SEC_INDENT, cm_info[CM_AURORA].name, 0},
             {MENU_AL1OFN, IS_CMROT(CM_WX),        1, SEC_INDENT, cm_info[CM_WX].name, 0},
             {MENU_AL1OFN, IS_CMROT(CM_CLOUDS),    1, SEC_INDENT, cm_info[CM_CLOUDS].name, 0},
+	    {MENU_AL1OFN, IS_CMROT(CM_TROPO),     1, SEC_INDENT, cm_info[CM_TROPO].name,  0},
             {MENU_IGNORE, false,                  1, SEC_INDENT, NULL, 0}, // CM_USER see below
             {MENU_IGNORE, false,                  1, SEC_INDENT, NULL, 0}, // CM_PMTOA see below
             {MENU_IGNORE, false,                  1, SEC_INDENT, NULL, 0}, // CM_PMREL see below
@@ -740,6 +962,7 @@ static void drawMapMenu()
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_TROPICS], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_LATLNG], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_MAID], 0},
+            {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_MAID4], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_AZIM], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_CQZONES], 0},
             {MENU_1OFN, false, 2, SEC_INDENT, grid_styles[MAPGRID_ITUZONES], 0},
@@ -751,6 +974,7 @@ static void drawMapMenu()
         {MENU_TOGGLE, false, 4, PRI_INDENT, "RSS", 0},
         {MENU_TOGGLE, false, 5, PRI_INDENT, "Night", 0},
         {MENU_TOGGLE, false, 6, PRI_INDENT, "Cities", 0},
+        {MENU_TOGGLE, false, 7, PRI_INDENT, "Lightning", 0},
     };
 
     // init selections with current states
@@ -780,6 +1004,7 @@ static void drawMapMenu()
     mitems[MI_GRD_TRO].set = mapgrid_choice == MAPGRID_TROPICS;
     mitems[MI_GRD_LLG].set = mapgrid_choice == MAPGRID_LATLNG;
     mitems[MI_GRD_MAI].set = mapgrid_choice == MAPGRID_MAID;
+    mitems[MI_GRD_MA4].set = mapgrid_choice == MAPGRID_MAID4;
     mitems[MI_GRD_AZM].set = mapgrid_choice == MAPGRID_AZIM;
     mitems[MI_GRD_CQZ].set = mapgrid_choice == MAPGRID_CQZONES;
     mitems[MI_GRD_ITU].set = mapgrid_choice == MAPGRID_ITUZONES;
@@ -792,6 +1017,7 @@ static void drawMapMenu()
     mitems[MI_RSS_YES].set = rss_on;
     mitems[MI_NON_YES].set = night_on;
     mitems[MI_CTY_YES].set = names_on;
+    mitems[MI_LTG_YES].set = lightning_on;
 
     // create a box for the menu
     SBox menu_b;
@@ -802,9 +1028,11 @@ static void drawMapMenu()
     // run menu
     SBox ok_b;
     MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 1, MI_N, mitems};
-    bool menu_ok = runMenu (menu);
+    mv_a = true;
+    bool ok = runMenu (menu);
+    mv_a = false;
 
-    if (menu_ok) {
+    if (ok) {
 
 
         // build new map_rotset
@@ -826,6 +1054,8 @@ static void drawMapMenu()
             scheduleNewCoreMap (CM_WX);
         if (mitems[MI_STY_CLO].set)
             scheduleNewCoreMap (CM_CLOUDS);
+	if (mitems[MI_STY_TRP].set)
+	    scheduleNewCoreMap (CM_TROPO);
         if (mitems[MI_STY_USR].set)
             scheduleNewCoreMap (CM_USER);
         if (mitems[MI_STY_TOA].set)
@@ -855,6 +1085,9 @@ static void drawMapMenu()
         } else if (mitems[MI_GRD_MAI].set && mapgrid_choice != MAPGRID_MAID) {
             mapgrid_choice = MAPGRID_MAID;
             NVWriteUInt8 (NV_GRIDSTYLE, mapgrid_choice);
+        } else if (mitems[MI_GRD_MA4].set && mapgrid_choice != MAPGRID_MAID4) {
+            mapgrid_choice = MAPGRID_MAID4;
+            NVWriteUInt8 (NV_GRIDSTYLE, mapgrid_choice);
         } else if (mitems[MI_GRD_AZM].set && mapgrid_choice != MAPGRID_AZIM) {
             mapgrid_choice = MAPGRID_AZIM;
             NVWriteUInt8 (NV_GRIDSTYLE, mapgrid_choice);
@@ -866,19 +1099,35 @@ static void drawMapMenu()
             NVWriteUInt8 (NV_GRIDSTYLE, mapgrid_choice);
         }
 
-        // check for different map projection
+        // check for different map projection. on any projection change, reset pan and zoom
+        // back to the default view so the user doesn't carry stale state across projections
+        // (e.g. a leftover MAX_ZOOM from a previous Mercator session would otherwise persist
+        // through azimuth/robinson and then re-apply when switching back to Mercator).
+        bool proj_changed = false;
         if (mitems[MI_PRJ_MER].set && map_proj != MAPP_MERCATOR) {
             map_proj = MAPP_MERCATOR;
             NVWriteUInt8 (NV_MAPPROJ, map_proj);
+            proj_changed = true;
         } else if (mitems[MI_PRJ_AZM].set && map_proj != MAPP_AZIMUTHAL) {
             map_proj = MAPP_AZIMUTHAL;
             NVWriteUInt8 (NV_MAPPROJ, map_proj);
+            proj_changed = true;
         } else if (mitems[MI_PRJ_AZ1].set && map_proj != MAPP_AZIM1) {
             map_proj = MAPP_AZIM1;
             NVWriteUInt8 (NV_MAPPROJ, map_proj);
+            proj_changed = true;
         } else if (mitems[MI_PRJ_MOL].set && map_proj != MAPP_ROB) {
             map_proj = MAPP_ROB;
             NVWriteUInt8 (NV_MAPPROJ, map_proj);
+            proj_changed = true;
+        }
+        if (proj_changed) {
+            pan_zoom.zoom = MIN_ZOOM;
+            pan_zoom.pan_x = 0;
+            pan_zoom.pan_y = 0;
+            NVWriteUInt8 (NV_ZOOM, pan_zoom.zoom);
+            NVWriteInt16 (NV_PANX, pan_zoom.pan_x);
+            NVWriteInt16 (NV_PANY, pan_zoom.pan_y);
         }
 
         // check for change night option
@@ -897,6 +1146,22 @@ static void drawMapMenu()
         if (mitems[MI_RSS_YES].set != rss_on) {
             rss_on = mitems[MI_RSS_YES].set;
             NVWriteUInt8 (NV_RSS_ON, rss_on);
+        }
+
+        // check for change of lightning option
+        if (mitems[MI_LTG_YES].set != lightning_on) {
+            lightning_on = mitems[MI_LTG_YES].set;
+            NVWriteUInt8 (NV_LIGHTNING_ON, lightning_on);
+            resetLightning();
+
+            // The NCDXF Lightning choice depends on the main map Lightning overlay.
+            // If Lightning is turned off here, also remove it from the NCDXF rotation
+            // set so it can not keep rotating as a hidden zero-count panel.
+            if (!lightning_on && (brb_rotset & (1 << BRB_SHOW_LIGHTNING))) {
+                brb_rotset &= ~(1 << BRB_SHOW_LIGHTNING);
+                checkBRBRotset();               // falls back to beacons if this emptied the set
+                brb_next_update = 0;            // force prompt NCDXF redraw/update
+            }
         }
 
         // engage change
@@ -954,18 +1219,68 @@ void initEarthMap()
     updateZoneSCoords(ZONE_CQ);
     updateZoneSCoords(ZONE_ITU);
 
-    // init scan line in map_b
-    moremap_s.x = 0;                    // avoid updateCircumstances() first call to drawMoreEarth()
-    moremap_s.y = map_b.y;
-
     // now main loop can resume with drawMoreEarth()
+    scheduleMapRedraw();
 }
 
 /* display another earth map row at mmoremap_s.
  */
 void drawMoreEarth()
 {
+    // check for mouse movement (both local and web)
+    static uint16_t lx = -1;
+    static uint16_t ly = -1;
+    static bool lom = false;
+    uint16_t mx, my;
+    bool has_mouse = tft.getMouse (&mx, &my);
+    if (has_mouse) {
+        bool om = overMap(SCoord{mx, my}) || overHoverPane(SCoord{mx, my});
+        bool mv = mx != lx || my != ly;
+        if (mv) {
+            lx = mx;
+            ly = my;
+            if (mainpage_up && !mm_up() && (om || lom))
+                mm_redraw();
+            lom = om;
+        }
+    } else {
+        if (lom) {
+            mm_redraw();
+            lom = false;
+            lx = -1;
+            ly = -1;
+        }
+    }
 
+    if (!moremap_active) {
+        uint32_t now_ms = millis();
+        bool mm_due = mm_p && now_ms - mm_ms >= 33U;
+        bool map_due = (int32_t)(now_ms - next_redraw_ms) >= 0;
+
+        // Only consume deferred overlays while the map is stable. If a redraw is
+        // due now, leave them pending so the fresh map does not immediately paint
+        // over them before the end-of-sweep handlers run.
+        if (!mm_due && !map_due) {
+            if (mapmenu_pending) {
+                drawMapMenu();
+                mapmenu_pending = false;
+            }
+            if (map_popup.pending) {
+                drawMapPopup();
+                map_popup.pending = false;
+            }
+            return;
+        }
+
+        if (mm_due) {
+            mm_p = false;
+            mm_ms = now_ms;
+        }
+        updateCircumstances();
+        scheduleMapRedraw();
+    }
+
+    uint32_t sweep_generation = moremap_generation;
     uint16_t last_x = map_b.x + EARTH_W - 1;
 
     // draw next row
@@ -1003,9 +1318,19 @@ void drawMoreEarth()
         // rotate?
         checkBGMap();
 
-        // prep for next
-        updateCircumstances();
-        moremap_s.y = map_b.y;
+        // a menu action or map refresh may have already restarted the sweep.
+        if (moremap_generation != sweep_generation)
+            return;
+
+        // otherwise stop here and wait until the next periodic or explicit redraw request.
+        moremap_active = false;
+
+        if (mm_p) {
+            mm_p = false;
+            mm_ms = millis();
+            scheduleMapRedraw();
+        }
+        next_redraw_ms = millis() + EARTH_REDRAW_INTERVAL_MS;
 
     // #define TIME_MAP_DRAW                             // RBF
     #if defined(TIME_MAP_DRAW)

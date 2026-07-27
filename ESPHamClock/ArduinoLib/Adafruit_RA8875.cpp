@@ -295,12 +295,14 @@ bool Adafruit_RA8875::begin (int not_used)
 
         // determine default or last-known geometry
         int win_x, win_y;
+        bool has_pos = false;
         if (ignore_x11geom) {
             win_x = win_y = 0;
             fb_si.xres = FB_XRES;
             fb_si.yres = FB_YRES;
+            has_pos = false;
         } else {
-            NVReadX11Geom (win_x, win_y, fb_si.xres, fb_si.yres);
+            has_pos = NVReadX11Geom (win_x, win_y, fb_si.xres, fb_si.yres);
         }
 
 	// set initial scale to match, FB_X/Y0 can change to stay centered if window size changes
@@ -350,8 +352,19 @@ bool Adafruit_RA8875::begin (int not_used)
 	XFillRectangle (display, pixmap, black_gc, 0, 0, FB_XRES, FB_YRES);
 
 	// set initial size hints
-        XSizeHints* win_size_hints = XAllocSizeHints();
-	win_size_hints->flags = USPosition | USSize | PPosition | PSize | PSize | PMinSize;
+    XSizeHints* win_size_hints = XAllocSizeHints();
+	// --- CHANGE THIS FLAG LOGIC ---
+	if (has_pos) {
+    	// We have a real saved position, tell the OS to use it
+    	win_size_hints->flags = USPosition | USSize | PSize | PMinSize;
+    	win_size_hints->x = win_x;
+    	win_size_hints->y = win_y;
+	} else {
+		// NO saved position! Leave win_size_hints->x and y unassigned.
+		// By using ONLY size flags, the OS is forced to use smart window placement.
+		win_size_hints->flags = USSize | PSize | PMinSize;
+	}
+	// ------------------------------
         win_size_hints->x = win_x;
         win_size_hints->y = win_y;
         win_size_hints->width = fb_si.xres;
@@ -371,6 +384,22 @@ bool Adafruit_RA8875::begin (int not_used)
         XStringListToTextProperty(&window_name, 1, &icon_name_property);
         XSetWMName(display, win, &window_name_property);
         XSetWMIconName(display, win, &icon_name_property);
+
+        // set WM_CLASS so WM can recognize and apply rules (like avoiding panels)
+        XClassHint *class_hint = XAllocClassHint();
+        if (class_hint) {
+            class_hint->res_name = (char*)"hamclock";
+            class_hint->res_class = (char*)"HamClock";
+            XSetClassHint(display, win, class_hint);
+            XFree(class_hint);
+        }
+
+        // set _NET_WM_WINDOW_TYPE to NORMAL so WM handles decorations and layers properly
+        Atom type_atom = XInternAtom(display, "_NET_WM_WINDOW_TYPE", False);
+        Atom value_atom = XInternAtom(display, "_NET_WM_WINDOW_TYPE_NORMAL", False);
+        // use XInternAtom for ATOM to avoid requiring extra headers
+        Atom xatom_atom = XInternAtom(display, "ATOM", False);
+        XChangeProperty(display, win, type_atom, xatom_atom, 32, PropModeReplace, (unsigned char *)&value_atom, 1);
 
 	// enable desired X11 events
         XSelectInput (display, win, KeyPressMask | KeyReleaseMask | PointerMotionMask | LeaveWindowMask
@@ -420,8 +449,8 @@ bool Adafruit_RA8875::begin (int not_used)
 	// try to disable some fb interference
 	ourSystem ("dmesg -n 1");
 
-        // try to engage 16 bit
-        ourSystem ("fbset -depth 16");
+        // try to engage depth matching compile-time depth
+        ourSystem ("fbset -depth %d", BITSPFBPIX);
         ourSystem ("fbset");
 
 	// init for mouse thread
@@ -817,6 +846,24 @@ bool Adafruit_RA8875::getRawPix(uint8_t *rgb24, int npix)
         return (true);
 }
 
+/* return the 8-bit RGB of the single pixel currently rendered at app coords x,y (already reflects
+ * whatever projection, zoom/pan and day/night blend is presently on screen -- no need to re-derive
+ * any of that here). x,y are in app coords, same units as getMouse()/getBackingStore().
+ * return false if out of bounds.
+ */
+bool Adafruit_RA8875::getPixelRaw (uint16_t x, uint16_t y, uint8_t *r, uint8_t *g, uint8_t *b)
+{
+        int fx = x * SCALESZ;
+        int fy = y * SCALESZ;
+        if (fx < 0 || fy < 0 || fx >= FB_XRES || fy >= FB_YRES)
+            return (false);
+        uint32_t p32 = FBPIXTORGB32(fb_canvas[fy*FB_XRES + fx]);
+        *r = (p32 >> 16) & 0xFF;
+        *g = (p32 >> 8) & 0xFF;
+        *b = p32 & 0xFF;
+        return (true);
+}
+
 void Adafruit_RA8875::setFont (const GFXfont *f)
 {
 	if (f)
@@ -997,6 +1044,10 @@ void Adafruit_RA8875::touchRead (uint16_t *x, uint16_t *y, int *button)
 bool Adafruit_RA8875::getMouse (uint16_t *x, uint16_t *y)
 {
 	pthread_mutex_lock(&mouse_lock);
+
+            struct timeval tv;
+            gettimeofday (&tv, NULL);
+            mouse_idle = (tv.tv_sec - mouse_tv.tv_sec)*1000 + (tv.tv_usec - mouse_tv.tv_usec)/1000;
 
             bool ok = mouse_idle <= MOUSE_FADE && mouse_x >= 0;
             if (ok) {
@@ -2037,22 +2088,26 @@ void Adafruit_RA8875::saveWinGeom(void)
         if (options_fullscreen || ignore_x11geom)
             return;
 
+        XWindowAttributes xwa;  // account for decorations
+        XGetWindowAttributes (display, win, &xwa);
+        if (xwa.map_state != IsViewable)
+            return;
+
         Screen *screen = XDefaultScreenOfDisplay (display);
         int screen_num = XScreenNumberOfScreen(screen);
         Window root = RootWindow(display,screen_num);
 
         int x, y;
         Window child;
-        XWindowAttributes xwa;  // account for decorations
         XTranslateCoordinates (display, win, root, 0, 0, &x, &y, &child);
-        XGetWindowAttributes (display, win, &xwa);
-        int winpos_now_x = x - xwa.x;
-        int winpos_now_y = y - xwa.y;
+        int winpos_now_x = x;
+        int winpos_now_y = y;
         int winpos_now_w = xwa.width;
         int winpos_now_h = xwa.height;
 
         NVWriteX11Geom (winpos_now_x, winpos_now_y, winpos_now_w, winpos_now_h);
 }
+
 
 /* return Button code from event.
  * N.B. must be used both in ButtonPress and ButtonRelease
@@ -2060,12 +2115,15 @@ void Adafruit_RA8875::saveWinGeom(void)
 // _USE_X11
 int Adafruit_RA8875::decodeMouseButton (XEvent event)
 {
-        // button1+mods or button2 coded as Button2, all else as Button1.
-        // N.B. Mac's report plane Button2 with Button1+Option
+        // plain Button1 is a normal (primary) click; everything else -- a genuine right-click
+        // (Button3), a middle-click (Button2), or Button1 with a modifier (for one-button
+        // trackpads, eg Mac's Option+click reports Button2) -- is treated as the secondary/
+        // "alternate" click used eg to right-click-spot a row.
         bool mods = (event.xbutton.state & (Mod1Mask|ControlMask)) != 0;
-        return ((event.xbutton.button == Button1 && mods) || (event.xbutton.button == Button2)
-                        ? Button2 : Button1
-        );
+        bool alt_click = (event.xbutton.button == Button1 && mods)
+                          || event.xbutton.button == Button2
+                          || event.xbutton.button == Button3;
+        return (alt_click ? Button2 : Button1);
 }
 
 /* thread that runs forever reacting to X11 events and painting fb_canvas whenever it changes
@@ -2138,7 +2196,7 @@ void Adafruit_RA8875::fbThread ()
         XFreePixmap(display, mask_pm);
 
 	// first display!
-        XMapRaised(display,win);
+        XMapWindow(display,win);
         XDefineCursor (display, win, app_cursor);
 
         for(;;)
@@ -2706,10 +2764,12 @@ void Adafruit_RA8875::mouseThread (void)
                         mouse_y += iev.value;
                         fb_dirty = true;
                     } else if (iev.type == EV_KEY && (iev.code == BTN_TOUCH || iev.code == BTN_LEFT)) {
-                        if (iev.value > 0)
+                        if (iev.value > 0) {
                             mouse_downs++;
-                        else
+                            mouse_button = 1;
+                        } else {
                             mouse_ups++;
+                        }
                         fb_dirty = true;
                     }
 
@@ -2818,7 +2878,7 @@ void Adafruit_RA8875::kbThread ()
 	    if (nr == 1) {
                 // arrow keys need a state machine to parse ESC [ A/B/C/D, plus non-block for normal ESC
                 ::printf ("KB: %d %c\n", buf[0], buf[0]);
-                if (isprint(buf[0])) {
+                if (isprint(buf[0]) || buf[0] == 8 || buf[0] == 127) {
                     pthread_mutex_lock (&kb_lock);
                         KBState &ks = kb_q[kb_qtail];
                         ks.c = buf[0];

@@ -122,7 +122,10 @@ typedef struct {
 // HamClock modules
 #include "P13.h"
 
-
+//
+// get #defines for various nvram lengths
+//
+#include "nvramlen.h"
 
 
 // handy nelements in array
@@ -153,12 +156,13 @@ typedef struct {
 #define MENU_TO         30000
 
 // maidenhead character arrey length, including EOS
-#define MAID_CHARLEN     7
+// moved to nvramlen.h  #define MAID_CHARLEN     7
 
 #define NV_ROTHOST_LEN          18
 #define NV_RIGHOST_LEN          18
 #define NV_FLRIGHOST_LEN        18
 #define NV_COREMAPSTYLE_LEN     10
+#define NV_PIAWAREHOST_LEN      36
 
 
 /* allows reading from array, WiFiClient or FILE
@@ -349,349 +353,7 @@ extern const char *auxtime_names[AUXT_N];
 /* names of each non-volatil entry.
  * N.B. the entries here must match those in nv_sizes[]
  */
-typedef enum {
-    // 0
-    NV_TOUCH_CAL_A,             // touch calibration coefficient
-    NV_TOUCH_CAL_B,             // touch calibration coefficient
-    NV_TOUCH_CAL_C,             // touch calibration coefficient
-    NV_TOUCH_CAL_D,             // touch calibration coefficient
-    NV_TOUCH_CAL_E,             // touch calibration coefficient
-
-    // 5
-    NV_TOUCH_CAL_F,             // touch calibration coefficient
-    NV_TOUCH_CAL_DIV,           // touch calibration normalization
-    NV_DXMAX_N,                 // n lost dx connections since NV_DXMAX_T
-    NV_DE_TIMEFMT,              // DE: 0=info; 1=analog; 2=cal; 3=analog+day; 4=dig 12hr; 5=dig 24hr
-    NV_DE_LAT,                  // DE latitude, degrees N
-
-    // 10
-    NV_DE_LNG,                  // DE longitude, degrees E
-    NV_PANE0ROTSET,             // PlotChoice bitmask of pane 0 rotation choices
-    NV_PLOT_0,                  // Pane 0 PlotChoice
-    NV_DX_LAT,                  // DX latitude, degrees N
-    NV_DX_LNG,                  // DX longitude, degrees E
-
-    // 15
-    NV_DX_GRID_OLD,             // deprecated
-    NV_CALL_FG,                 // Call foreground color as RGB 565
-    NV_CALL_BG,                 // Call background color as RGB 565 unless...
-    NV_CALL_RAINBOW,            // set if Call background is to be rainbow
-    NV_PSK_SHOWDIST,            // Live spots shows max distance, else counts
-
-    // 20
-    NV_UTC_OFFSET,              // offset from UTC, seconds
-    NV_PLOT_1,                  // Pane 1 PlotChoice
-    NV_PLOT_2,                  // Pane 2 PlotChoice
-    NV_BRB_ROTSET_OLD,          // deprecated after it became too small
-    NV_PLOT_3,                  // Pane 3 PlotChoice
-
-    // 25
-    NV_RSS_ON,                  // whether to display RSS
-    NV_BPWM_DIM,                // dim PWM, 0..255
-    NV_PHOT_DIM,                // photo r dim value, 0 .. 1023
-    NV_BPWM_BRIGHT,             // bright PWM, 0..255
-    NV_PHOT_BRIGHT,             // photo r bright value, 0 .. 1023
-
-    // 30
-    NV_LP,                      // whether to show DE-DX long or short path info
-    NV_UNITS,                   // 0: imperial, 1: metric 2: british
-    NV_LKSCRN_ON,               // whether screen lock is on
-    NV_MAPPROJ,                 // 0: merc 1: azim 2: azim 1
-    NV_ROTATE_SCRN_OLD,         // deprecated after removing ESP
-
-    // 35
-    NV_WIFI_SSID,               // WIFI SSID
-    NV_WIFI_PASSWD_OLD,         // deprecated
-    NV_CALLSIGN,                // call 
-    NV_SAT1NAME,                // satellite 1 name with underscore for each space
-    NV_DE_SRSS,                 // whether DE pane shows sun times 0=until or 1=at
-
-    // 40
-    NV_DX_SRSS,                 // whether DX pane shows sun times 0=until or 1=at or 2=DX prefix
-    NV_GRIDSTYLE,               // map grid style 0=off; 1=tropics; 2=lat-lng; 3=maindenhead, 4=radial
-    NV_DPYON_OLD,               // deprecated since NV_DAILYONOFF
-    NV_DPYOFF_OLD,              // deprecated since NV_DAILYONOFF
-    NV_DXHOST,                  // DX cluster host name, unless using WSJT
-
-    // 45
-    NV_DXPORT,                  // DX cluster port number
-    NV_SWHUE,                   // stopwatch color RGB 565
-    NV_TEMPCORR76,              // BME280 76 temperature correction, NV_UNITS units
-    NV_GPSDHOST_OLD,            // deprecated in 4.07
-    NV_KX3BAUD,                 // KX3 baud rate or 0
-
-    // 50
-    NV_BCPOWER,                 // VOACAP power, watts
-    NV_CD_PERIOD,               // stopwatch count down period, seconds
-    NV_PRESCORR76,              // BME280 76 pressure correction, NV_UNITS units
-    NV_BR_IDLE,                 // idle period, minutes
-    NV_BR_MIN,                  // minimum brightness, percent of display range
-
-    // 55
-    NV_BR_MAX,                  // maximum brightness, percent of display range
-    NV_DE_TZ,                   // DE offset from UTC, seconds, or NVTZ_AUTO
-    NV_DX_TZ,                   // DX offset from UTC, seconds, or NVTZ_AUTO
-    NV_COREMAPSTYLE,            // name of core map background images (not voacap propmaps)
-    NV_USEDXCLUSTER,            // whether to attempt using a DX cluster
-
-    // 60
-    NV_USEGPSD,                 // bit 1: use gpsd for time, bit 2: use for location
-    NV_LOGUSAGE,                // whether to phone home with clock settings
-    NV_LBLSTYLE,                // DX spot annotations: 0=none; 1=just prefix; 2=full call;
-    NV_WIFI_PASSWD,             // WIFI password
-    NV_NTPSET,                  // whether to use NV_NTPHOST
-
-    // 65
-    NV_NTPHOST_OLD,             // deprecated in 4.07
-    NV_GPIOOK,                  // whether ok to use GPIO pins
-    NV_SAT1COLOR,               // satellite 1 color as RGB 565
-    NV_SAT2COLOR,               // satellite 2 color as RGB 565
-    NV_X11FLAGS,                // set if want full screen
-
-    // 70
-    NV_BCFLAGS,                 // Big Clock bitmask: 1=date;2=wx;4=dig;8=12hr;16=nosec;32=UTC;64=an+dig;128=hrs;256=SpWx;512=hands;1024=sat
-    NV_DAILYONOFF,              // 7 2-byte on times then 7 off times, each mins from midnight
-    NV_TEMPCORR77,              // BME280 77 temperature correction, NV_UNITS units
-    NV_PRESCORR77,              // BME280 77 pressure correction, NV_UNITS units
-    NV_SHORTPATHCOLOR,          // prop short path color as RGB 565
-
-    // 75
-    NV_LONGPATHCOLOR,           // prop long path color as RGB 565
-    NV_PLOTOPS_OLD,             // deprecated since NV_PANE_CH
-    NV_NIGHT_ON,                // whether to show night on map
-    NV_DE_GRID,                 // DE 6 char grid
-    NV_DX_GRID,                 // DX 6 char grid
-
-    // 80
-    NV_GRIDCOLOR,               // map grid color as RGB 565
-    NV_CENTERLNG,               // mercator center longitude
-    NV_NAMES_ON,                // whether to show roving place names
-    NV_PANE1ROTSET,             // PlotChoice bitmask of pane 1 rotation choices
-    NV_PANE2ROTSET,             // PlotChoice bitmask of pane 2 rotation choices
-
-    // 85
-    NV_PANE3ROTSET,             // PlotChoice bitmask of pane 3 rotation choices
-    NV_AUX_TIME,                // 0=date, DOY, JD, MJD, LST, UNIX
-    NV_DAILYALARM,              // daily alarm time 60*hr + min, + 60*24 if armed; always DE TZ
-    NV_BC_UTCTIMELINE,          // band conditions timeline labeled in UTC else DE
-    NV_RSS_INTERVAL,            // RSS update interval, seconds
-
-    // 90
-    NV_DATEMDY,                 // 0 = MDY 1 = see NV_DATEDMYYMD
-    NV_DATEDMYYMD,              // 0 = DMY 1 = YMD
-    NV_ROTUSE,                  // whether to use rotctld
-    NV_ROTHOST,                 // rotctld tcp host
-    NV_ROTPORT,                 // rotctld tcp port
-
-    // 95
-    NV_RIGUSE,                  // whether to use rigctld
-    NV_RIGHOST,                 // rigctld tcp host
-    NV_RIGPORT,                 // rigctld tcp port
-    NV_DXLOGIN,                 // DX cluster login
-    NV_FLRIGUSE,                // whether to use flrig
-
-    // 100
-    NV_FLRIGHOST,               // flrig tcp host
-    NV_FLRIGPORT,               // flrig tcp port
-    NV_DXCMD0_OLD,              // deprecated when lengthened in 4.08
-    NV_DXCMD1_OLD,              // deprecated when lengthened in 4.08
-    NV_DXCMD2_OLD,              // deprecated when lengthened in 4.08
-
-    // 105
-    NV_DXCMD3_OLD,              // deprecated when lengthened in 4.08
-    NV_DXCMDUSED_OLD,           // deprecated as of V3.06
-    NV_PSK_MODEBITS,            // live spots mode: bit 0: on=psk off=wspr bit 1: on=bycall off=bygrid
-    NV_PSK_BANDS,               // live spots bands: bit mask 0 .. 11 160 .. 2m
-    NV_160M_COLOR,              // 160 m path color as RGB 565
-
-    // 110
-    NV_80M_COLOR,               // 80 m path color as RGB 565
-    NV_60M_COLOR,               // 60 m path color as RGB 565
-    NV_40M_COLOR,               // 40 m path color as RGB 565
-    NV_30M_COLOR,               // 30 m path color as RGB 565
-    NV_20M_COLOR,               // 20 m path color as RGB 565
-
-    // 115
-    NV_17M_COLOR,               // 17 m path color as RGB 565
-    NV_15M_COLOR,               // 15 m path color as RGB 565
-    NV_12M_COLOR,               // 12 m path color as RGB 565
-    NV_10M_COLOR,               // 10 m path color as RGB 565
-    NV_6M_COLOR,                // 6 m path color as RGB 565
-
-    // 120
-    NV_2M_COLOR,                // 2 m path color as RGB 565
-    NV_CSELDASHED,              // current ColorSelection bitmask set for dashed
-    NV_BEAR_MAG,                // show magnetic bearings, else true
-    NV_WSJT_SETSDX_OLD,         // deprecated
-    NV_WSJT_DX,                 // whether dx cluster is WSJT-X
-
-    // 125
-    NV_PSK_MAXAGE,              // live spots max age, minutes
-    NV_WEEKMON,                 // whether week starts on Monday
-    NV_BCMODE,                  // CW=19 SSB=38 AM=49 WSPR=3 FT8=13 FT4=17
-    NV_SDO,                     // sdo pane choice 0..6
-    NV_SDOROT,                  // whether SDO pane is rotating
-
-    // 130
-    NV_ONTASPOTA_OLD,           // POTA sort, deprecated in 4.09
-    NV_ONTASSOTA_OLD,           // SOTA sort, deprecated at 4.09
-    NV_BRB_ROTSET,              // Beacon box mode bit mask
-    NV_ROTCOLOR,                // rotator map color
-    NV_CONTESTS,                // bit 1 to show date, bit 2 use DE timezone
-
-    // 135
-    NV_BCTOA,                   // VOACAP take off angle, degs
-    NV_ADIFFN_OLD,              // deprecated when lengthened in v4.06
-    NV_I2CFN,                   // I2C device filename
-    NV_I2CON,                   // whether to use I2C
-    NV_DXMAX_T,                 // time when n lost dx connections exceeded max
-
-    // 140
-    NV_POTAWLIST1_OLD,          // deprecated when lengthened in v4.06
-    NV_SCROLLDIR,               // 0=bottom 1=top
-    NV_SCROLLLEN_OLD,           // deprecated in V4.04
-    NV_DXCMD4_OLD,              // deprecated when lengthened in 4.08
-    NV_DXCMD5_OLD,              // deprecated when lengthened in 4.08
-
-    // 145
-    NV_DXCMD6_OLD,              // deprecated when lengthened in 4.08
-    NV_DXCMD7_OLD,              // deprecated when lengthened in 4.08
-    NV_DXCMD8_OLD,              // deprecated when lengthened in 4.08
-    NV_DXCMD9_OLD,              // deprecated when lengthened in 4.08
-    NV_DXCMD10_OLD,             // deprecated when lengthened in 4.08
-
-    // 150
-    NV_DXCMD11_OLD,             // deprecated when lengthened in 4.08
-    NV_DXCMDMASK,               // bitmask of dx cluster commands in use
-    NV_DXWLISTMASK,             // 0: off, 1: not, 2: on, 3: only
-    NV_RANKSW_OLD,              // deprecated as of 4.07
-    NV_NEWDXDEWX,               // whether to show new DX or DE weather
-
-    // 155
-    NV_WEBFS,                   // whether to enable full screen web interface
-    NV_ZOOM,                    // integral zoom factor
-    NV_PANX,                    // center x from 0 center, + right, @ zoom 1
-    NV_PANY,                    // center y from 0 center, + up, @ zoom 1
-    NV_POTAWLISTMASK_OLD,       // deprecated 4.09
-
-    // 160
-    NV_SOTAWLIST1_OLD,          // deprecated when lengthened in v4.06
-    NV_ONCEALARM,               // one-time alarm time(). always in UTC
-    NV_ONCEALARMMASK,           // bit 1 = armed, 2 = user wants UTC (else DE TZ)
-    NV_PANEROTP,                // pane rotation period, seconds
-    NV_SHOWPIP,                 // whether to show public IP
-
-    // 165
-    NV_MAPROTP,                 // map rotation period, seconds
-    NV_MAPROTSET,               // core_map rotation bit mask
-    NV_GRAYDPY,                 // whether to use gray scale
-    NV_SOTAWLISTMASK_OLD,       // deprecated 4.09
-    NV_ADIFWLISTMASK,           // 0: off, 1: not, 2: on, 3: only
-
-    // 170
-    NV_DXWLIST,                 // DX watch list
-    NV_ADIFWLIST,               // ADIF watch list
-    NV_ADIFSORT,                // 0 age 1 distance
-    NV_ADIFBANDS_OLD,           // deprecated in V4.04 -- replaced by watch list 
-    NV_POTAWLIST_OLD,           // deprecated 4.09
-
-    // 175
-    NV_SOTAWLIST_OLD,           // deprecated V4.09
-    NV_ADIFFN,                  // ADIF file name, if any
-    NV_NTPHOST,                 // user defined NTP host name
-    NV_GPSDHOST,                // gpsd daemon host name
-    NV_NMEAFILE,                // NMEA serial file name
-
-    // 180
-    NV_USENMEA,                 // bit 1: use NMEA for time, bit 2: use for location
-    NV_NMEABAUD,                // NMEA connection baud rate
-    NV_BCTOABAND,               // band conditions TOA map band code
-    NV_BCRELBAND,               // band conditions REL map band code
-    NV_AUTOMAP,                 // whether to turn on maps automatically
-
-    // 185
-    NV_DXCAGE,                  // oldest dx cluster entry, minutes
-    NV_ONAIR_FG,                // ON AIR text foreground color as RGB 565
-    NV_ONAIR_BG,                // ON AIR text background color as RGB 565 unless...
-    NV_ONAIR_RAINBOW,           // set if ON AIR background is to be rainbow
-    NV_DXCMD0,                  // dx cluster command 0
-
-    // 190
-    NV_DXCMD1,                  // dx cluster command 1
-    NV_DXCMD2,                  // dx cluster command 2
-    NV_DXCMD3,                  // dx cluster command 3
-    NV_DXCMD4,                  // dx cluster command 4
-    NV_DXCMD5,                  // dx cluster command 5
-
-    // 195
-    NV_DXCMD6,                  // dx cluster command 6
-    NV_DXCMD7,                  // dx cluster command 7
-    NV_DXCMD8,                  // dx cluster command 8
-    NV_DXCMD9,                  // dx cluster command 9
-    NV_DXCMD10,                 // dx cluster command 10
-
-    // 200
-    NV_DXCMD11,                 // dx cluster command 11
-    NV_ONAIR_MSG,               // ON AIR text
-    NV_SETRADIO,                // whether to issue radio commands
-    NV_ONTAWLIST,               // ONTA watch list
-    NV_ONTAWLISTMASK,           // 0: off, 1: not, 2: on, 3: only
-
-    // 205
-    NV_ONTASORTBY,              // ONTA sort 0-3: Band Call Org Age
-    NV_ONTAORG,                 // ONTA organization filter
-    NV_TITLE,                   // alternate callsign title text
-    NV_TITLE_FG,                // alternate callsign fg as RGB 565
-    NV_TITLE_BG,                // alternate callsign bg as RGB 565
-
-    // 210
-    NV_TITLE_RAINBOW,           // alternate callsign is rainbow
-    NV_ONTA_MAXAGE,             // max ONTA spot age, mins
-    NV_QRZID,                   // which bio source
-    NV_CALLPREF,                // prefer call title or both
-    NV_CSELONOFF,               // current ColorSelection bitmask set for on/off
-
-    // 215
-    NV_CSELTHIN,                // current ColorSelection bitmask set for thin
-    NV_CSELDASHED_A,            // set A ColorSelection bitmask set for on/off
-    NV_CSELONOFF_A,             // set A ColorSelection bitmask set for on/off
-    NV_CSELTHIN_A,              // set A ColorSelection bitmask set for thin
-    NV_CSELDASHED_B,            // set B ColorSelection bitmask set for on/off
-
-    // 220
-    NV_CSELONOFF_B,             // set B ColorSelection bitmask set for on/off
-    NV_CSELTHIN_B,              // set B ColorSelection bitmask set for thin
-    NV_ONTABIO,                 // whether clicking an ONTA spot shows biography
-    NV_DXCBIO,                  // whether clicking a DXC spot shows biography
-    NV_X11GEOM_X,               // app window x coord
-
-    // 225
-    NV_X11GEOM_Y,               // app window y coord
-    NV_X11GEOM_W,               // app window width
-    NV_X11GEOM_H,               // app window height
-    NV_DEWXCHOICE,              // bit mask of NCDXF box DE wx stats
-    NV_DXWXCHOICE,              // bit mask of NCDXF box DX wx stats
-
-    // 230
-    NV_UDPSETSDX,               // whether a new UDP packet sets DX
-    NV_SPCWXCHOICE,             // bit mask of NCDXF box space wx stats
-    NV_DXPEDS,                  // bit mask of menu options
-    NV_UDPSPOTS,                // whether to allow UDP with rx_call other than our call
-    NV_AUTOUPGRADE,             // local hour to upgrade, else -1
-
-    // 235
-    NV_MAXTLEAGE,               // max allowed tle age, days
-    NV_MINLBLDIST,              // minimum labeling distance
-    NV_SAT2NAME,                // satellite 2 name with underscore for each space
-    NV_PSK_SHOWPATH,            // whether Live Spots show paths
-    NV_SAT1FLAGS,               // satellite 1 options
-
-    // 240
-    NV_SAT2FLAGS,               // satellite 2 options
-
-    NV_N
-
-} NV_Name;
+#include "nvramenum.h"
 
 #define NV_NONE NV_N            // handy alias
 
@@ -725,7 +387,9 @@ typedef enum {
 
 // N.B. take care that names will fit in menu built by askPaneChoice()
 // N.B. names should not include blanks, but _ are changed to blanks for prettier printing
-#define PLOTNAMES \
+// Keep the original 32 choices at their historic ordinals. EEPROM value 32 remains NONE forever;
+// choices added after that sentinel are mapped into the new high rotation word by PLOTBIT().
+#define PLOTNAMES_LOW \
     X(PLOT_CH_BC,           "VOACAP_DEDX")      \
     X(PLOT_CH_DEWX,         "DE_Wx")            \
     X(PLOT_CH_DXCLUSTER,    "DX_Cluster")       \
@@ -752,17 +416,29 @@ typedef enum {
     X(PLOT_CH_ADIF,         "ADIF")             \
     X(PLOT_CH_AURORA,       "Aurora")           \
     X(PLOT_CH_DXPEDS,       "DXPeditions")      \
-    X(PLOT_CH_DST,          "Disturbance")
+    X(PLOT_CH_DST,          "Disturbance")      \
+    X(PLOT_CH_STORMS,       "Storms")           \
+    X(PLOT_CH_ACTIVENETS,   "Nets")             \
+    X(PLOT_CH_LAUNCHES,     "Launches")         \
+    X(PLOT_CH_HFCOND,       "HF_Bands")         \
+    X(PLOT_CH_VHFCOND,      "VHF_Cond")
 
-#define X(a,b)  a,              // expands PLOTNAMES to each enum and comma
+#define PLOTNAMES_HIGH \
+    X(PLOT_CH_SATACT,       "Sat_Alerts")        \
+    X(PLOT_CH_MESHTASTIC,   "Mesh_Mon")
+
+#define PLOTNAMES PLOTNAMES_LOW PLOTNAMES_HIGH
+
+#define X(a,b)  a,              // expand the original low-word choices
 typedef enum {
-    PLOTNAMES
+    PLOTNAMES_LOW
+    PLOT_CH_NONE,               // fixed EEPROM sentinel: value 32
+    PLOTNAMES_HIGH              // first high-word choice starts at value 33
     PLOT_CH_N
 } PlotChoice;
 #undef X
 
-// reuse count also handy flag for not found
-#define PLOT_CH_NONE    PLOT_CH_N
+static_assert (PLOT_CH_N - 1 <= 64, "PlotMask high word is full");
 
 typedef enum {
     PANE_0,                             // DE/DX overlay
@@ -870,7 +546,7 @@ typedef struct {
 } TZInfo;
 
 
-#define NV_CALLSIGN_LEN         12      // max call sign, including EOS
+// moved to nvramlen.h #define NV_CALLSIGN_LEN         12      // max call sign, including EOS
 #define NV_ONAIR_LEN            30      // max ONAIR text, including EOS
 #define NV_TITLE_LEN            70      // max alternate callsign, including EOS
 
@@ -935,6 +611,7 @@ extern SCircle satpass_c;               // satellite pass horizon
 
 extern uint8_t night_on;                // show night portion of map on/off
 extern uint8_t names_on;                // show place names when roving
+extern uint8_t lightning_on;            // show lightning strikes overlay
 
 extern SBox desrss_b, dxsrss_b;         // sun rise/set display
 extern uint8_t desrss, dxsrss;          // sun rise/set chpice
@@ -956,7 +633,8 @@ enum {
     X(BRB_SHOW_BME76,   "BME@76") \
     X(BRB_SHOW_BME77,   "BME@77") \
     X(BRB_SHOW_DXWX,    "DX Wx")  \
-    X(BRB_SHOW_DEWX,    "DE Wx")
+    X(BRB_SHOW_DEWX,    "DE Wx")  \
+    X(BRB_SHOW_LIGHTNING,"Lgtng")
 
 #define X(a,b)  a,                      // expands BRBMODES to enum and comma
 typedef enum {
@@ -999,6 +677,7 @@ typedef enum {
     MAPGRID_TROPICS,
     MAPGRID_LATLNG,
     MAPGRID_MAID,
+    MAPGRID_MAID4,                      // Maidenhead fields + 4-char squares
     MAPGRID_AZIM,
     MAPGRID_CQZONES,
     MAPGRID_ITUZONES,
@@ -1012,6 +691,21 @@ extern SBox satname_b;                  // satellite name pick
 extern SBox de_info_b;                  // de info pane
 extern SBox map_b;                      // main map 
 extern SBox view_btn_b;                 // map view menu button
+extern SBox motd_btn_b;                 // MOTD mailbox icon (next to UTC button)
+extern SBox adsb_btn_b;                 // ADS-B airplane icon (next to MOTD icon)
+extern SBox windy_btn_b;                // Windy.com wind icon (next to ADS-B icon)
+
+// MOTD (Message of the Day) functions
+extern void checkMOTD (void);
+extern bool motdIsPresent (void);
+extern void drawMOTDIcon (void);
+extern void motdClicked (void);
+
+// ADS-B airplane icon -- opens https://adsb.lol
+extern void drawADSBIcon (void);
+
+// Windy.com wind icon -- opens https://www.windy.com
+extern void drawWindyIcon (void);
 extern SBox dx_maid_b;                  // dx maidenhead pick
 extern SBox de_maid_b;                  // de maidenhead pick
 extern SBox lkscrn_b;                   // screen lock icon button
@@ -1126,6 +820,7 @@ extern void newDX (LatLong &ll, const char grid[MAID_CHARLEN], const char *overr
 extern void drawDXPath(void);
 extern bool screenIsLocked(void);
 extern time_t getUptime (uint16_t *days, uint8_t *hrs, uint8_t *mins, uint8_t *secs);
+extern void updateCallsignStatus (bool force);
 extern void eraseScreen(void);
 extern void setMapTagBox (const char *tag, const SCoord &c, uint16_t r, SBox &box);
 extern void drawMapTag (const char *tag, const SBox &box, uint16_t txt_color = RA8875_WHITE,
@@ -1249,7 +944,23 @@ extern bool onADIFList (const DXSpot &spot, bool chk_dxcc, bool chk_grid, bool c
 
 extern int readADIFFile (GenReader &gr, DXSpot *&spots, bool use_wl, int &n_bad);
 
+/*********************************************************************************************
+ *
+ * antennas.cpp
+ *
+ */
 
+extern void initAntennas ();                                        //call during setup to initialize runtime data structures
+extern bool antenna_getline(char *buf, size_t size, int lineno);    //use to iterate through antenna index and description
+extern void antenna_addargs(char *buf, size_t size);                //add args to backend url
+extern bool antenna_validindex(uint16_t index);                     //is index a valid antenna index
+
+// I could have done extern set and get functions for these, but existing code uses globals to set/read
+extern uint16_t antennas_de;
+extern uint16_t antennas_dx;
+extern uint8_t  antennas_dedx_control;
+extern float    antennas_de_az;
+extern float    antennas_dx_az;
 
 
 /*********************************************************************************************
@@ -1424,8 +1135,9 @@ extern void doNCDXFBoxTouch (TouchType tt, const SCoord &s);
 // special cleanCache ages
 #define CACHE_FOREVER 0                         // never remove matching files
 #define CACHE_NONE    1                         // remove all files older than 1 second
+#define VOACAP_TIMEOUT_MS 15000                 // timeout for VOACAP and band conditions endpoints
 
-extern FILE *openCachedFile (const char *fn, const char *url, int max_age, int min_size);
+extern FILE *openCachedFile (const char *fn, const char *url, int max_age, int min_size, int to_ms = 0);
 extern bool cleanCache (const char *contains, int max_age);
 
 
@@ -1549,6 +1261,44 @@ extern bool updateContests (const SBox &box, bool fresh);
 extern bool checkContestsTouch (const SCoord &s, const SBox &box);
 extern int getContests (char **&titles, char **&dates);
 
+/*********************************************************************************************
+ *
+ * activenets.cpp
+ *
+ */
+
+#define ACTIVENETS_INTERVAL     (60)            // pane update interval, secs
+extern bool updateActiveNets (const SBox &box, bool fresh);
+extern bool checkActiveNetsTouch (const SCoord &s, const SBox &box);
+
+// active net map plotting + hover info
+typedef struct {
+    char name[NV_TITLE_LEN];            // full, untruncated net name (for hover banner)
+    char ncs[MAX_SPOTCALL_LEN];         // Net Control callsign
+    char grid[MAX_SPOTGRID_LEN];        // NCS grid, may be ""
+    char mode[MAX_SPOTMODE_LEN];        // operating mode
+    char chk[8];                        // check-in count as text
+    float kHz;                          // frequency
+    LatLong ll;                         // NCS location
+} ActiveNetInfo;
+extern void drawActiveNetsOnMap (void);
+extern bool getClosestActiveNet (LatLong &from_ll, LatLong *mark_ll, ActiveNetInfo *info);
+extern bool getActiveNetsPaneInfo (const SCoord &ms, LatLong *mark_ll, ActiveNetInfo *info);
+
+// meshtastic node map plotting + hover info -- same pattern as ActiveNetInfo above
+typedef struct {
+    char name[40];                      // long_name
+    char short_name[8];
+    int battery_level;                  // 0-100, 101 = powered, -1 = unknown
+    float voltage;
+    int n_links;
+    LatLong ll;
+} MeshInfo;
+extern void drawMeshtasticOnMap (void);
+extern bool getClosestMeshtasticNode (LatLong &from_ll, LatLong *mark_ll, MeshInfo *info);
+extern bool getMeshtasticPaneInfo (const SCoord &ms, LatLong *mark_ll, MeshInfo *info);
+
+#define LAUNCHES_INTERVAL (2)
 
 
 
@@ -1767,6 +1517,7 @@ extern SCircle moon_c;
 extern uint8_t flash_crc_ok;
 
 extern void drawMoreEarth (void);
+extern void finishMapSweepNow (void);
 extern void eraseDEMarker (void);
 extern void eraseDEAPMarker (void);
 extern void drawDEMarker (bool force);
@@ -1783,6 +1534,10 @@ extern void drawMapCoord (uint16_t x, uint16_t y);
 extern void drawSun (void);
 extern void drawMoon (void);
 extern void drawDXInfo (void);
+extern void scheduleMapRedraw (void);
+extern void redrawMapBox (const SBox &box);
+extern void mm_redraw(void);
+extern bool mm_up (void);
 extern void ll2s (const LatLong &ll, SCoord &s, uint8_t edge);
 extern void ll2s (float lat, float lng, SCoord &s, uint8_t edge);
 extern void ll2sRaw (const LatLong &ll, SCoord &s, uint8_t edge);
@@ -1804,6 +1559,8 @@ extern bool segmentSpanOkRaw (const SCoord &s0, const SCoord &s1, uint16_t borde
 extern bool desiredBearing (const LatLong &ll, float &bear);
 extern void checkBGMap(void);
 extern void normalizePanZoom (PanZoom &pz);
+extern bool panZoomToLocation (const LatLong &ll, uint8_t zoom);
+extern void restorePanZoom (const PanZoom &pz);
 
 
 
@@ -1822,15 +1579,30 @@ extern void normalizePanZoom (PanZoom &pz);
 
 typedef struct _sat_now {
     char name[NV_SATNAME_LEN];          // name
+    int norad;                          // NORAD catalog id, 0 if unknown
     float az, el;                       // az, el degs
     float range, rate;                  // km, m/s + receding
     float raz, saz;                     // rise and set az, degs; either may be SAT_NOAZ
     float rdt, sdt;                     // next rise and set, hrs from now; rdt < 0 if up now
-    _sat_now() { name[0] = '\0'; }      // constructor to insure name properly empty
+    _sat_now() { name[0] = '\0'; norad = 0; }   // constructor to insure name empty and norad clear
 } SatNow;
 #define SAT_NOAZ        (-999)          // error flag for raz or saz
 #define SAT_MIN_EL      -0.4F           // min elevation, rough approx for refraction
 #define TLE_LINEL       70              // TLE line length, including EOS
+
+// one satellite transmitter's frequency/mode info, from the server esats-freq.txt file
+typedef struct {
+    char status[12];                    // active / inactive / future
+    char type[20];                      // Transmitter / Transceiver / Transponder
+    char mode[24];                      // FM, AFSK, LSB, ...
+    char ctcss[12];                     // FM access tone in Hz from backend (e.g. "67.0"), "" if none
+    char desc[64];                      // free-text description
+    long ul_lo, ul_hi;                  // uplink Hz; ul_hi 0 unless a passband
+    long dl_lo, dl_hi;                  // downlink Hz; dl_hi 0 unless a passband
+    float baud;                         // baud, 0 if not applicable
+    bool invert;                        // inverting transponder
+} SatFreq;
+extern int getSatFreqs (int norad, SatFreq **fpp);      // caller must free *fpp if return > 0
 
 extern void updateSatPath(void);
 extern void drawSatPathAndFoot(void);
@@ -1844,6 +1616,25 @@ extern void drawSatName(void);
 extern void drawOneTimeDX(void);
 extern void drawOneTimeDE(void);
 extern bool setSatFromName (const char *new_name);
+extern Satellite *lookupSatByName (const char *name, int *norad = NULL);
+
+/*********************************************************************************************
+ *
+ * satsked.cpp
+ *
+ */
+
+extern void drawSatGroupSchedule (void);
+extern void drawSatCoVis (void);
+
+/*********************************************************************************************
+ *
+ * planets.cpp
+ *
+ */
+
+extern void drawPlanetsOnMap (void);
+extern bool checkPlanetMapTouch (const SCoord &s);
 extern bool setSatFromTLE (const char *name, const char *t1, const char *t2);
 extern bool initSat(void);
 extern bool getSatNow (SatNow &satnow);
@@ -1990,6 +1781,15 @@ extern void KD3Node2ll (const KD3Node &n, LatLong *llp);
 extern float nearestKD3Dist2Miles(float d);
 
 
+/*********************************************************************************************
+ *
+ * antennas-html.cpp
+ *
+ */
+
+extern const char antennas_html[];
+extern const char dashboard_html[];
+
 
 
 
@@ -2083,6 +1883,7 @@ typedef enum {
     X(CM_PMTOA,     BC_INTERVAL,        "TOA",       PROPBAND_NONE, false, false)       \
     X(CM_PMREL,     BC_INTERVAL,        "REL",       PROPBAND_NONE, false, false)       \
     X(CM_CLOUDS,    CLOUDS_INTERVAL,    "Clouds",    PROPBAND_NONE, false, false)       \
+    X(CM_TROPO,     TROPO_INTERVAL,     "Tropo",     PROPBAND_NONE, false, false)       \
     X(CM_USER,      CACHE_FOREVER,      "User",      PROPBAND_NONE, false, false)
 
 #define X(a,b,c,d,e,f)  a,                      // expands COREMAPS to each enum followed by comma
@@ -2097,7 +1898,7 @@ typedef enum {
 // macro to test whether the given core map style is just a file (not an active query)
 #define CM_ISFILE(cm)     ((cm) == CM_COUNTRIES || (cm) == CM_TERRAIN || (cm) == CM_DRAP || \
                            (cm) == CM_AURORA    || (cm) == CM_WX      || (cm) == CM_MUF_RT || \
-                           (cm) == CM_CLOUDS    || (cm) == CM_USER)
+                           (cm) == CM_CLOUDS    || (cm) == CM_TROPO   || (cm) == CM_USER)
 
 typedef struct {
     int max_age;                                // refresh interval, secs
@@ -2202,6 +2003,7 @@ typedef enum {
     MENU_OK_OK,                 // normal ok button appearance
     MENU_OK_BUSY,               // busy ok button appearance
     MENU_OK_ERR,                // error ok button appearance
+    MENU_OK_DISABLE,            // disabled ok button appearance
 } MenuOkState;
 
 typedef struct {
@@ -2317,40 +2119,7 @@ extern bool checkNMEAFilename (const char *fn, Message &ynot);
  *
  */
 
-
-// string valued lengths including trailing EOS
-#define NV_WIFI_SSID_LEN        32
-#define NV_WIFI_PW_OLD_LEN      32
-// NV_CALLSIGN_LEN needed above for CallsignInfo
-// NV_SATNAME_LEN needed above for SatNow
-#define NV_DXHOST_LEN           26
-#define NV_GPSDHOST_OLD_LEN     18
-#define NV_GPSDHOST_LEN         36
-#define NV_NMEAFILE_LEN         36
-#define NV_NTPHOST_OLD_LEN      18
-#define NV_NTPHOST_LEN          36
-// NV_COREMAPSTYLE_LEN needed above for mapmanage.cpp
-#define NV_WIFI_PW_LEN          64
-#define NV_DAILYONOFF_LEN       28      // (2*DAYSPERWEEK*sizeof(uint16_t))
-#define NV_DE_GRID_LEN          MAID_CHARLEN
-#define NV_DX_GRID_LEN          MAID_CHARLEN
-// NV_ROTHOST_LEN needed above for setup.cpp
-// NV_RIGHOST_LEN needed above for setup.cpp
-// NV_FLRIGHOST_LEneeded above for setup.cpp
-#define NV_ADIFFN_OLD_LEN       30
-#define NV_ADIFFN_LEN           50
-#define NV_I2CFN_LEN            30
-#define NV_DXLOGIN_LEN          NV_CALLSIGN_LEN
-#define NV_DXCLCMD_OLD_LEN      35
-#define NV_DXCLCMD_LEN          60
-#define NV_DXWLIST_LEN          50
-#define NV_POTAWLIST1_OLD_LEN   26
-#define NV_POTAWLIST_OLD_LEN    50
-#define NV_SOTAWLIST1_OLD_LEN   26
-#define NV_SOTAWLIST_OLD_LEN    50
-#define NV_ADIFWLIST_LEN        50
-#define NV_ONTAWLIST_LEN        50
-#define NV_ONTAORG_LEN          30
+ // see nvramlen.h for lengths
 
 
 
@@ -2393,7 +2162,20 @@ extern void reportEESize (uint16_t &ee_used, uint16_t &ee_size);
 #define ONTA_INTERVAL   70                              // polling interval
 
 extern bool updateOnTheAir (const SBox &box, bool fresh);
-extern bool checkOnTheAirTouch (const SCoord &s, const SBox &box);
+extern bool checkOnTheAirTouch (TouchType tt, const SCoord &s, const SBox &box);
+
+/*********************************************************************************************
+ *
+ * hamsat.cpp
+ *
+ */
+
+extern bool updateHamsat (const SBox &box, bool fresh);
+extern bool checkHamsatTouch (const SCoord &s, const SBox &box);
+extern void drawHamsatOnMap (void);
+extern bool getHamsatPaneHover (const SCoord &ms, LatLong *ll, char *label, size_t label_len);
+extern bool updateMeshtastic (const SBox &box, bool fresh);
+extern bool checkMeshtasticTouch (const SCoord &s, const SBox &box);
 extern bool getOnTheAirSpots (DXSpot **spp, uint8_t *nspotsp);
 extern void drawOnTheAirSpotsOnMap (void);
 extern bool getClosestOnTheAirSpot (LatLong &ll, DXSpot *sp, LatLong *llp);
@@ -2450,6 +2232,10 @@ typedef struct {
 
 extern bool installBMPBox (GenReader &gr, const SBox &box, ImageRefit fit, Message &ynot);
 extern void plotBandConditions (const SBox &box, int busy, const BandCdtnMatrix *bmp, char *config_str);
+extern void plotHFConditions (const SBox &box);         // hamqsl.cpp
+extern void plotVHFConditions (const SBox &box);        // hamqsl.cpp
+extern bool updateHFConditions (const SBox &box);       // hamqsl.cpp
+extern bool updateVHFConditions (const SBox &box);      // hamqsl.cpp
 extern bool plotXY (const SBox &box, float x[], float y[], int nxy, const char *xlabel,
         const char *ylabel, uint16_t color, float y_min, float y_max, float big_value);
 extern bool plotXYstr (const SBox &box, float x[], float y[], int nxy, const char *xlabel,
@@ -2471,6 +2257,7 @@ extern void prepPlotBox (const SBox &box);
 
 extern void plotMapData (const char title[], const char x_label[], float x_data[], float y_data[],int n_data);
 extern void plotServerFile (const char *filename, const char title[], const char x_label[]);
+extern void plotRSGHistory (void);              // NOAA-style stacked R/S/G history graph on map_b
 
 
 
@@ -2486,27 +2273,42 @@ extern void plotServerFile (const char *filename, const char title[], const char
 
 extern const SBox plot_b[PANE_N];          // box for each pane
 extern PlotChoice plot_ch[PANE_N];         // current choice in each pane, or PLOT_CH_NONE for PANE_0
-extern const char *plot_names[PLOT_CH_N];  // must be in same order as PlotChoice
-extern uint32_t plot_rothold;              // bitmask of PlotChoice in rotset but temporarily holding
-extern uint32_t plot_rotset[PANE_N];       // bitmask of each pane's PlotChoice rotation choices
-                                           // N.B. plot_rotset[i] must always include plot_ch[i] unless NONE
+extern const char *plot_names[PLOT_CH_N];  // indexed by PlotChoice; PLOT_CH_NONE entry is "NONE"
 
-#define ROTHOLD_SET(pc)         (plot_rothold |= (1<<(pc)))
-#define ROTHOLD_CLR(pc)         (plot_rothold &= ~(1<<(pc)))
-#define ROTHOLD_TST(pc)         ((plot_rothold & (1<<(pc))) != 0)
+typedef uint64_t PlotMask;
+extern PlotMask plot_rothold;              // PlotChoice bits temporarily holding rotation
+extern PlotMask plot_rotset[PANE_N];       // each pane's PlotChoice rotation choices
+                                           // N.B. plot_rotset[i] must include plot_ch[i] unless NONE
+
+// EEPROM value 32 is permanently reserved for PLOT_CH_NONE. Choices below it keep their original
+// low-word bit numbers; real choices above it are packed down by one so PLOT_CH_SATACT uses bit 32
+// (high-word bit 0), the next new choice uses bit 33, and so on.
+#define PLOT_CH_IS_REAL(pc)     ((uint32_t)(pc) < (uint32_t)PLOT_CH_NONE || \
+                                 ((uint32_t)(pc) > (uint32_t)PLOT_CH_NONE && \
+                                  (uint32_t)(pc) < (uint32_t)PLOT_CH_N))
+#define PLOTBIT_INDEX(pc)       ((uint32_t)(pc) < (uint32_t)PLOT_CH_NONE \
+                                    ? (uint32_t)(pc) : (uint32_t)(pc)-1U)
+#define PLOTBIT(pc)             (PLOT_CH_IS_REAL(pc) ? (UINT64_C(1) << PLOTBIT_INDEX(pc)) : UINT64_C(0))
+
+#define ROTHOLD_SET(pc)         (plot_rothold |= PLOTBIT(pc))
+#define ROTHOLD_CLR(pc)         (plot_rothold &= ~PLOTBIT(pc))
+#define ROTHOLD_TST(pc)         ((plot_rothold & PLOTBIT(pc)) != 0)
 
 #define SHOWING_PANE_0()        (plot_ch[PANE_0] != PLOT_CH_NONE)
 #define BOX_IS_PANE_0(b)        ((b).w == PLOTBOX0_W && (b).h == PLOTBOX0_H)
 
-// bit mask of plot choices suitable for PANE_0
-#define PANE_0_CH_MASK          ((1<<PLOT_CH_DXCLUSTER) | (1<<PLOT_CH_CONTESTS) | (1<<PLOT_CH_ADIF) \
-                                 | (1<<PLOT_CH_ONTA) | (1<<PLOT_CH_DXPEDS))
+// bit mask of plot choices suitable for PANE_0, including high-word choices
+#define PANE_0_CH_MASK          (PLOTBIT(PLOT_CH_DXCLUSTER) | PLOTBIT(PLOT_CH_CONTESTS) | \
+                                 PLOTBIT(PLOT_CH_ADIF) | PLOTBIT(PLOT_CH_ONTA) | \
+                                 PLOTBIT(PLOT_CH_DXPEDS) | PLOTBIT(PLOT_CH_ACTIVENETS) | \
+                                 PLOTBIT(PLOT_CH_LAUNCHES) | PLOTBIT(PLOT_CH_SATACT))
 
 // compute number of bits set in PANE_0_CH_MASK at compile time :-)
 // https://stackoverflow.com/questions/109023/count-the-number-of-set-bits-in-a-32-bit-integer
 // https://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
 #define NBITS_SET(v) ((((((((v) - (((v) >> 1) & 0x55555555)) & 0x33333333) + ((((v) - (((v) >> 1) & 0x55555555)) >> 2) & 0x33333333)) + (((((v) - (((v) >> 1) & 0x55555555)) & 0x33333333) + ((((v) - (((v) >> 1) & 0x55555555)) >> 2) & 0x33333333)) >> 4)) & 0xF0F0F0F) * 0x1010101) >> 24)
-#define N_PANE_0_CH             ((int)(NBITS_SET((uint32_t)PANE_0_CH_MASK)))
+#define N_PANE_0_CH             ((int)(NBITS_SET((uint32_t)PANE_0_CH_MASK) + \
+                                                 NBITS_SET((uint32_t)(PANE_0_CH_MASK >> 32))))
 
 #define PLOT_ROTWARN_DT        4           // show rotation about to occur, secs
 
@@ -2515,9 +2317,11 @@ extern bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp);
 extern PlotPane findPaneForChoice (PlotChoice pc);
 extern PlotPane findPaneChoiceNow (PlotChoice pc);
 extern PlotChoice getNextRotationChoice (PlotPane pp, PlotChoice pc);
+extern PlotChoice getPrevRotationChoice (PlotPane pp, PlotChoice pc);
 extern PlotChoice getAnyAvailableChoice (void);
 extern PlotChoice getAnyAvailablePane0Choice (void);
 extern void forcePaneRotation (PlotPane pp);
+extern void forcePaneRotationPrev (PlotPane pp);
 extern bool plotChoiceIsAvailable (PlotChoice ch);
 extern void logPaneRotSet (PlotPane pp, PlotChoice ch);
 extern void logBRBRotSet(void);
@@ -2527,7 +2331,8 @@ extern void savePlotOps(void);
 extern int tickmarks (float min, float max, int numdiv, float ticks[]);
 extern bool isPaneRotating (PlotPane pp);
 extern bool isSpecialPaneRotating (PlotPane pp);
-extern bool enforceCDownAlone (const SBox &box, uint32_t rotset);
+extern bool enforceCDownAlone (const SBox &box, PlotMask rotset);
+extern bool overHoverPane (const SCoord &s);
 extern void restoreNormPANE0(void);
 
 
@@ -2704,9 +2509,52 @@ extern const uint16_t runner[HC_RUNNER_W*HC_RUNNER_H] PROGMEM;
 
 extern void drawSanta(void);
 extern void drawFireworks(void);
+extern void drawEnterprise(void);
 extern SBox santa_b;
+extern SBox ent_b;
 
+/*
+ * lightning.cpp
+ */
 
+extern void initLightning (void);
+extern void resetLightning (void);
+extern void updateLightning (void);
+extern void drawLightningOnMap (void);
+extern void doLightningTouch (void);
+extern uint8_t  ltg_worldwide;          // 1=worldwide, 0=radius mode
+extern uint16_t ltg_radius_km;          // search radius when not worldwide
+
+/*
+ * hurricane.cpp
+ */
+
+#define STORM_INTERVAL      (2) 
+
+extern void initStorms (void);
+extern bool checkStormsData (void);
+extern bool updateStorms (const SBox &box, bool fresh);
+extern void drawStormsOnMap (void);
+extern bool checkStormsTouch (const SCoord &s, const SBox &box);
+extern const char *getStormHoverLabel (const LatLong &ll);
+extern bool getStormPaneHover (const SCoord &ms, LatLong *ll, char *label, size_t label_len);
+extern bool stormsActive (void);
+extern bool getStormTropicalTidbitsURL (const LatLong &ll, char *url, size_t url_len);
+extern bool getStormMapMenuInfo (const LatLong &ll, char *line1, size_t line1_len,
+        char *line2, size_t line2_len, char *line3, size_t line3_len);
+extern uint16_t stormCategoryColor (uint8_t cat, uint16_t wind_kt);
+
+/* 
+ * launches.cpp
+ */
+
+extern bool updateLaunches     (const SBox &box, bool fresh);
+extern bool checkLaunchesTouch (const SCoord &s, const SBox &box);
+extern void drawLaunchesOnMap  (void);
+extern const char *getLaunchHoverLabel (const LatLong &ll);
+extern bool getLaunchPaneHover (const SCoord &ms, LatLong *ll, char *label, size_t label_len);
+extern bool getLaunchMapMenuInfo (const LatLong &ll, char *l1, size_t l1n, char *l2, size_t l2n,
+        char *l3, size_t l3n, const char **wiki_url);
 
 
 
@@ -2917,6 +2765,11 @@ extern const char *getWiFiSSID(void);
 extern const char *getWiFiPW(void);
 extern const char *getCallsign(void);
 extern bool setCallsign (const char *cs);
+
+/* cfg_info.cpp -- backup sidecar maintenance */
+extern void writeCfgInfo (const char *cfg_name);
+extern void deleteCfgInfo (const char *cfg_name);
+extern void renameCfgInfo (const char *from, const char *to);
 extern const char *getDXClusterHost(void);
 extern int getDXClusterPort(void);
 extern bool setDXCluster (char *host, char *port_str, Message &ynot);
@@ -2927,6 +2780,7 @@ extern bool useGeoIP(void);
 extern bool useGPSDTime(void);
 extern bool useGPSDLoc(void);
 extern const char *getGPSDHost(void);
+extern const char *getPiAwareHost(void);
 extern bool useNMEATime(void);
 extern bool useNMEALoc(void);
 extern const char *getNMEAFile(void);
@@ -2974,6 +2828,7 @@ extern bool useOSTime (void);
 extern bool showNewDXDEWx(void);
 extern int getPaneRotationPeriod (void);
 extern bool showPIP(void);
+extern bool showPlanets(void);
 extern bool autoMap(void);
 extern int getMapRotationPeriod(void);
 extern GrayDpy_t getGrayDisplay(void);
@@ -3117,6 +2972,7 @@ extern void drawDigit (const SBox &b, int digit, uint16_t lt, uint16_t bg, uint1
 
 // aurora info
 #define AURORA_INTERVAL         (1700)                  // interval, seconds
+#define HQ_INTERVAL             (60)                    // HamQSL HF/VHF pane refresh, secs
 #define AURORA_COLOR            RGB565(100,200,150)     // plot color
 #define AURORA_MAXPTS           (48)                    // every 30 minutes for 24 hours
 #define AURORA_MAXAGE           (24.0F)                 // max age to plot, hours
@@ -3218,6 +3074,16 @@ typedef struct {
     float s[XRAY_NV];                           // short xray value
 } XRayData;
 
+// solar proton flux (>= 10 MeV, GOES integral), same cadence/count as XRayData for time alignment
+#define PROTON_NV               XRAY_NV                 // n points to collect, same window as xray
+#define PROTON_INTERVAL         XRAY_INTERVAL           // polling interval, secs
+typedef struct {
+    time_t next_update;                         // when to try to get new data
+    bool data_ok;                               // set when data are known good
+    float x[PROTON_NV];                         // age, hours ago -- matches XRayData::x
+    float p[PROTON_NV];                         // log10(pfu), >= 10 MeV integral proton flux
+} ProtonData;
+
 typedef struct {
     time_t next_update;                         // when to try to get new data
     bool data_ok;                               // set when data are known good
@@ -3256,6 +3122,7 @@ extern bool retrieveSunSpots (SunSpotData &ssn);
 extern bool retrieveSolarFlux (SolarFluxData &sf);
 extern bool retrieveDRAP (DRAPData &drap);
 extern bool retrieveXRay (XRayData &xray);
+extern bool retrieveProtonFlux (ProtonData &proton);
 extern bool retrieveKp (KpData &kp);
 extern bool retrieveNOAASWx (NOAASpaceWxData &noaa);
 extern bool retrieveAurora (AuroraData &a);
@@ -3263,6 +3130,7 @@ extern bool retrieveDST (DSTData &a);
 
 extern void doNCDXFSpcWxTouch (const SCoord &s);
 extern void drawNCDXFSpcWxStats(uint16_t color);
+extern void drawNCDXFLightningStats(void);
 extern bool checkForNewSpaceWx(void);           // check for any new data or ...
 extern bool checkForNewDRAP(void);              // ... a few specific ones
 extern bool checkForNewAurora(void);            // ... a few specific ones
@@ -3530,11 +3398,19 @@ extern bool bypass_pw;
 // core map update intervals
 #define DRAPMAP_INTERVAL        (300)                   // polling interval, secs
 #define MUF_RT_INTERVAL         (900)                   // polling interval, secs
+#define TROPO_INTERVAL          (6*3600)		// polling interval, secs
 #define DEWX_INTERVAL           (1700)                  // polling interval, secs
 #define DXWX_INTERVAL           (1600)                  // polling interval, secs
 #define BC_INTERVAL             (3400)                  // polling interval, secs
 #define VOACAP_INTERVAL         (3500)                  // polling interval, secs
 #define OTHER_MAPS_INTERVAL     (1800)                  // polling interval, secs
+
+// VOACAP-specific exponential backoff and click rate-limit
+#define VOACAP_RETRY_BASE       (30)                    // initial backoff after a failure, secs
+#define VOACAP_RETRY_MAX        (30*60)                 // cap on exponential backoff, secs
+#define VOACAP_RETRY_MULT       (2)                     // backoff multiplier per failure
+#define VOACAP_INITIAL_JITTER   (30)                    // jitter for first attempt, secs
+#define VOACAP_MIN_INTERVAL     (30)                    // min secs between any VOACAP fetch attempts
 #define ROTATION_INTERVAL       (getPaneRotationPeriod()) // handy pane auto rotation period in seconds
 
 
@@ -3560,6 +3436,7 @@ extern void scheduleRSSNow(void);
 extern bool getTCPLine (WiFiClient &client, char line[], uint16_t line_len, uint16_t *ll);
 extern void sendUserAgent (WiFiClient &client);
 extern void httpHCGET (WiFiClient &client, const char *server, const char *hc_page);
+extern bool connecthttpsHCGET (WiFiClient &client, const char *server, const char *hc_page);
 extern bool httpSkipHeader (WiFiClient &client);
 extern bool httpSkipHeader (WiFiClient &client, const char *header, char *value, int value_len);
 extern int getNTPServers (const NTPServer **listp);
@@ -3567,6 +3444,12 @@ extern bool setRSSTitle (const char *title, int &n_titles, int &max_titles);
 extern time_t nextPaneRotation (PlotPane pp);
 extern time_t nextWiFiRetry (PlotChoice pc);
 extern time_t nextWiFiRetry (const char *str);
+extern time_t nextVOACAPRetry (const char *str);
+extern void   resetVOACAPRetry (void);
+extern bool   voacapThrottled (time_t now);
+extern void   noteVOACAPAttempt (time_t now);
+extern time_t lastVOACAPAttempt (void);
+extern bool   isVOACAPMap (CoreMaps cm);
 extern void scheduleFreshMap (void);
 extern PlotPane ignorePaneTouch(void);
 extern NTPServer *findBestNTP(void);

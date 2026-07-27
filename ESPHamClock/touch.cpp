@@ -103,6 +103,9 @@ void drainTouch()
     while (tft.touched())
         tft.touchRead (&tx, &ty, NULL);
 
+    wifi_tt = TT_NONE;
+    wifi_tt_s = {0, 0};
+
     bool control, shift;
     while (tft.getChar (&control, &shift) != CHAR_NONE)
         continue;

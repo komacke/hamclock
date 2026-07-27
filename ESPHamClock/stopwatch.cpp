@@ -117,6 +117,13 @@ static bool alarmSwitchIsTrue(void)
     return (!readMCPPoller (SW_ALARMOFF_PIN));
 }
 
+/* init the alarm clock output pin
+ */
+static void initAlarmPin (void)
+{
+    mcp.pinMode (SW_ALARMOUT_PIN, OUTPUT);
+}
+
 /* control the alarm clock output pin
  */
 static void setAlarmPin (bool set)
@@ -2377,6 +2384,7 @@ void initStopwatch()
     startMCPPoller (SW_ALARMOFF_PIN);
 
     setCDLEDState (SWCDS_OFF);
+    initAlarmPin ();
     setAlarmPin (false);
 }
 
@@ -2399,7 +2407,7 @@ void drawMainPageStopwatch (bool force)
             drawSBox (stopwatch_b, RA8875_WHITE);
 
         // body radius and step for stems
-        uint16_t br = 3*stopwatch_b.h/8;
+        uint16_t br = stopwatch_b.h/4;
         uint16_t xc = stopwatch_b.x + stopwatch_b.w/2;
         uint16_t yc = stopwatch_b.y + stopwatch_b.h/2;
         uint16_t dx = roundf(br*cosf(deg2rad(45)));

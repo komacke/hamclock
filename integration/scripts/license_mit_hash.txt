@@ -1,0 +1,4 @@
+# Copyright (c) 2026 David Strickland KR8X
+# Contributor to HamClock by Elwood Charles Downey.
+# SPDX-License-Identifier: MIT
+# See LICENSE file distributed with HamClock for full license text.

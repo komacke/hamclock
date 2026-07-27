@@ -13,15 +13,19 @@
 #include <sys/resource.h>
 
 #include "Arduino.h"
-
+#include "timeout.h"
 // max cpu usage, throttle with -t
 #define DEF_CPU_USAGE 0.8F
 static float max_cpu_usage = DEF_CPU_USAGE;
+// even at 100% throttle, don't busy-spin the host when loop() has nothing to do
+#define DEF_MIN_IDLE_LOOP_US 1000
 
 char **our_argv;                // our argv for restarting
 std::string our_dir;            // our storage directory, including trailing /
 bool rm_eeprom;                 // set by -0 to rm eeprom to restore defaults
 bool ignore_x11geom;            // set by -q to ignore startup loc and size
+
+bool version_https=false;             // forces https to be used for fetching version
 
 // list of diagnostic files, newest first
 const char *diag_files[N_DIAG_FILES] = {
@@ -30,10 +34,12 @@ const char *diag_files[N_DIAG_FILES] = {
     "diagnostic-log-1.txt",
     "diagnostic-log-2.txt"
 };
-
-
+// helper macro to get value of macro without quotes
+#define STRINGIFY(x) #x
+#define TOSTRING(x)  STRINGIFY(x)
 // how we were made
-char build_variables[64];
+char build_variables[128];
+char build_B[128];
 
 #if defined(_USE_FB0)
   #if defined(_CLOCK_1600x960)
@@ -68,7 +74,7 @@ char build_variables[64];
 #else
   #error Unknown build configuration
 #endif
- 
+
 
 // public for user agent
 const char *pw_file;
@@ -79,6 +85,15 @@ static void initBuildVariables(void)
     build_variables[0] = '\0';  // start empty
     #if defined(_FB_DEPTH)
         snprintf (build_variables, sizeof(build_variables), "FB_DEPTH=%d ", _FB_DEPTH);
+    #endif
+    #if defined(_T)
+        snprintf (build_variables+strlen(build_variables), sizeof(build_variables)-strlen(build_variables), "T=%d ", _T);
+    #endif
+    #if defined(_B)
+        snprintf (build_variables+strlen(build_variables), sizeof(build_variables)-strlen(build_variables), "B=%s ", TOSTRING(_B));
+    #endif
+    #if defined(_S)
+        snprintf (build_variables+strlen(build_variables), sizeof(build_variables)-strlen(build_variables), "S=%s ", TOSTRING(_S));
     #endif
     #if defined(_WIFI_NEVER)
         strcat(build_variables, "WIFI_NEVER=1 ");
@@ -95,27 +110,27 @@ uint32_t millis(void)
     #if defined(CLOCK_MONOTONIC_FAST_XXXX)
         // this is only on FreeBSD but is fully 200x faster than gettimeofday or CLOCK_MONOTONIC
         // as of 14-RELEASE now this one is slow -- use normal gettimeofday
-	static struct timespec t0;
-	struct timespec t;
-	clock_gettime (CLOCK_MONOTONIC_FAST, &t);
-	if (t0.tv_sec == 0)
-	    t0 = t;
-	uint32_t dt_ms = (t.tv_sec - t0.tv_sec)*1000 + (t.tv_nsec - t0.tv_nsec)/1000000;
-	return (dt_ms);
+    static struct timespec t0;
+    struct timespec t;
+    clock_gettime (CLOCK_MONOTONIC_FAST, &t);
+    if (t0.tv_sec == 0)
+        t0 = t;
+    uint32_t dt_ms = (t.tv_sec - t0.tv_sec)*1000 + (t.tv_nsec - t0.tv_nsec)/1000000;
+    return (dt_ms);
     #else
-	static struct timeval t0;
-	struct timeval t;
-	gettimeofday (&t, NULL);
-	if (t0.tv_sec == 0)
-	    t0 = t;
-	uint32_t dt_ms = (t.tv_sec - t0.tv_sec)*1000 + (t.tv_usec - t0.tv_usec)/1000;
-	return (dt_ms);
+    static struct timeval t0;
+    struct timeval t;
+    gettimeofday (&t, NULL);
+    if (t0.tv_sec == 0)
+        t0 = t;
+    uint32_t dt_ms = (t.tv_sec - t0.tv_sec)*1000 + (t.tv_usec - t0.tv_usec)/1000;
+    return (dt_ms);
     #endif
 }
 
 void delay (uint32_t ms)
 {
-	usleep (ms*1000);
+    usleep (ms*1000);
 }
 
 long random(int max)
@@ -132,7 +147,7 @@ uint16_t analogRead(int pin)
 {
         (void) pin;
 
-	return (0);		// not supported on Pi, consider https://www.adafruit.com/product/1083
+    return (0);     // not supported on Pi, consider https://www.adafruit.com/product/1083
 }
 
 static void mvLog (const char *from, const char *to)
@@ -392,7 +407,9 @@ static void usage (const char *errfmt, ...)
             fprintf (stderr, " -r p : set read-only live web server port to p or -1 to disable; default %d\n",
                                     LIVEWEB_RO_PORT);
             fprintf (stderr, " -s d : start time as if UTC now is d formatted as YYYY-MM-DDTHH:MM:SS\n");
+            fprintf (stderr, " -S s : set Software server host for OTA download; default is %s\nMust come after -b if used\n",software_host);
             fprintf (stderr, " -t p : throttle max cpu to p percent; default is %.0f\n", DEF_CPU_USAGE*100);
+            fprintf (stderr, " -T t : set max timeout for responses from backend\n");
             fprintf (stderr, " -v   : show version info then exit\n");
             fprintf (stderr, " -w p : set read-write live web server port to p or -1 to disable; default %d\n",
                                     LIVEWEB_RW_PORT);
@@ -427,7 +444,40 @@ static void crackArgs (int ac, char *av[])
         const char *new_appdir = NULL;
         bool cl_set = false;
         int max_lw = 0;
-
+// process build variables before processing command options that override them
+    #if defined(_T)
+        {
+            char *myt = strdup(TOSTRING(_T));
+            uint8_t to = atoi(myt);
+            if (to < 1  || to > 65)
+                usage ("build error, T=timout, timeout must be [1,65] seconds");
+            set_timeout_s(to);
+        }
+    #endif
+// Process B first since it modifies backend_host and software_host for backward compatibility to -b arg
+    #if defined(_B)
+        {
+             char *myb = strdup(TOSTRING(_B));
+             char *myb_colon = strchr (myb, ':');
+             if (myb_colon) {
+                *myb_colon = '\0';                  // put EOS after host
+                backend_host = myb;
+                software_host = myb;
+                backend_port = atoi(myb_colon+1);
+                if (backend_port < 1 || backend_port > 65535)
+                   usage ("build error, B=host:port, port must be [1,65355]");
+             } else {
+                usage ("build error, B=host:port, : missing");
+             }
+        }
+    #endif
+    #if defined(_S)
+        {
+            char *myb = strdup(TOSTRING(_S));
+        software_host = myb;
+            version_https=true;
+        }
+    #endif
         while (--ac && **++av == '-') {
             char *s = *av;
             while (*++s) {
@@ -459,6 +509,7 @@ static void crackArgs (int ac, char *av[])
                         if (myb_colon) {
                             *myb_colon = '\0';                  // put EOS after host
                             backend_host = myb;
+                            software_host = myb;
                             backend_port = atoi(myb_colon+1);
                             if (backend_port < 1 || backend_port > 65535)
                                 usage ("-b port must be [1,65355]");
@@ -554,6 +605,15 @@ static void crackArgs (int ac, char *av[])
                     setUsrDateTime(*++av);
                     ac--;
                     break;
+               case 'S': {
+                        if (ac < 2)
+                            usage ("missing software server for -S");
+                        char *mys = strdup(*++av);
+                        software_host = mys;
+                        version_https=true;
+                        ac--;
+                    }
+                    break;
                 case 't':
                     if (ac < 2)
                         usage ("missing percentage for -t");
@@ -561,6 +621,16 @@ static void crackArgs (int ac, char *av[])
                     if (max_cpu_usage < 0.1F || max_cpu_usage>1)
                         usage ("-t percentage must be [10,100]");
                     ac--;
+                    break;
+                case 'T': {
+                        if (ac < 2)
+                            usage ("Missing timeout for -T");
+                        uint8_t to = atoi(*++av);
+                        if (to < 1 || to > 65)
+                            usage ("-T must be [1,65]");
+                        ac--;
+                        set_timeout_s(to);
+                    }
                     break;
                 case 'v':
                     showVersion();
@@ -589,6 +659,9 @@ static void crackArgs (int ac, char *av[])
             }
         }
 
+        // if software host and back are different, get version from software host via https
+        if (strcmp(backend_host,software_host) != 0)
+            version_https=true;
         // initial checks
         if (ac > 0)
             usage ("extra args");
@@ -634,99 +707,107 @@ static void crackArgs (int ac, char *av[])
  */
 int main (int ac, char *av[])
 {
-        // save our args for restart or remote update
-	our_argv = av;
+    // save our args for restart or remote update
+    our_argv = av;
 
-        // always want stdout immediate and allow for multiple processes writing
-        fcntl (1, F_SETFL, fcntl (1, F_GETFL, 0) | O_APPEND);
-        setbuf (stdout, NULL);
+    // always want stdout immediate and allow for multiple processes writing
+    fcntl (1, F_SETFL, fcntl (1, F_GETFL, 0) | O_APPEND);
+    setbuf (stdout, NULL);
 
-        // initialize extra defines
-        initBuildVariables();
+    // initialize extra defines
+    initBuildVariables();
 
-        // check args
-        crackArgs (ac, av);
+    // check args
+    crackArgs (ac, av);
 
-        // log args after cracking so they get into the proper diag file
-        printf ("\nNew program args:\n");
-        for (int i = 0; i < ac; i++)
-            printf ("  argv[%d] = %s\n", i, av[i]);
+    // log args after cracking so they get into the proper diag file
+    printf ("\nNew program args:\n");
+    for (int i = 0; i < ac; i++)
+        printf ("  argv[%d] = %s\n", i, av[i]);
 
-        // log some sys info
-        logSys();
+    // log some sys info
+    logSys();
 
-        // log os release, if available
-        logOS();
+    // log os release, if available
+    logOS();
 
-	// call Arduino setup one time
-        printf ("Calling Arduino setup()\n");
-	setup();
+    // call Arduino setup one time
+    printf ("Calling Arduino setup()\n");
+    setup();
 
-	// call Arduino loop forever
-        // this loop by itself would run 100% CPU so offer a means to be a better citizen and throttle back
-        printf ("Starting Arduino loop()\n");
+    // call Arduino loop forever
+    // this loop by itself would run 100% CPU so offer a means to be a better citizen and throttle back
+    printf ("Starting Arduino loop()\n");
 
-        if (max_cpu_usage == 1) {
+    #define TVUSEC(tv0,tv1) (((tv1).tv_sec-(tv0).tv_sec)*1000000 + ((tv1).tv_usec-(tv0).tv_usec))
 
-            // pure loop
-            for (;;)
-                loop();
+    if (max_cpu_usage == 1) {
 
-        } else {
-
-            // init performance metrics in order to throttle usage
-            int cpu_us = 0, et_us = 0;      // cpu and elapsed time
-            int sleep_us = 100;             // initial sleep, usecs
-            const int sleep_dt = 10;        // sleep adjustment, usecs
-            const int max_sleep = 50000;    // max sleep each loop, usecs
-
-            #define TVUSEC(tv0,tv1) (((tv1).tv_sec-(tv0).tv_sec)*1000000 + ((tv1).tv_usec-(tv0).tv_usec))
-
-            for (;;) {
-
-                // get time and usage before calling loop()
-                struct rusage ru0;
-                getrusage (RUSAGE_SELF, &ru0);
-                struct timeval tv0;
-                gettimeofday (&tv0, NULL);
-
-                // Ardino loop
-                loop();
-
-                // cap cpu usage by sleeping controlled by a simple integral controller
-                if (cpu_us > et_us*max_cpu_usage) {
-                    // back off
-                    if (sleep_us < max_sleep)
-                        sleep_us += sleep_dt;
-                } else {
-                    // more!
-                    if (sleep_us < sleep_dt)
-                        sleep_us = 0;
-                    else
-                        sleep_us -= sleep_dt;
-                }
-                if (sleep_us > 0)
-                    usleep (sleep_us);
-
-                // get time and usage after running loop() and our usleep
-                struct rusage ru1;
-                getrusage (RUSAGE_SELF, &ru1);
-                struct timeval tv1;
-                gettimeofday (&tv1, NULL);
-
-                // find cpu time used
-                struct timeval &ut0 = ru0.ru_utime;
-                struct timeval &ut1 = ru1.ru_utime;
-                struct timeval &st0 = ru0.ru_stime;
-                struct timeval &st1 = ru1.ru_stime;
-                int ut_us = TVUSEC(ut0,ut1);
-                int st_us = TVUSEC(st0,st1);
-                cpu_us = ut_us + st_us;
-
-                // find elapsed time
-                et_us = TVUSEC(tv0,tv1);
-
-                // printf ("sleep_us= %10d cpu= %10d et= %10d %g\n", sleep_us, cpu_us, et_us, fmin(100,100.0*cpu_us/et_us));
-            }
+        // pure loop, but still yield briefly when loop() returns faster than our minimum idle cadence.
+        for (;;) {
+            struct timeval tv0;
+            gettimeofday (&tv0, NULL);
+            loop();
+            struct timeval tv1;
+            gettimeofday (&tv1, NULL);
+            int loop_us = TVUSEC(tv0, tv1);
+            if (loop_us < DEF_MIN_IDLE_LOOP_US)
+                usleep (DEF_MIN_IDLE_LOOP_US - loop_us);
         }
+
+    } else {
+
+        // init performance metrics in order to throttle usage
+        int cpu_us = 0, et_us = 0;      // cpu and elapsed time
+        int sleep_us = 100;             // initial sleep, usecs
+        const int sleep_dt = 10;        // sleep adjustment, usecs
+        const int max_sleep = 50000;    // max sleep each loop, usecs
+
+        for (;;) {
+
+            // get time and usage before calling loop()
+            struct rusage ru0;
+            getrusage (RUSAGE_SELF, &ru0);
+            struct timeval tv0;
+            gettimeofday (&tv0, NULL);
+
+            // Ardino loop
+            loop();
+
+            // cap cpu usage by sleeping controlled by a simple integral controller
+            if (cpu_us > et_us*max_cpu_usage) {
+                // back off
+                if (sleep_us < max_sleep)
+                    sleep_us += sleep_dt;
+            } else {
+                // more!
+                if (sleep_us < sleep_dt)
+                    sleep_us = 0;
+                else
+                    sleep_us -= sleep_dt;
+            }
+            if (sleep_us > 0)
+                usleep (sleep_us);
+
+            // get time and usage after running loop() and our usleep
+            struct rusage ru1;
+            getrusage (RUSAGE_SELF, &ru1);
+            struct timeval tv1;
+            gettimeofday (&tv1, NULL);
+
+            // find cpu time used
+            struct timeval &ut0 = ru0.ru_utime;
+            struct timeval &ut1 = ru1.ru_utime;
+            struct timeval &st0 = ru0.ru_stime;
+            struct timeval &st1 = ru1.ru_stime;
+            int ut_us = TVUSEC(ut0,ut1);
+            int st_us = TVUSEC(st0,st1);
+            cpu_us = ut_us + st_us;
+
+            // find elapsed time
+            et_us = TVUSEC(tv0,tv1);
+
+            // printf ("sleep_us= %10d cpu= %10d et= %10d %g\n", sleep_us, cpu_us, et_us, fmin(100,100.0*cpu_us/et_us));
+        }
+    }
 }

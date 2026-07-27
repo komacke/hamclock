@@ -1,0 +1,181 @@
+#!/bin/bash
+#
+# Copyright (c) 2026 Keith Maton G6NHU
+# https://qso365.co.uk
+#
+# Permission is granted to use, copy, modify and distribute this script,
+# provided that this notice is retained.
+# You may not misrepresent the original authorship of this work.
+#
+
+GITHUB_RAW_URL="https://raw.githubusercontent.com/openhamclock/hamclock/refs/heads/main/debian/fix-hosts"
+SELF_UPDATE_FLAG="FIX_HOSTS_SELF_UPDATED"
+
+OS_RELEASE="/etc/os-release"
+FILES_TO_CHECK=(
+    "/boot/firmware/user-data"
+    "/etc/cloud/cloud.cfg"
+    "/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg"
+)
+
+changed_files=()
+setting_found=0
+
+# Must be run as root
+if [ "$EUID" -ne 0 ]; then
+    echo "This script must be run with sudo or as root."
+    exit 1
+fi
+
+self_update() {
+    local script_path remote_tmp script_name
+
+    if [ -n "$FIX_HOSTS_SELF_UPDATED" ]; then
+        return 0
+    fi
+
+    script_path=$(readlink -f "$0" 2>/dev/null)
+    if [ -z "$script_path" ] || [ ! -f "$script_path" ] || [ ! -w "$script_path" ]; then
+        return 0
+    fi
+
+    remote_tmp=$(mktemp) || {
+        echo "Warning: could not create temporary file for update check. Continuing."
+        return 0
+    }
+
+    if command -v curl >/dev/null 2>&1; then
+        if ! curl -fsSL "$GITHUB_RAW_URL" -o "$remote_tmp"; then
+            rm -f "$remote_tmp"
+            echo "Warning: update check failed. Continuing with installed version."
+            return 0
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if ! wget -qO "$remote_tmp" "$GITHUB_RAW_URL"; then
+            rm -f "$remote_tmp"
+            echo "Warning: update check failed. Continuing with installed version."
+            return 0
+        fi
+    else
+        rm -f "$remote_tmp"
+        echo "Warning: neither curl nor wget is available. Skipping update check."
+        return 0
+    fi
+
+    if ! head -n 1 "$remote_tmp" | grep -q '^#!/bin/bash'; then
+        rm -f "$remote_tmp"
+        echo "Warning: downloaded update does not look valid. Continuing with installed version."
+        return 0
+    fi
+
+    if cmp -s "$script_path" "$remote_tmp"; then
+        rm -f "$remote_tmp"
+        return 0
+    fi
+
+    chmod 755 "$remote_tmp"
+
+    if ! mv "$remote_tmp" "$script_path"; then
+        rm -f "$remote_tmp"
+        echo "Warning: failed to update $script_path. Continuing with installed version."
+        return 0
+    fi
+
+    script_name=$(basename "$script_path")
+    echo "A newer version of $script_name was found and installed."
+    echo "Restarting with the updated version..."
+
+    export FIX_HOSTS_SELF_UPDATED=1
+    exec "$script_path" "$@"
+}
+
+self_update "$@"
+
+# Check os-release exists
+if [ ! -f "$OS_RELEASE" ]; then
+    echo "Error: $OS_RELEASE not found."
+    exit 1
+fi
+
+# Load OS info
+. "$OS_RELEASE"
+
+# Work out major version number
+VERSION_NUM=""
+if [ -n "${VERSION_ID:-}" ]; then
+    VERSION_NUM="${VERSION_ID%%.*}"
+fi
+
+if ! [[ "$VERSION_NUM" =~ ^[0-9]+$ ]]; then
+    echo "Could not determine OS version from $OS_RELEASE. Exiting."
+    exit 1
+fi
+
+# Decide whether this OS/version should be checked
+case "${ID:-}" in
+    debian|raspbian)
+        if [ "$VERSION_NUM" -lt 13 ]; then
+            echo "OS is older than Trixie. No change needed."
+            exit 0
+        fi
+        ;;
+    ubuntu)
+        if [ "$VERSION_NUM" -lt 25 ]; then
+            echo "Ubuntu version is older than 25. No change needed."
+            exit 0
+        fi
+        ;;
+    *)
+        echo "Unsupported OS. No change needed."
+        exit 0
+        ;;
+esac
+
+for file in "${FILES_TO_CHECK[@]}"; do
+    [ -f "$file" ] || continue
+
+    if grep -Eq '^[[:space:]]*manage_etc_hosts:' "$file"; then
+        setting_found=1
+
+        if grep -Eq '^[[:space:]]*manage_etc_hosts:[[:space:]]*false[[:space:]]*$' "$file"; then
+            continue
+        fi
+
+        tmpfile=$(mktemp) || {
+            echo "Error: could not create temporary file."
+            exit 1
+        }
+
+        sed -E 's/^[[:space:]]*manage_etc_hosts:[[:space:]]*.*/manage_etc_hosts: false/' "$file" > "$tmpfile"
+
+        if ! cat "$tmpfile" > "$file"; then
+            rm -f "$tmpfile"
+            echo "Error: failed to update $file."
+            exit 1
+        fi
+
+        rm -f "$tmpfile"
+        changed_files+=("$file")
+    fi
+done
+
+if [ "${#changed_files[@]}" -gt 0 ]; then
+    if [ "${#changed_files[@]}" -eq 1 ]; then
+        echo "Changed manage_etc_hosts to false in ${changed_files[0]}."
+    else
+        echo "Changed manage_etc_hosts to false in:"
+        for file in "${changed_files[@]}"; do
+            echo "  $file"
+        done
+    fi
+    echo "Please reboot before continuing."
+    exit 0
+fi
+
+if [ "$setting_found" -eq 1 ]; then
+    echo "No change needed: manage_etc_hosts is already set to false."
+else
+    echo "No change needed: manage_etc_hosts setting not found."
+fi
+
+exit 0

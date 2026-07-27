@@ -1,0 +1,82 @@
+msb,lsb,path,description
+#,LICENSE_BEGIN
+#,Copyright (c) 2026 David Strickland KR8X and 2026 openhamclock/hamclock-standards
+#,See https://github.com/openhamclock/hamclock-standards/blob/main/LICENSE.md
+#,
+#,Licensed under Creative Commons Attribution-NoDerivative 4.0 International
+#,https://creativecommons.org/licenses/by-nd/4.0/
+#,LICENSE_END
+0,0,default/isotrope,ISOTROPE
+1,0,default/ccir.000,ISOTROPE
+1,1,default/ccir.001,HR 4/4/1
+1,2,default/ccir.002,HR 4/4/.8
+1,3,default/ccir.003,HR 4/4/.5
+1,4,default/ccir.004,HR 4/3/.5
+1,5,default/ccir.005,HR 4/2/.5
+1,6,default/ccir.006,HR 4/2/.3
+1,7,default/ccir.007,HR 2/4/1
+1,8,default/ccir.008,HR 2/4/.8
+1,9,default/ccir.009,HR 2/4/.5
+1,10,default/ccir.010,HR 2/3/.5
+1,11,default/ccir.011,HR 2/2/.5
+1,12,default/ccir.012,HR 2/2/.3
+1,13,default/ccir.013,HR 2/1/.5
+1,14,default/ccir.014,HR 2/1/.3
+1,15,default/ccir.015,HR 1/2/.5
+1,16,default/ccir.016,HR 1/2/.3
+1,17,default/ccir.017,HR 1/1/.5
+1,18,default/ccir.018,HR 1/1/.3
+1,19,default/ccir.019,TR 2/1/.5
+1,20,default/ccir.020,TR 2/1/.3
+1,21,default/ccir.021,TR 1/2/.5
+1,22,default/ccir.022,TR 1/2/.3
+1,23,default/ccir.023,TR 1/1/.5
+1,24,default/ccir.024,TR 1/1/.3
+1,25,default/ccir.025,mni 4dB [HQ 1/.3]
+1,26,default/ccir.026,SWWhip for REC533
+2,17,default/const17.voa,Const 17dB transmit antenna used by VOA
+3,0,default/swwhip.voa,SWWhip.VOA used by VOA for receive antenna
+4,0,samples/sample.00,ISOTROPE :Sample type 00 Constant gain isotrope
+4,1,samples/sample.01,HR 4/4/1 :Sample type 01 Multiband Aperiodic Reflector Array
+4,2,samples/sample.02,HR 2/2/.3 :Sample type 2 Dual-Band Center-Fed Half-Wave Dipole Array
+4,3,samples/sample.03,HR 4/4/.5 :Sample type 03 Dual-Band End-Fed Half-Wave Dipole Array
+4,4,samples/sample.04,TR 2/1/.5 :Sample type 04 Tropical Array
+4,5,samples/sample.05,LPH 29/.8/31.1/67.1/7/21.60/450 :Sample type 05 Horiz Log-Periodic
+4,6,samples/sample.06,LPV 12/4/25/56/2/14/450 :Sample type 06 Vertical Lop-Periodic
+4,7,samples/sample.07,RH155/40.3/68 :Sample type 07 Horizontal Rhombic
+4,8,samples/sample.08,Omni 4dB [HQ 1/.3] :Sample type 08 Quadrant Antenna
+4,9,samples/sample.09,HX .3 :Sample type 09 Crossed-Dipole Antenna
+4,10,samples/sample.10,VM 8/8/120/3 :Sample type 10 Vertical Monopole
+4,11,samples/sample.11,SWWhip for REC533 :Sample type 11 Gain Table versus Elevation Angle
+4,12,samples/sample.12,HR 4/4/1 :Sample type 12 Curtain Array NTIA Report 87-215
+4,13,samples/sample.13,HR 4/4/.5 :Sample type 13 360 degree gain table
+4,15,samples/sample.14,RH155/40.3/68 :Sample type 14 Point-to-Point gain @ 30 freqs
+4,21,samples/sample.21,RH67/88/17 :Sample type 21 ITSA-1 Terminated Horizontal Rhombic
+4,22,samples/sample.22,VM/.25 :Sample type 22 ITSA-1 Vertical Monopole
+4,23,samples/sample.23,HD/.5/.25 :Sample type 23 ITSA-1 Horizontal Dipole
+4,24,samples/sample.24,HY/.5/.25 :Sample type 24 ITSA-1 Horizontal Yagi
+4,25,samples/sample.25,VLP/.25/2 :Sample type 25 ITSA-1 Vertical Log-Periodic
+4,26,samples/sample.26,H/2/4 :Sample type 26 ITSA-1 Curtain
+4,27,samples/sample.27,V23/122/15/1.8 :Sample type 27 ITSA-1 Sloping Vee
+4,28,samples/sample.28,L/21/10 :Sample type 28 ITSA-1 Inverted L
+4,29,samples/sample.29,SR/23/88/17/8 :Sample type 29 ITSA-1 Sloping Rhombic
+4,30,samples/sample.30,IR/70/114/20/4 :Sample type 30 ITSA-1 Interlaced Rhombic
+4,31,samples/sample.31,RH67/88/17 :Sample type 31 ITS-78 Terminated Horizontal Rhombic
+4,32,samples/sample.32,VM/.25 :Sample type 32 ITS-78 Vertical Monopole
+4,34,samples/sample.34,HY/.5/.25 :Sample type 34 ITS-78 Horizontal Yagi
+4,35,samples/sample.35,VD/.5/.25 :Sample type 35 ITS-78 Vertical Dipole
+4,36,samples/sample.36,H/2/4 :Sample type 36 ITS-78 Curtain
+4,37,samples/sample.37,V23/122/15/1.8 :Sample type 37 ITS-78 Terminated Sloping Vee
+4,38,samples/sample.38,L/21/10 :Sample type 38 ITS-78 Inverted L
+4,39,samples/sample.39,SR/23/88/17/8 :Sample type 39 ITS-78 Terminated Sloping Rhombic
+4,41,samples/sample.41,SLW10/91/0 :Sample type 41 ITS-78 Sloping Long Wire
+4,43,samples/sample.43,HxD3/33/54/450 :Sample type 43 ITS-78 Horizontal X-Dipole Log Periodic
+4,44,samples/sample.44,ATD45/.5/.25 :Sample type 44 ITS-78 Arbitrary Tilted Dipole
+4,45,samples/sample.45,SLR28/80 :Sample type 45 ITS-78 Side-Loaded Vertical Half-Rhombic
+4,46,samples/sample.46,SDR62/150 :Sample type 46 ITS-78 Sloping Double-Rhomboid
+4,47,samples/sample.47,VM/.25/76/2/120 :Sample type 47 ITS-78 Vertical Monopole + Ground Screen
+4,48,samples/sample.48,INVCONE :Sample type 48 NOSC Inverted Cone antenna
+4,90,samples/sample.90,"IONCAP Rhombic - External type 90 - Terminated Horizontal Rhombic, sample.21"
+4,99,samples/sample.99,ISOTROPE :Sample type 99 Harris antenna
+5,14,samples/sample.14x,RH155/40.3/68 :Sample type 14 Point-to-Point gain @ 30 freqs
+

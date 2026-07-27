@@ -256,7 +256,7 @@ const float MHz, char query[], char dfn[], char nfn[], size_t qdn_len)
         snprintf (query, qdn_len, qfmt,
                     yr, mo, hr, de_ll.lat_d, de_ll.lng_d, show_lp, bc_power, ZOOM_W, ZOOM_H,
                     MHz, bc_toa, bc_modevalue, bc_toa);
-
+		antenna_addargs(query+strlen(query), qdn_len-strlen(query));   // add antenna selection arguments to query
         // by storing the entire query in the file name we easily know if a new download is needed.
         snprintf (dfn, qdn_len, "map-D-%s-%s-%010u.bmp", style, page, stringHash(query));
         snprintf (nfn, qdn_len, "map-N-%s-%s-%010u.bmp", style, page, stringHash(query));
@@ -333,7 +333,20 @@ long max_age)
             // download new twin voacap maps
             Serial.printf ("%s: downloading fresh D and N files\n", style);
             updateClocks(false);
+
+            // belt-and-braces: honor VOACAP rate limit before any network I/O
+            time_t now = myNow();
+            if (voacapThrottled(now)) {
+                long since = (long)(now - lastVOACAPAttempt());
+                Serial.printf ("VOACAP: %s throttled in installQueryMaps (%ld s since last)\n",
+                               style, since);
+                mapMsg (3000, "Server Busy Please Wait");
+                return false;          // caller will schedule via nextVOACAPRetry()
+            }
+            noteVOACAPAttempt(now);
+
             WiFiClient client;
+            client.setTimeout(VOACAP_TIMEOUT_MS);
             if (client.connect(backend_host, backend_port)) {
                 mapMsg (0, "%s", msg);
                 char url[2*QBUFLEN];
@@ -620,6 +633,7 @@ bool installFreshMaps()
         case CM_AURORA:
         case CM_CLOUDS:
         case CM_WX:
+	case CM_TROPO:
         case CM_USER:
             ok = installFileMaps (core_map);
             break;
@@ -723,6 +737,13 @@ void logMapRotSet(void)
  */
 const char *getCoreMapStyle (CoreMaps cm, char s[NV_COREMAPSTYLE_LEN])
 {
+        // N.B. CM_NONE is defined as CM_N, one past the end of cm_info[] -- guard against it and
+        // any other out-of-range value rather than reading past the array.
+        if ((int)cm < 0 || (int)cm >= CM_N) {
+            snprintf (s, NV_COREMAPSTYLE_LEN, "None");
+            return (s);
+        }
+
         const char *name = cm_info[cm].name;
 
         if (cm == CM_PMTOA || cm == CM_PMREL)
@@ -788,6 +809,7 @@ bool mapScaleIsUp(void)
     case CM_WX:
     case CM_PMTOA:
     case CM_PMREL:
+    case CM_TROPO:
         return (true);
     case CM_COUNTRIES:
     case CM_TERRAIN:
@@ -865,6 +887,19 @@ void drawMapScale()
         {100,  0x44CC44, 0},
     };
 
+    static const MapScalePoint tropo_scale[] = {
+        {0,  0x444444, 0},  
+        {1,  0x8603F1, 0},   
+        {2,  0x01B4EF, 1},   
+        {3,  0x02D083, 1},   
+        {4,  0xA5EB01, 1},  
+        {5,  0xEFDE05, 1},   
+        {6,  0xE9B10C, 1},   
+        {7,  0xFF8000, 1},   
+        {8,  0xFF0000, 0},   
+        {9,  0xFF80C0, 1},   
+        {10, 0xFFB4DC, 1},   
+    };
 
     // set these depending on map
     const MapScalePoint *msp = NULL;                    // one of above tables
@@ -893,6 +928,12 @@ void drawMapScale()
         n_scale = NARRAY(a_scale);
         n_labels = 11;
         title = "% Chance";
+        break;
+    case CM_TROPO:
+        msp = tropo_scale;
+        n_scale = NARRAY(tropo_scale);
+        n_labels = 11;
+        title = "Index";
         break;
     case CM_WX:
         msp = w_scale;
@@ -968,6 +1009,55 @@ void drawMapScale()
             v = space_wx[SPCWX_AURORA].value;
             v_ok = true;
         }
+    } else if (core_map == CM_TROPO) {
+        // N.B. unlike DRAP/Aurora above, there's no independent "current value" feed to poll --
+        // Hepburn doesn't publish one and neither do we. Instead read whatever pixel is actually
+        // on screen under the cursor right now (getPixelRaw already reflects the correct
+        // projection/zoom/pan and day-night blend, so none of that needs re-deriving here) and
+        // nearest-match it against the same 11 colours the legend itself is drawn from, so this
+        // stays correct automatically if tropo_scale[] is ever retuned.
+        //
+        // The raw tropo_scale colour never actually appears on screen unblended -- the rendered
+        // map is always tinted (see update_tropo_maps.sh's make_bmp_v4_rgb565_topdown: 20% blend
+        // toward 205/220/205 by day, brightness x0.15 by night), so match against BOTH tinted
+        // candidates, derived here from the same table, and take whichever is closer. Verified
+        // this is exact away from the day/night terminator; in the narrow blended band right at
+        // the terminator itself, compositing two different colours can produce a third colour
+        // that's genuinely closer to some OTHER band's tinted variant -- that's an inherent limit
+        // of colour-matching a blended pixel, not something fixable here.
+        uint16_t mx, my;
+        if (tft.getMouse (&mx, &my)) {
+            SCoord ms = {mx, my};
+            uint8_t pr, pg, pb;
+            if (overMap(ms) && tft.getPixelRaw (mx, my, &pr, &pg, &pb)) {
+                int best_i = -1;
+                long best_d2 = 0;
+                for (unsigned i = 0; i < n_scale; i++) {
+                    uint8_t cr = _MS_PTC(i) >> 16, cg = (_MS_PTC(i) >> 8) & 0xFF, cb = _MS_PTC(i) & 0xFF;
+                    long ddr = (long)pr - (long)(cr*0.8F + 205*0.2F);
+                    long ddg = (long)pg - (long)(cg*0.8F + 220*0.2F);
+                    long ddb = (long)pb - (long)(cb*0.8F + 205*0.2F);
+                    long dday2 = ddr*ddr + ddg*ddg + ddb*ddb;
+                    long dnr = (long)pr - (long)(cr*0.15F);
+                    long dng = (long)pg - (long)(cg*0.15F);
+                    long dnb = (long)pb - (long)(cb*0.15F);
+                    long dnight2 = dnr*dnr + dng*dng + dnb*dnb;
+                    long d2 = dday2 < dnight2 ? dday2 : dnight2;
+                    if (best_i < 0 || d2 < best_d2) {
+                        best_d2 = d2;
+                        best_i = (int)i;
+                    }
+                }
+                if (best_i >= 0) {
+                    v = _MS_PTV(best_i);
+                    v_ok = true;
+                }
+            }
+        }
+        // v_ok simply stays false whenever the cursor isn't over the map (or app), which is exactly
+        // what makes the marker disappear next redraw -- drawMapScale() repaints the whole gradient
+        // bar unconditionally every call (see the loop above), so there is nothing to explicitly
+        // erase; an absent marker this time overwrites a present one from last time for free.
     }
     if (v_ok) {
         // find marker but beware range overflow and leave room for full width

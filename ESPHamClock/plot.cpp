@@ -491,6 +491,17 @@ void plotBandConditions (const SBox &box, int busy, const BandCdtnMatrix *bmp, c
         }
     }
 
+    // when hr_now doesn't fall on a printed label, draw a small upward arrow
+    // at column 0 so the user can see where "now" is
+    if ((hr_now % 4) != 0) {
+        uint16_t ax = PLEFT_X + PCOL_W / 2;
+        uint16_t ay = timeline_y + PFONT_H / 2;
+        tft.drawLine (ax,   ay-3, ax,   ay-3, RELTOA_COLOR);
+        tft.drawLine (ax-1, ay-2, ax+1, ay-2, RELTOA_COLOR);
+        tft.drawLine (ax-2, ay-1, ax+2, ay-1, RELTOA_COLOR);
+        tft.drawLine (ax-3, ay,   ax+3, ay,   RELTOA_COLOR);
+    }
+
     // that's it unless drawing all
     if (!draw_all)
         return;

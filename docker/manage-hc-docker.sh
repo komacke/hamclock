@@ -1,19 +1,19 @@
 #!/bin/bash
 
 HC_MANAGER_VERSION=latest
-GITHUB_REPO="komacke/hamclock"
+GITHUB_REPO="openhamclock/hamclock"
 
 IMAGE_BASE=komacke/hamclock
 
 # Get our directory locations in order
-HERE="$(realpath -s "$(dirname "$0")" 2>/dev/null)"
-[ -z "$HERE" ] && HERE="$(realpath "$(dirname "$0")")"
+HERE="$(cd "$(dirname "$0")" && pwd)"
 REL_HERE="$(dirname "$0")"
 THIS="$(basename "$0")"
 STARTED_FROM="$PWD"
 cd $HERE
 
-DOCKER_PROJECT=${THIS%.*}
+DOCKER_PROJECT="${THIS%.sh}"
+DOCKER_PROJECT="${DOCKER_PROJECT%-$OHB_MANAGER_VERSION}"
 DEFAULT_TAG=$HC_MANAGER_VERSION
 GIT_TAG=$(git describe --exact-match --tags 2>/dev/null)
 GIT_VERSION=$(git rev-parse --short HEAD 2>/dev/null)
@@ -233,7 +233,16 @@ find_latest_tag() {
     BETA_TAG=$(echo "$ALL_TAGS_JSON" | jq -r '.[].name' | grep "b" | sort -V | tail -n 1)
 
     if [[ "$HC_MANAGER_VERSION" == *b* ]]; then
-        LATEST_TAG=$BETA_TAG
+        BASE_VERSION=$(echo "$BETA_TAG" | sed 's/b.*//')
+
+        # Compare Stable vs Base: if Stable >= Base, use Stable.
+        HIGHER_VERSION=$(echo -e "$STABLE_TAG\n$BASE_VERSION" | sort -V | tail -n 1)
+
+        if [[ "$STABLE_TAG" == "$BASE_VERSION" ]] || [[ "$HIGHER_VERSION" == "$STABLE_TAG" ]]; then
+            LATEST_TAG=$STABLE_TAG
+        else
+            LATEST_TAG=$BETA_TAG
+        fi
     else
         LATEST_TAG=$STABLE_TAG
     fi
@@ -295,9 +304,7 @@ install_hamclock() {
 
     determine_backend_host
     if is_backend_image_default; then
-        echo
-        echo "WARNING: backend host not set. Using image default. Consider the '-b' option."
-        echo
+        prompt_for_backend_host
     fi
 
     echo "Installing Hamclock ..."
@@ -310,6 +317,44 @@ install_hamclock() {
         return $RETVAL
     fi
     return $RETVAL
+}
+
+prompt_for_backend_host() {
+
+    local valid_choice=false
+
+    echo
+    echo "A backend value needs to be set."
+	echo
+
+    while [ "$valid_choice" = false ]; do
+        echo "Please choose an option:"
+        echo "  1) hamclock.com"
+        echo "  2) ohb.hamclock.app"
+        echo "  3) Type in your choice ..."
+        read -p "Selection [1-3]: " choice
+
+        case $choice in
+            1)
+                BACKEND_HOST="hamclock.com"
+                valid_choice=true
+                ;;
+            2)
+                BACKEND_HOST="ohb.hamclock.app"
+                valid_choice=true
+                ;;
+            3)
+                read -p "Enter your custom backend host: " BACKEND_HOST
+                valid_choice=true
+                ;;
+            *)
+                echo -e "\nERROR: '$choice' is not a valid option. Please try again.\n"
+                ;;
+        esac
+    done
+
+    echo "Backend host set to: $BACKEND_HOST"
+    echo
 }
 
 is_backend_image_default() {
@@ -536,7 +581,7 @@ get_current_api_port() {
         if [ -z "$CURRENT_API_PORT" ]; then
             CURRENT_API_PORT="${IPS[$i]}:${PORTS[$i]}"
         else
-            CURRENT_API_PORT="${CURRENT_LIVE_PORT}|${IPS[$i]}:${PORTS[$i]}"
+            CURRENT_API_PORT="${CURRENT_API_PORT}|${IPS[$i]}:${PORTS[$i]}"
         fi
         i=$(($i+1))
     done
@@ -551,7 +596,7 @@ get_current_ro_port() {
         if [ -z "$CURRENT_RO_PORT" ]; then
             CURRENT_RO_PORT="${IPS[$i]}:${PORTS[$i]}"
         else
-            CURRENT_RO_PORT="${CURRENT_LIVE_PORT}|${IPS[$i]}:${PORTS[$i]}"
+            CURRENT_RO_PORT="${CURRENT_RO_PORT}|${IPS[$i]}:${PORTS[$i]}"
         fi
         i=$(($i+1))
     done
@@ -694,7 +739,9 @@ determine_eeprom_file() {
 
     fi
 
-    HC_EEPROM="$(realpath -s "$(dirname "$HC_EEPROM")" 2>/dev/null)/$(basename "$HC_EEPROM")"
+    # for the path to be fully qualified because our docker-compose generated inline
+    # needs this
+    HC_EEPROM="$(cd "$(dirname "$HC_EEPROM")" && pwd)/$(basename "$HC_EEPROM")"
     # if the eeprom file doesn't exist, create it for proper mounting and use defaults if
     # they exist.
     if [ ! -e "$HC_EEPROM" ]; then

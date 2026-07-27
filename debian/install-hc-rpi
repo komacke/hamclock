@@ -1,0 +1,391 @@
+#!/usr/bin/env bash
+# script to install HamClock on RPi
+
+
+# set log file
+LOGFN=$PWD/$(basename $0).log
+
+
+# find largest supported hamclock build size
+function largestsize ()
+{
+    # get screen size
+    read SW SH < <(xdpyinfo -display :0 | perl -ne '/dimensions: *(\d+)x(\d+)/ and print "$1 $2\n"')
+    # echo $SW $SH
+
+    # find HC fractions in each dimension
+    HCW=800
+    HCH=480
+    HCWX=$(($SW/$HCW))
+    HCHX=$(($SH/$HCH))
+    # echo $HCWX $HCHX
+
+    # use smaller fraction so both dimensions fit
+    if (( $HCWX >= $HCHX )) ; then
+        HCW=$(($HCW * $HCHX))
+        HCH=$(($HCH * $HCHX))
+    else
+        HCW=$(($HCW * $HCWX))
+        HCH=$(($HCH * $HCWX))
+    fi
+
+    echo $SW $SH $HCW $HCH
+}
+
+
+# ask "$1? [y/n] " then return 0 if respond y or 1 if respond n
+function ask ()
+{
+    echo "" >> $LOGFN
+    echo "asking: $1?" >> $LOGFN
+
+    ANS=x
+    while [ "$ANS" != "y" ] && [ "$ANS" != "n" ]; do
+        echo ""
+        echo -n "$1? [y/n] "
+        read ANS
+    done
+
+    echo "answer: $ANS" >> $LOGFN
+
+    [ "$ANS" = "y" ]
+}
+
+# print blank line then $*
+function inform ()
+{
+    echo "" >> $LOGFN
+    echo $* >> $LOGFN
+
+    echo ""
+    echo $*
+    echo ""
+}
+
+# dump rpi configuration
+function dumpConfig ()
+{
+    echo os-release
+    cat /etc/os-release
+
+    echo uname
+    uname -a
+
+    echo free -m
+    free -m
+
+    echo df
+    df
+
+    echo ping home
+    ping -c 3 clearskyinstitute.com
+}
+
+# when requesting a specific hamclock version, find it in github
+function get_hamclock_source_url()
+{
+    local substring=$1
+
+    if [ -z "$substring" ]; then
+        echo "Usage: get_hamclock_url <version_substring> (e.g., 4.22)" >&2
+        return 1
+    fi
+
+    # GitHub API endpoint for releases
+    local api_url="https://api.github.com/repos/openhamclock/hamclock/releases"
+
+    # Define the target filename we are looking for
+    local target_asset="ESPHamClock-V${substring}.zip"
+
+    # 1. Fetch releases
+    # 2. Flatten all assets into one list
+    # 3. Filter for the specific filename
+    # 4. Grab the first (latest) matching URL
+    local download_url=$(curl -s "$api_url" | jq -r --arg target "$target_asset" '
+        map(.assets[])
+        | .[]
+        | select(.name == $target)
+        | .browser_download_url
+    ' | head -n 1)
+
+    if [ -z "$download_url" ] || [ "$download_url" == "null" ]; then
+        echo "Error: Asset '$target_asset' not found on GitHub." >&2
+        return 1
+    fi
+    TBURL="$download_url"
+}
+
+function find_latest_tag()
+{
+    ALL_TAGS_JSON=$(curl -s "https://api.github.com/repos/$GITHUB_REPO/tags")
+    STABLE_TAG=$(echo "$ALL_TAGS_JSON" | jq -r '.[].name' | grep -v "b" | sort -V | tail -n 1)
+    BETA_TAG=$(echo "$ALL_TAGS_JSON" | jq -r '.[].name' | grep "b" | sort -V | tail -n 1)
+}
+
+
+######################################################################################
+#
+# execution starts here
+#
+######################################################################################
+
+# fresh
+clear
+
+# sudo?
+if [ "$SUDO_USER" != "" ] ; then
+    inform Do not run this with sudo
+    exit 1
+fi
+
+# really a pi?
+OSR=/etc/os-release
+if ! egrep -qs 'bullseye|bookworm|trixie' $OSR ; then
+    inform This script only works on Raspberry Pi OS bullseye, bookworm or trixie.
+    exit 1
+fi
+
+# fresh log
+rm -f $LOGFN
+
+# really do it?
+inform This script will install HamClock on Raspberry Pi OS.
+if ! ask "Proceed" ; then exit 1; fi
+
+
+# check for another instance
+if sudo pkill -0 '^hamclock$' ; then
+    inform Another hamclock seems to be running already.
+    inform Please exit the existing hamclock then retry this script.
+    exit 0
+fi
+
+# inform log file
+inform A transcript of this installation may be found in $LOGFN
+echo -n HamClock installation begins at " " >> $LOGFN
+date -u >> $LOGFN
+dumpConfig >> $LOGFN
+
+
+# insure necessary helper packages are installed
+inform Installing required helper packages ...
+PKGS="\
+    curl \
+    g++ \
+    gpiod \
+    jq \
+    libgpiod-dev \
+    libx11-dev \
+    linux-libc-dev \
+    make \
+    openssl \
+    unzip \
+    x11-utils \
+    xdg-utils \
+    xserver-xorg\
+"
+sudo apt-get -y update >> $LOGFN 2>&1
+sudo apt-get -y install $PKGS >> $LOGFN 2>&1
+if (( $? != 0 )) ; then echo error loading packages; exit 1; fi
+
+TBALL=ESPHamClock.zip
+if [ "$1" == -t ]; then
+    # requesting a specific version
+    if [ -z "$2" ]; then
+        echo "The -t argument requires a version like 4.22."
+        exit 1
+    fi
+    get_hamclock_source_url "$2"
+else
+    # latest release
+    TBURL=https://ohb.hamclock.app/ham/HamClock/$TBALL
+fi
+
+# download fresh program source
+rm -f $TBALL
+inform Downloading $TBURL ...
+if ! curl -A 'install-hc-rpi' -L --silent --show-error --output $TBALL $TBURL >> $LOGFN 2>&1 ; then
+    inform Error downloading $TBURL -- see $LOGFN
+    exit 1
+fi
+
+
+# explode
+XDIR=ESPHamClock
+rm -fr $XDIR
+inform Exploding $TBALL into $XDIR ...
+if ! unzip $TBALL >> $LOGFN 2>&1 ; then inform Error exploding archive -- see $LOGFN; exit 1; fi
+rm $TBALL
+
+
+# cd inside for make
+cd $XDIR
+
+
+# ask web-only
+if ask "build for web access only (no hardware display)" ; then
+
+    # just ask all sizes
+    echo ""
+    PS3="Select desired HamClock size (1-4): "
+    select size in "800x480" "1600x960" "2400x1440" "3200x1920"; do
+        if (( $REPLY >= 1 && $REPLY <= 4 )) ; then break; fi
+    done
+    HC_BUILD="hamclock-web-$size"
+    HC_WEBONLY=1
+
+else
+
+    # ask desired size from ones that fit unless it can only be 800x480
+    read SW SH LHCW LHCH < <(largestsize)
+    inform Display size appears to be ${SW}x${SH}.
+    if (( $LHCW < 800 || $LHCH < 480 )) ; then
+        inform HamClock requires at least 800x480.
+        exit
+    elif (( $LHCW == 800 )) ; then
+        size="800x480"
+    elif (( $LHCW == 1600 )) ; then
+        PS3="Select desired HamClock size (1-2): "
+        select size in "800x480" "1600x960"; do
+            if (( $REPLY >= 1 && $REPLY <= 2 )) ; then break; fi
+        done
+    elif (( $LHCW == 2400 )) ; then
+        PS3="Select desired HamClock size (1-3): "
+        select size in "800x480" "1600x960" "2400x1440" ; do
+            if (( $REPLY >= 1 && $REPLY <= 3 )) ; then break; fi
+        done
+    else
+        PS3="Select desired HamClock size (1-4): "
+        select size in "800x480" "1600x960" "2400x1440" "3200x1920"; do
+            if (( $REPLY >= 1 && $REPLY <= 4 )) ; then break; fi
+        done
+    fi
+    HC_BUILD="hamclock-$size"
+    HC_WEBONLY=0
+fi
+
+
+
+# build with rough progress indication
+let NLOGLINES=133
+inform Building $HC_BUILD ...
+WC0=$(wc -l < $LOGFN)
+echo running make $HC_BUILD >> $LOGFN
+make $HC_BUILD >> $LOGFN 2>&1 &
+job=$!
+while kill -0 $job 2>/dev/null; do
+    sleep .5
+    let percent="100 * ( $(wc -l < $LOGFN) - $WC0 ) / $NLOGLINES"
+    printf "%2d%%\r" $percent
+done
+printf "\rfinished\n";
+if ! wait %1 >> $LOGFN 2>&1 ; then inform Build failed -- see $LOGFN; exit 1; fi
+
+# install
+if ! sudo make install >> $LOGFN 2>&1 ; then inform Install failed -- see $LOGFN; exit 1; fi
+
+
+
+
+# icon?
+if [ -d $HOME/Desktop ] && [ $HC_WEBONLY -eq 0 ] ; then
+    HCDT=$HOME/Desktop/hamclock.desktop
+    HCPNG=$HOME/.hamclock/hamclock.png
+    if ask "install HamClock desktop icon" ; then
+        mkdir -p $HOME/.hamclock
+        rm -f $HCDT $HCPNG
+        cp hamclock.png $HCPNG
+        sed -e "s^Icon.*^Icon=$HOME/.hamclock/hamclock.png^" < hamclock.desktop > $HCDT
+        chmod u+x $HCDT
+    else
+        rm -f $HCDT $HCPNG
+    fi
+fi
+
+
+# User Guide?
+if [ -d ~/Desktop ] && [ $HC_WEBONLY -eq 0 ] ; then
+    UGFN=HamClockUserGuide.pdf
+    DTFN="$HOME/Desktop/$UGFN"
+
+    if ask "install User Guide on desktop" ; then
+        ALL_TAGS_JSON=$(curl -s "https://api.github.com/repos/openhamclock/hamclock/tags")
+        STABLE_TAG=$(echo "$ALL_TAGS_JSON" | jq -r '.[].name' | grep -v "b" | sort -V | tail -n 1)
+
+        if [ -z "$STABLE_TAG" ]; then
+            inform Error finding latest HamClock release tag -- see "$LOGFN"
+        else
+            UGURL="https://github.com/openhamclock/hamclock/releases/download/$STABLE_TAG/$UGFN"
+            if ! curl --location --silent --show-error --output "$DTFN" "$UGURL" >> "$LOGFN" 2>&1 ; then
+                inform Error downloading "$UGURL" -- see "$LOGFN"
+            fi
+        fi
+    else
+        rm -f "$DTFN"
+    fi
+fi
+
+
+# man page?
+MPATH=/usr/local/share/man/man1
+if [ -d $MPATH ] && [ $HC_WEBONLY -eq 0 ] && ask "install HamClock man page" ; then
+    # name changed from .man to .1 as of 2.98
+    if [ -r hamclock.man ] ; then
+        sudo cp hamclock.man $MPATH/hamclock.1
+    else
+        sudo cp hamclock.1 $MPATH
+    fi
+fi
+
+
+# start on boot?
+if ask "start HamClock automatically each time Pi is booted" ; then
+    if [ $HC_WEBONLY -eq 0 ] ; then
+        # use desktop system
+        DOTCFG=$HOME/.config
+        if [ -d $DOTCFG ] ; then
+            ASPATH=$DOTCFG/autostart
+            ASFILE=$ASPATH/hamclock.desktop
+            mkdir -p $ASPATH
+            if [ -e "$ASFILE" ] ; then
+                inform Autostart file already exists, leaving it unchanged: $ASFILE
+            else
+                cp hamclock.desktop "$ASFILE"
+            fi
+        else
+            inform Error: $DOTCFG does not exist
+        fi
+    else
+        # add to crontab if not already
+        CTBTMP=.x.crontab
+        CRON_ENTRY='@reboot /usr/local/bin/hamclock'
+
+        crontab -l > $CTBTMP 2>/dev/null || : 
+
+        if grep -Fqx "$CRON_ENTRY" "$CTBTMP" ; then
+            inform hamclock is already in crontab
+        elif grep -Eq '^[[:space:]]*@reboot[[:space:]]+/usr/local/bin/hamclock([[:space:]]|$)' "$CTBTMP" ; then
+            inform Existing HamClock @reboot entry found, leaving it unchanged
+        else
+            inform adding hamclock to crontab
+            echo "$CRON_ENTRY" >> $CTBTMP
+            crontab $CTBTMP
+        fi
+        rm -f $CTBTMP
+    fi
+else
+    # undo autostarting
+    if [ $HC_WEBONLY -eq 0 ] ; then
+        rm -f $HOME/.config/autostart/hamclock.desktop
+    else
+        CTBTMP=.x.crontab
+        CRON_ENTRY='@reboot /usr/local/bin/hamclock'
+
+        crontab -l > $CTBTMP 2>/dev/null || :
+        grep -Fvx "$CRON_ENTRY" "$CTBTMP" > ${CTBTMP}.new
+        crontab ${CTBTMP}.new
+        rm -f $CTBTMP ${CTBTMP}.new
+    fi
+fi
+inform HamClock installation is complete.
+inform You may now run HamClock by typing hamclock.

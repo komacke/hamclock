@@ -4,3 +4,8 @@
 eeprom
 hc.settings
 tmp/
+
+# C stuff
+*.o
+*.a
+*.d

@@ -1,0 +1,37 @@
+name: Compile Pi targets
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fb0:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    container: alpine:3.23
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - hamclock-fb0-800x480
+          - hamclock-fb0-1600x960
+          - hamclock-fb0-2400x1440
+          - hamclock-fb0-3200x1920
+
+    steps:
+      - name: Install dependencies
+        run: apk add --no-cache git build-base linux-headers
+
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Compile ${{ matrix.target }}
+        working-directory: ESPHamClock
+        run: make -j"$(nproc)" "${{ matrix.target }}"

@@ -1,0 +1,228 @@
+Addr,Name,Len,Type,Description
+0x038,NV_TOUCH_CAL_A,4,i,touch calibration coefficient
+0x03D,NV_TOUCH_CAL_B,4,i,touch calibration coefficient
+0x042,NV_TOUCH_CAL_C,4,i,touch calibration coefficient
+0x047,NV_TOUCH_CAL_D,4,i,touch calibration coefficient
+0x04C,NV_TOUCH_CAL_E,4,i,touch calibration coefficient
+0x051,NV_TOUCH_CAL_F,4,i,touch calibration coefficient
+0x056,NV_TOUCH_CAL_DIV,4,i,touch calibration normalization
+0x05B,NV_DXMAX_N,1,i,n lost dx connections since NV_DXMAX_T
+0x05D,NV_DE_TIMEFMT,1,i,DE: 0=info; 1=analog; 2=cal; 3=analog+day; 4=dig 12hr; 5=dig 24hr
+0x05F,NV_DE_LAT,4,f,"DE latitude, degrees N"
+0x064,NV_DE_LNG,4,f,"DE longitude, degrees E"
+0x069,NV_PANE0ROTSET,4,i,PlotChoice bitmask of pane 0 rotation choices
+0x06E,NV_PLOT_0,1,i,Pane 0 PlotChoice
+0x070,NV_DX_LAT,4,f,"DX latitude, degrees N"
+0x075,NV_DX_LNG,4,f,"DX longitude, degrees E"
+0x07F,NV_CALL_FG,2,i,Call foreground color as RGB 565
+0x082,NV_CALL_BG,2,i,Call background color as RGB 565 unless...
+0x085,NV_CALL_RAINBOW,1,i,set if Call background is to be rainbow
+0x087,NV_PSK_SHOWDIST,1,i,"Live spots shows max distance, else counts"
+0x089,NV_UTC_OFFSET,4,i,"offset from UTC, seconds"
+0x08E,NV_PLOT_1,1,i,Pane 1 PlotChoice
+0x090,NV_PLOT_2,1,i,Pane 2 PlotChoice
+0x094,NV_PLOT_3,1,i,Pane 3 PlotChoice
+0x096,NV_RSS_ON,1,i,whether to display RSS
+0x098,NV_BPWM_DIM,2,i,"dim PWM, 0..255"
+0x09B,NV_PHOT_DIM,2,i,"photo r dim value, 0 .. 1023"
+0x09E,NV_BPWM_BRIGHT,2,i,"bright PWM, 0..255"
+0x0A1,NV_PHOT_BRIGHT,2,i,"photo r bright value, 0 .. 1023"
+0x0A4,NV_LP,1,i,whether to show DE-DX long or short path info
+0x0A6,NV_UNITS,1,i,"0: imperial, 1: metric 2: british"
+0x0A8,NV_LKSCRN_ON,1,i,whether screen lock is on
+0x0AA,NV_MAPPROJ,1,i,0: merc 1: azim 2: azim 1
+0x0AE,NV_WIFI_SSID,32,s,WIFI SSID
+0x0F0,NV_CALLSIGN,12,s,call
+0x0FD,NV_SAT1NAME,9,s,satellite 1 name with underscore for each space
+0x107,NV_DE_SRSS,1,i,whether DE pane shows sun times 0=until or 1=at
+0x109,NV_DX_SRSS,1,i,whether DX pane shows sun times 0=until or 1=at or 2=DX prefix
+0x10B,NV_GRIDSTYLE,1,i,"map grid style 0=off; 1=tropics; 2=lat-lng; 3=maindenhead, 4=radial"
+0x113,NV_DXHOST,26,s,"DX cluster host name, unless using WSJT"
+0x12E,NV_DXPORT,2,i,DX cluster port number
+0x131,NV_SWHUE,1,i,stopwatch color RGB 565
+0x133,NV_TEMPCORR76,4,f,"BME280 76 temperature correction, NV_UNITS units"
+0x14B,NV_KX3BAUD,4,i,KX3 baud rate or 0
+0x150,NV_BCPOWER,2,i,"VOACAP power, watts"
+0x153,NV_CD_PERIOD,4,i,"stopwatch count down period, seconds"
+0x158,NV_PRESCORR76,4,f,"BME280 76 pressure correction, NV_UNITS units"
+0x15D,NV_BR_IDLE,2,i,"idle period, minutes"
+0x160,NV_BR_MIN,1,i,"minimum brightness, percent of display range"
+0x162,NV_BR_MAX,1,i,"maximum brightness, percent of display range"
+0x164,NV_DE_TZ,4,i,"DE offset from UTC, seconds, or NVTZ_AUTO"
+0x169,NV_DX_TZ,4,i,"DX offset from UTC, seconds, or NVTZ_AUTO"
+0x16E,NV_COREMAPSTYLE,10,s,name of core map background images (not voacap propmaps)
+0x179,NV_USEDXCLUSTER,1,i,whether to attempt using a DX cluster
+0x17B,NV_USEGPSD,1,i,"bit 1: use gpsd for time, bit 2: use for location"
+0x17D,NV_LOGUSAGE,1,i,whether to phone home with clock settings
+0x17F,NV_LBLSTYLE,1,i,DX spot annotations: 0=none; 1=just prefix; 2=full call;
+0x181,NV_WIFI_PASSWD,64,s,WIFI password
+0x1C2,NV_NTPSET,1,i,whether to use NV_NTPHOST
+0x1D7,NV_GPIOOK,1,i,whether ok to use GPIO pins
+0x1D9,NV_SAT1COLOR,2,RGB,satellite 1 color as RGB 565
+0x1DC,NV_SAT2COLOR,2,RGB,satellite 2 color as RGB 565
+0x1DF,NV_X11FLAGS,2,i,set if want full screen
+0x1E2,NV_BCFLAGS,2,i,Big Clock bitmask: 1=date;2=wx;4=dig;8=12hr;16=nosec;32=UTC;64=an+dig;128=hrs;256=SpWx;512=hands;1024=sat
+0x1E5,NV_DAILYONOFF,28,s,"7 2-byte on times then 7 off times, each mins from midnight"
+0x202,NV_TEMPCORR77,4,f,"BME280 77 temperature correction, NV_UNITS units"
+0x207,NV_PRESCORR77,4,f,"BME280 77 pressure correction, NV_UNITS units"
+0x20C,NV_SHORTPATHCOLOR,2,RGB,prop short path color as RGB 565
+0x20F,NV_LONGPATHCOLOR,2,RGB,prop long path color as RGB 565
+0x215,NV_NIGHT_ON,1,i,whether to show night on map
+0x217,NV_DE_GRID,7,s,DE 6 char grid
+0x21F,NV_DX_GRID,7,s,DX 6 char grid
+0x227,NV_GRIDCOLOR,2,RGB,map grid color as RGB 565
+0x22A,NV_CENTERLNG,2,i,mercator center longitude
+0x22D,NV_NAMES_ON,1,i,whether to show roving place names
+0x22F,NV_PANE1ROTSET,4,i,PlotChoice bitmask of pane 1 rotation choices
+0x234,NV_PANE2ROTSET,4,i,PlotChoice bitmask of pane 2 rotation choices
+0x239,NV_PANE3ROTSET,4,i,PlotChoice bitmask of pane 3 rotation choices
+0x23E,NV_AUX_TIME,1,i,"0=date, DOY, JD, MJD, LST, UNIX"
+0x240,NV_DAILYALARM,2,i,"daily alarm time 60*hr + min, + 60*24 if armed; always DE TZ"
+0x243,NV_BC_UTCTIMELINE,1,i,band conditions timeline labeled in UTC else DE
+0x245,NV_RSS_INTERVAL,1,i,"RSS update interval, seconds"
+0x247,NV_DATEMDY,1,i,0 = MDY 1 = see NV_DATEDMYYMD
+0x249,NV_DATEDMYYMD,1,i,0 = DMY 1 = YMD
+0x24B,NV_ROTUSE,1,i,whether to use rotctld
+0x24D,NV_ROTHOST,18,s,rotctld tcp host
+0x260,NV_ROTPORT,2,i,rotctld tcp port
+0x263,NV_RIGUSE,1,i,whether to use rigctld
+0x265,NV_RIGHOST,18,s,rigctld tcp host
+0x278,NV_RIGPORT,2,i,rigctld tcp port
+0x27B,NV_DXLOGIN,12,s,DX cluster login
+0x288,NV_FLRIGUSE,1,i,whether to use flrig
+0x28A,NV_FLRIGHOST,18,s,flrig tcp host
+0x29D,NV_FLRIGPORT,2,i,flrig tcp port
+0x332,NV_PSK_MODEBITS,1,i,live spots mode: bit 0: on=psk off=wspr bit 1: on=bycall off=bygrid
+0x334,NV_PSK_BANDS,4,i,live spots bands: bit mask 0 .. 11 160 .. 2m
+0x339,NV_160M_COLOR,2,RGB,160 m path color as RGB 565
+0x33C,NV_80M_COLOR,2,RGB,80 m path color as RGB 565
+0x33F,NV_60M_COLOR,2,RGB,60 m path color as RGB 565
+0x342,NV_40M_COLOR,2,RGB,40 m path color as RGB 565
+0x345,NV_30M_COLOR,2,RGB,30 m path color as RGB 565
+0x348,NV_20M_COLOR,2,RGB,20 m path color as RGB 565
+0x34B,NV_17M_COLOR,2,RGB,17 m path color as RGB 565
+0x34E,NV_15M_COLOR,2,RGB,15 m path color as RGB 565
+0x351,NV_12M_COLOR,2,RGB,12 m path color as RGB 565
+0x354,NV_10M_COLOR,2,RGB,10 m path color as RGB 565
+0x357,NV_6M_COLOR,2,RGB,6 m path color as RGB 565
+0x35A,NV_2M_COLOR,2,RGB,2 m path color as RGB 565
+0x35D,NV_CSELDASHED,4,i,current ColorSelection bitmask set for dashed
+0x362,NV_BEAR_MAG,1,i,"show magnetic bearings, else true"
+0x366,NV_WSJT_DX,1,i,whether dx cluster is WSJT-X
+0x368,NV_PSK_MAXAGE,2,i,"live spots max age, minutes"
+0x36B,NV_WEEKMON,1,i,whether week starts on Monday
+0x36D,NV_BCMODE,1,i,CW=19 SSB=38 AM=49 WSPR=3 FT8=13 FT4=17
+0x36F,NV_SDO,1,i,sdo pane choice 0..6
+0x371,NV_SDOROT,1,i,whether SDO pane is rotating
+0x377,NV_BRB_ROTSET,2,i,Beacon box mode bit mask
+0x37A,NV_ROTCOLOR,2,RGB,rotator map color
+0x37D,NV_CONTESTS,1,i,"bit 1 to show date, bit 2 use DE timezone"
+0x37F,NV_BCTOA,4,f,"VOACAP take off angle, degs"
+0x3A3,NV_I2CFN,30,s,I2C device filename
+0x3C2,NV_I2CON,1,i,whether to use I2C
+0x3C4,NV_DXMAX_T,4,i,time when n lost dx connections exceeded max
+0x3E4,NV_SCROLLDIR,1,i,0=bottom 1=top
+0x508,NV_DXCMDMASK,2,i,bitmask of dx cluster commands in use
+0x50B,NV_DXWLISTMASK,1,i,"0: off, 1: not, 2: on, 3: only"
+0x50F,NV_NEWDXDEWX,1,i,whether to show new DX or DE weather
+0x511,NV_WEBFS,1,i,whether to enable full screen web interface
+0x513,NV_ZOOM,1,i,integral zoom factor
+0x515,NV_PANX,2,i,"center x from 0 center, + right, @ zoom 1"
+0x518,NV_PANY,2,i,"center y from 0 center, + up, @ zoom 1"
+0x538,NV_ONCEALARM,4,i,one-time alarm time(). always in UTC
+0x53D,NV_ONCEALARMMASK,1,i,"bit 1 = armed, 2 = user wants UTC (else DE TZ)"
+0x53F,NV_PANEROTP,1,i,"pane rotation period, seconds"
+0x541,NV_SHOWPIP,1,i,whether to show public IP
+0x543,NV_MAPROTP,1,i,"map rotation period, seconds"
+0x545,NV_MAPROTSET,2,i,core_map rotation bit mask
+0x548,NV_GRAYDPY,1,i,whether to use gray scale
+0x54C,NV_ADIFWLISTMASK,1,i,"0: off, 1: not, 2: on, 3: only"
+0x54E,NV_DXWLIST,50,s,DX watch list
+0x581,NV_ADIFWLIST,50,s,ADIF watch list
+0x5B4,NV_ADIFSORT,1,i,0 age 1 distance
+0x621,NV_ADIFFN,50,s,"ADIF file name, if any"
+0x654,NV_NTPHOST,36,s,user defined NTP host name
+0x679,NV_GPSDHOST,36,s,gpsd daemon host name
+0x69E,NV_NMEAFILE,36,s,NMEA serial file name
+0x6C3,NV_USENMEA,1,i,"bit 1: use NMEA for time, bit 2: use for location"
+0x6C5,NV_NMEABAUD,2,i,NMEA connection baud rate
+0x6C8,NV_BCTOABAND,1,i,band conditions TOA map band code
+0x6CA,NV_BCRELBAND,1,i,band conditions REL map band code
+0x6CC,NV_AUTOMAP,1,i,whether to turn on maps automatically
+0x6CE,NV_DXCAGE,1,i,"oldest dx cluster entry, minutes"
+0x6D0,NV_ONAIR_FG,2,i,ON AIR text foreground color as RGB 565
+0x6D3,NV_ONAIR_BG,2,i,ON AIR text background color as RGB 565 unless...
+0x6D6,NV_ONAIR_RAINBOW,1,i,set if ON AIR background is to be rainbow
+0x6D8,NV_DXCMD0,60,s,dx cluster command 0
+0x715,NV_DXCMD1,60,s,dx cluster command 1
+0x752,NV_DXCMD2,60,s,dx cluster command 2
+0x78F,NV_DXCMD3,60,s,dx cluster command 3
+0x7CC,NV_DXCMD4,60,s,dx cluster command 4
+0x809,NV_DXCMD5,60,s,dx cluster command 5
+0x846,NV_DXCMD6,60,s,dx cluster command 6
+0x883,NV_DXCMD7,60,s,dx cluster command 7
+0x8C0,NV_DXCMD8,60,s,dx cluster command 8
+0x8FD,NV_DXCMD9,60,s,dx cluster command 9
+0x93A,NV_DXCMD10,60,s,dx cluster command 10
+0x977,NV_DXCMD11,60,s,dx cluster command 11
+0x9B4,NV_ONAIR_MSG,30,s,ON AIR text
+0x9D3,NV_SETRADIO,1,i,whether to issue radio commands
+0x9D5,NV_ONTAWLIST,50,s,ONTA watch list
+0xA08,NV_ONTAWLISTMASK,1,i,"0: off, 1: not, 2: on, 3: only"
+0xA0A,NV_ONTASORTBY,1,i,ONTA sort 0-3: Band Call Org Age
+0xA0C,NV_ONTAORG,30,s,ONTA organization filter
+0xA2B,NV_TITLE,70,s,alternate callsign title text
+0xA72,NV_TITLE_FG,2,i,alternate callsign fg as RGB 565
+0xA75,NV_TITLE_BG,2,i,alternate callsign bg as RGB 565
+0xA78,NV_TITLE_RAINBOW,1,i,alternate callsign is rainbow
+0xA7A,NV_ONTA_MAXAGE,1,i,"max ONTA spot age, mins"
+0xA7C,NV_QRZID,1,i,which bio source
+0xA7E,NV_CALLPREF,1,i,prefer call title or both
+0xA80,NV_CSELONOFF,4,i,current ColorSelection bitmask set for on/off
+0xA85,NV_CSELTHIN,4,i,current ColorSelection bitmask set for thin
+0xA8A,NV_CSELDASHED_A,4,i,set A ColorSelection bitmask set for on/off
+0xA8F,NV_CSELONOFF_A,4,i,set A ColorSelection bitmask set for on/off
+0xA94,NV_CSELTHIN_A,4,i,set A ColorSelection bitmask set for thin
+0xA99,NV_CSELDASHED_B,4,i,set B ColorSelection bitmask set for on/off
+0xA9E,NV_CSELONOFF_B,4,i,set B ColorSelection bitmask set for on/off
+0xAA3,NV_CSELTHIN_B,4,i,set B ColorSelection bitmask set for thin
+0xAA8,NV_ONTABIO,1,i,whether clicking an ONTA spot shows biography
+0xAAA,NV_DXCBIO,1,i,whether clicking a DXC spot shows biography
+0xAAC,NV_X11GEOM_X,2,i,app window x coord
+0xAAF,NV_X11GEOM_Y,2,i,app window y coord
+0xAB2,NV_X11GEOM_W,2,i,app window width
+0xAB5,NV_X11GEOM_H,2,i,app window height
+0xAB8,NV_DEWXCHOICE,2,i,bit mask of NCDXF box DE wx stats
+0xABB,NV_DXWXCHOICE,2,i,bit mask of NCDXF box DX wx stats
+0xABE,NV_UDPSETSDX,1,i,whether a new UDP packet sets DX
+0xAC0,NV_SPCWXCHOICE,4,i,bit mask of NCDXF box space wx stats
+0xAC5,NV_DXPEDS,1,i,bit mask of menu options
+0xAC7,NV_UDPSPOTS,1,i,whether to allow UDP with rx_call other than our call
+0xAC9,NV_AUTOUPGRADE,1,i,"local hour to upgrade, else -1"
+0xACB,NV_MAXTLEAGE,1,i,"max allowed tle age, days"
+0xACD,NV_MINLBLDIST,2,i,minimum labeling distance
+0xAD0,NV_SAT2NAME,9,s,satellite 2 name with underscore for each space
+0xADA,NV_PSK_SHOWPATH,1,i,whether Live Spots show paths
+0xADC,NV_SAT1FLAGS,1,i,satellite 1 options
+0xADE,NV_SAT2FLAGS,1,i,satellite 2 options
+0xAE0,NV_ANT_DE_INDEX,2,i,Antenna index for TX
+0xAE3,NV_ANT_DX_INDEX,2,i,Antenna index for RX
+0xAE6,NV_ANT_DEDX_CONTROL,1,i,Antenna selection b0 DE b1 DX
+0xAE8,NV_ANT_DE_AZ,4,f,Antenna Azimuth for DE
+0xAED,NV_ANT_DX_AZ,4,f,Antenna Azimuth for DX
+0xAF2,NV_LIGHTNING_ON,1,i,whether to show lightning strikes overlay
+0xAF4,NV_LTG_WORLDWIDE,1,i,"lightning: 1=worldwide, 0=radius"
+0xAF6,NV_LTG_RADIUS,2,i,lightning: search radius in km
+0xAF9,NV_STORMS_ON,1,i,whether to show storm overlay and pane
+0xAFB,NV_HAMSATKEY,64,s,hams.at API key
+0xB3C,NV_SATGROUP,240,s,newline-separated satellite names for group schedule
+0xC2D,NV_SHOWPLANETS,1,i,whether to show planets on the map
+0xC2F,NV_PLOTSCHEMA,1,i,reserved plot settings schema marker
+0xC31,NV_PANE0ROTSET_HI,4,i,high 32 bits of pane 0 PlotChoice rotation mask
+0xC36,NV_PANE1ROTSET_HI,4,i,high 32 bits of pane 1 PlotChoice rotation mask
+0xC3B,NV_PANE2ROTSET_HI,4,i,high 32 bits of pane 2 PlotChoice rotation mask
+0xC40,NV_PANE3ROTSET_HI,4,i,high 32 bits of pane 3 PlotChoice rotation mask
+0xC45,NV_MESHWATCHLIST,120,s,comma-separated Meshtastic node IDs to draw neighbour links for
+0xCBE,NV_PIAWAREHOST,36,s,"user's PiAware ADS-B receiver host name or IP, else unused"
+0xCE3,NV_ONTA_MODES,1,i,ONTA mode filter bitmask (see ONTAMB_* in ontheair.cpp)
+0xCE5,NV_ONTA_BANDS,4,i,"ONTA band filter bitmask, 1 bit per HamBandSetting"

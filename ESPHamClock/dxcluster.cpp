@@ -23,7 +23,7 @@ static WiFiClient dxc_client;                   // persistent TCP connection whi
 static WiFiUDP udp_server;                      // or persistent UDP "connection" to WSJT-X client program
 static bool multi_cntn;                         // set when cluster has noticed multiple connections
 #define MAX_LCN         10                      // max lost connections per MAX_LCDT
-#define MAX_LCDT        3600                    // max lost connections period, seconds
+#define MAX_LCDT        1800                    // max lost connections period, seconds
 
 // ages
 static const uint8_t dxc_ages[] = {10, 20, 40, 60};   // menu selections in ascending order, minutes
@@ -812,7 +812,7 @@ bool connectDXCluster (void)
 {
     // check max lost connection rate
     if (checkLostConnRate()) {
-        showDXClusterErr ("Hit max %d lost connections/hr limit", MAX_LCN);
+        showDXClusterErr ("Dropped %d times. Check cluster config. Lockout: 30 mins", MAX_LCN);
         return (false);
     }
 
@@ -1009,11 +1009,14 @@ bool updateDXCluster (const SBox &box, bool fresh)
 
     if (dxc_ss.atNewest()) {
         // rebuild displayed spots list when master list changes or oldest spot ages out
-        if (dxc_spots_changed || (n_dxspots > 0 && dxc_spots[0].spotted < myNow() - MAXKEEP_DT)) {
+        bool map_spots_changed = dxc_spots_changed;
+        if (map_spots_changed || (n_dxspots > 0 && dxc_spots[0].spotted < myNow() - MAXKEEP_DT)) {
             rebuildDXWatchList();
             dxc_spots_changed = false;
             dxc_ss.drawNewSpotsSymbol (false, false);           // insure off
             scrolledaway_tm = 0;
+            if (findPaneForChoice(PLOT_CH_DXCLUSTER) != PANE_NONE)
+                scheduleMapRedraw();
         }
         ROTHOLD_CLR(PLOT_CH_DXCLUSTER);                         // resume rotation
     } else {

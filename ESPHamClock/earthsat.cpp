@@ -8,6 +8,7 @@
 
 
 #include "HamClock.h"
+#include "stars.h"     // 921 naked-eye stars V<=4.5
 
 #define MAX_ACTIVE_SATS 2               // increasing this works here but requires more colors
 
@@ -31,23 +32,26 @@ bool dx_info_for_sat;                   // global to indicate whether dx_info_b 
 #define SAT_TOUCH_R     20U             // touch radius, pixels
 #define SAT_UP_R        2               // dot radius when up
 #define PASS_STEP       10.0F           // pass step size, seconds
-#define TBORDER         50              // top border
+#define TBORDER         94              // top border
+#define HDR_TXT_Y       37              // fixed y for header title/legend text, indep of TBORDER
 #define FONT_H          (dx_info_b.h/6) // height for SMALL_FONT
 #define FONT_D          5               // font descent
 #define SAT_COLOR       RA8875_WHITE    // overall annotation color
 #define BTN_COLOR       RA8875_GREEN    // button fill color
 #define SATUP_COLOR     RGB565(0,200,0) // time color when sat is up
 #define SOON_COLOR      RGB565(200,0,0) // table text color for pass soon
+#define GONE_COLOR      RGB565(255,90,90) // table text color for a sat that has gone missing
 #define SOON_MINS       10              // "soon", minutes
 #define CB_SIZE         20              // size of selection check box
-#define CELL_H          32              // display cell height
+#define CELL_H          29              // display cell height
 #define N_COLS          4               // n cols in name table
 #define CELL_W          (800/N_COLS)    // display cell width
 #define N_ROWS          ((480-TBORDER)/CELL_H)  // n rows in name table
 #define MAX_NSAT        (N_ROWS*N_COLS) // max names we can display
 #define MAX_PASS_STEPS  30              // max lines to draw for pass map
 #define OFFSCRN         20000           // x or y coord that is definitely off screen
-static SBox ok_b = {730,10,55,35};      // Ok button
+static SBox ok_b      = {735, 8, 60, 35}; // Ok button
+static SBox refresh_b = {690,55,105,35}; // Refresh button below Ok, out of legend row
 
 // NV_SATnFLAGS bit masks
 typedef enum {
@@ -98,12 +102,51 @@ typedef struct {
     bool show_path;                                     // whether to pass as well as foot
     SBox name_b;                                        // canonical coords of name on map
     char name[NV_SATNAME_LEN];                          // name, spaces are underscores
+    int norad;                                          // NORAD catalog id, 0 if unknown
     NV_Name nv_name;                                    // NV property for persistent name
     NV_Name nv_flags;                                   // NV property for persistent option flags
     ColorSelection cs;                                  // path control
 } SatState;
 static SatState sat_state[MAX_ACTIVE_SATS];             // [1].sat is set only if [0].sat is also set
 static bool new_pass;                                   // set when new pass is ready
+
+// remember names of sats that were saved/selected but could not be found in the TLE lists.
+// these are NOT a fatal condition: the sat is just dropped and flagged here so the selection
+// table can show it in a distinct color instead of throwing an in-your-face error.
+#define MAX_MISSING_SATS  8
+static char missing_sats[MAX_MISSING_SATS][NV_SATNAME_LEN];
+static int n_missing_sats;
+
+/* record that the named sat could not be found so the chooser can mark it.
+ * silently ignores duplicates and overflow.
+ */
+static void noteMissingSat (const char *name)
+{
+    if (!name || !name[0])
+        return;
+    for (int i = 0; i < n_missing_sats; i++)
+        if (strcasecmp (missing_sats[i], name) == 0)
+            return;                                     // already known
+    if (n_missing_sats < MAX_MISSING_SATS) {
+        strncpy (missing_sats[n_missing_sats], name, NV_SATNAME_LEN-1);
+        missing_sats[n_missing_sats][NV_SATNAME_LEN-1] = '\0';
+        n_missing_sats++;
+    }
+}
+
+/* forget that the named sat was missing, eg, once it is found again or reselected.
+ */
+static void clearMissingSat (const char *name)
+{
+    for (int i = 0; i < n_missing_sats; i++) {
+        if (strcasecmp (missing_sats[i], name) == 0) {
+            for (int j = i+1; j < n_missing_sats; j++)
+                strcpy (missing_sats[j-1], missing_sats[j]);
+            n_missing_sats--;
+            return;
+        }
+    }
+}
 
 #define NO_CUR_SAT  (-1)                                // flag for currentSat and dxpaneSat
 
@@ -196,6 +239,7 @@ static void unsetSat (SatState &s)
 
     // reset name and flags here and in NV
     s.name[0] = '\0';
+    s.norad = 0;
     NVWriteString (s.nv_name, s.name);
 
     // no more sat if last one
@@ -378,18 +422,18 @@ static void findNextPass (Satellite *sat, const char *name, time_t t, SatRiseSet
 /* display next pass for sat in sky dome.
  * N.B. we assume findNextPass has been called to fill sat_rs
  */
-static void drawSatSkyDome (SatState &s)
+static void drawSatSkyDomeXY (SatState &s, const SatRiseSet &rs, const SCircle &dome_c, const SBox &erase_b)
 {
     // size and center of screen path
-    uint16_t r0 = satpass_c.r;
-    uint16_t xc = satpass_c.s.x;
-    uint16_t yc = satpass_c.s.y;
+    uint16_t r0 = dome_c.r;
+    uint16_t xc = dome_c.s.x;
+    uint16_t yc = dome_c.s.y;
 
     // erase sky dome
-    tft.fillRect (dx_info_b.x+1, dx_info_b.y+2*FONT_H+1, dx_info_b.w-2, dx_info_b.h-2*FONT_H-1, RA8875_BLACK);
+    tft.fillRect (erase_b.x, erase_b.y, erase_b.w, erase_b.h, RA8875_BLACK);
 
     // skip if no sat or never up
-    if (!s.sat || !obs || !s.rs.ever_up)
+    if (!s.sat || !obs || !rs.ever_up)
         return;
 
     // find n steps, step duration and starting time
@@ -398,18 +442,18 @@ static void drawSatSkyDome (SatState &s)
     float step_dt = 0;
     DateTime t;
 
-    if (s.rs.rise_ok && s.rs.set_ok) {
+    if (rs.rise_ok && rs.set_ok) {
 
         // find start and pass duration in days
-        float pass_duration = s.rs.set_time - s.rs.rise_time;
+        float pass_duration = rs.set_time - rs.rise_time;
         if (pass_duration < 0) {
             // rise after set means pass is underway so start now for remaining duration
             DateTime t_now = userDateTime(nowWO());
-            pass_duration = s.rs.set_time - t_now;
+            pass_duration = rs.set_time - t_now;
             t = t_now;
         } else {
             // full pass so start at next rise
-            t = s.rs.rise_time;
+            t = rs.rise_time;
             full_pass = true;
         }
 
@@ -454,7 +498,7 @@ static void drawSatSkyDome (SatState &s)
     tft.setCursor (xc + r0 - 12, yc + r0 - 8);
     tft.print ("SE");
 
-    // connect several points from t until s.rs.set_time, find max elevation for labeling
+    // connect several points from t until rs.set_time, find max elevation for labeling
     float max_el = 0;
     uint16_t max_el_x = 0, max_el_y = 0;
     uint16_t prev_x = 0, prev_y = 0;
@@ -516,7 +560,7 @@ static void drawSatSkyDome (SatState &s)
         tft.drawCircle (tft.getCursorX()+2, tft.getCursorY(), 1, BRGRAY);       // simple degree symbol
 
         // pass duration
-        int s_up = (s.rs.set_time - s.rs.rise_time)*SECSPERDAY;
+        int s_up = (rs.set_time - rs.rise_time)*SECSPERDAY;
         char tup_str[32];
         if (s_up >= 3600) {
             int h = s_up/3600;
@@ -535,6 +579,15 @@ static void drawSatSkyDome (SatState &s)
         tft.print(tup_str);
     }
 
+}
+
+static void drawSatSkyDome (SatState &s)
+{
+    // existing pass view: draw into the global satpass_c circle, erasing the dx_info dome area
+    SBox eb;
+    eb.x = dx_info_b.x+1; eb.y = dx_info_b.y+2*FONT_H+1;
+    eb.w = dx_info_b.w-2; eb.h = dx_info_b.h-2*FONT_H-1;
+    drawSatSkyDomeXY (s, s.rs, satpass_c, eb);
 }
 
 /* draw name of s IFF used in dx_info box
@@ -583,23 +636,26 @@ static void setSatMapNameLoc (SatState &s)
 
 /* mark current sat pass location 
  */
+static void drawSatPassMarkerXY (const SCircle &dome_c, float az, float el)
+{
+    uint16_t r0 = dome_c.r;
+    uint16_t xc = dome_c.s.x;
+    uint16_t yc = dome_c.s.y;
+
+    float r = r0*(90-el)/90;                                  // screen radius, zenith at center
+    uint16_t x = xc + r*sinf(deg2rad(az)) + 0.5F;             // want east right
+    uint16_t y = yc - r*cosf(deg2rad(az)) + 0.5F;             // want north up
+
+    if (y + SAT_UP_R < tft.height() - 1)                      // beware lower edge
+        tft.fillCircle (x, y, SAT_UP_R, SAT_COLOR);
+}
+
+/* mark current sat pass location */
 static void drawSatPassMarker()
 {
-
     SatNow satnow;
     getSatNow (satnow);
-
-    // size and center of screen path
-    uint16_t r0 = satpass_c.r;
-    uint16_t xc = satpass_c.s.x;
-    uint16_t yc = satpass_c.s.y;
-
-    float r = r0*(90-satnow.el)/90;                            // screen radius, zenith at center 
-    uint16_t x = xc + r*sinf(deg2rad(satnow.az)) + 0.5F;       // want east right
-    uint16_t y = yc - r*cosf(deg2rad(satnow.az)) + 0.5F;       // want north up
-
-    if (y + SAT_UP_R < tft.height() - 1)                       // beware lower edge
-        tft.fillCircle (x, y, SAT_UP_R, SAT_COLOR);
+    drawSatPassMarkerXY (satpass_c, satnow.az, satnow.el);
 }
 
 /* draw event label with time dt and current az/el in the dx_info box unless dt < 0 then just show label.
@@ -919,16 +975,68 @@ static bool satLookup (SatState &s)
 
     // final check
     if (ok) {
-        // TLE looks good: define new sat
+        // TLE looks good: define new sat and clear any prior missing flag
         s.sat = new Satellite (t1, t2);
+        s.norad = atoi (t1+2);          // NORAD id is the digits right after the "1 " prefix
+        clearMissingSat (s.name);
     } else {
+        // NOT fatal: just log, remember the name as missing so the chooser can mark it,
+        // and let the caller drop this sat. The app keeps running normally.
         if (err_msg[0])
-            fatalSatError ("%s", err_msg);
+            Serial.printf ("SAT: %s\n", err_msg);
         else
-            fatalSatError ("%s disappeared", s.name);
+            Serial.printf ("SAT: %s disappeared\n", s.name);
+        noteMissingSat (s.name);
     }
 
     return (ok);
+}
+
+
+/* clear all missing satellite names that now exist in either the user's file or the server file.
+ */
+static void clearFoundMissingSats()
+{
+    FILE *rns_fp = NULL;
+    RNS_t rns_state = RNS_INIT;
+    char name[NV_SATNAME_LEN];
+    char t1[TLE_LINEL];
+    char t2[TLE_LINEL];
+
+    while (readNextSat (rns_fp, rns_state, name, t1, t2)) {
+        for (int i = 0; i < n_missing_sats; ) {
+            if (strcasecmp (missing_sats[i], name) == 0)
+                clearMissingSat (missing_sats[i]);
+            else
+                i++;
+        }
+    }
+
+    if (rns_fp)
+        fclose (rns_fp);
+}
+
+/* force a fresh copy of the central server satellite list into the local cache.
+ * return whether the refreshed file could be opened afterwards.
+ */
+static bool refreshServerSatCache()
+{
+    FILE *old_fp = fopenOurs (esat_sfn, "r");
+    if (old_fp) {
+        fclose (old_fp);
+        unlinkOurs (esat_sfn);
+    }
+
+    FILE *new_fp = openCachedFile (esat_sfn, esat_url, 0, 0);   // ok if empty
+    if (new_fp) {
+        fclose (new_fp);
+        clearFoundMissingSats();
+        Serial.printf ("SAT: refreshed %s from %s\n", esat_sfn, esat_url);
+        return (true);
+    }
+
+    Serial.printf ("SAT: refresh of %s from %s failed\n", esat_sfn, esat_url);
+    return (false);
 }
 
 /* show table selection box marked or not
@@ -991,10 +1099,10 @@ static int askSat (char selections[MAX_ACTIVE_SATS][NV_SATNAME_LEN])
     tft.setTextColor (RA8875_WHITE);
 
     // show title and prompt
-    uint16_t title_y = 3*TBORDER/4;
+    uint16_t title_y = HDR_TXT_Y;
     selectFontStyle (BOLD_FONT, SMALL_FONT);
     tft.setCursor (5, title_y);
-    tft.print ("Select up to two satellites");
+    tft.print ("Select satellites (two)");
 
     // show rise units
     selectFontStyle (LIGHT_FONT, SMALL_FONT);
@@ -1012,7 +1120,8 @@ static int askSat (char selections[MAX_ACTIVE_SATS][NV_SATNAME_LEN])
     tft.setCursor (tft.width()-170, title_y);
     tft.print ("Up Now");
 
-    // show Ok button
+    // show control buttons
+    drawStringInBox ("Refresh", refresh_b, false, RA8875_WHITE);
     drawStringInBox ("Ok", ok_b, false, RA8875_WHITE);
 
 
@@ -1121,6 +1230,43 @@ static int askSat (char selections[MAX_ACTIVE_SATS][NV_SATNAME_LEN])
         tft.print (user_name);
     }
 
+    // append any sats that went missing so the user can see what happened instead of
+    // getting a fatal error. these are shown in red with a "Gone" marker and are NOT
+    // selectable: n_sat_table is left pointing past them so the tap bounds check rejects
+    // taps in this region.
+    {
+        int slot = n_sat_table;
+        for (int m = 0; m < n_missing_sats && slot < MAX_NSAT; m++) {
+
+            // skip if this missing name actually showed up in the live table above
+            bool present = false;
+            for (int k = 0; k < n_sat_table; k++) {
+                if (strcasecmp (sat_table[k], missing_sats[m]) == 0) { present = true; break; }
+            }
+            if (present)
+                continue;
+
+            int r = slot % N_ROWS;
+            int c = slot / N_ROWS;
+            SCoord cell_s;
+            cell_s.x = c*CELL_W;
+            cell_s.y = TBORDER + r*CELL_H;
+
+            // empty (unchecked, but not drawn as selectable) box
+            showSelectionBox (r, c, false);
+
+            // status + name in the dedicated "gone" color
+            tft.setTextColor (GONE_COLOR);
+            tft.setCursor (cell_s.x + CB_SIZE + 8, cell_s.y + FONT_H);
+            tft.print ("Gone ");
+            char user_name[NV_SATNAME_LEN];
+            strncpySubChar (user_name, missing_sats[m], ' ', '_', NV_SATNAME_LEN);
+            tft.print (user_name);
+
+            slot++;
+        }
+    }
+
     // bale if no satellites displayed
     if (n_sat_table == 0)
         goto out;
@@ -1145,6 +1291,25 @@ static int askSat (char selections[MAX_ACTIVE_SATS][NV_SATNAME_LEN])
         // skip if any other char -- we only support tap control
         if (ui.kb_char != CHAR_NONE)
             continue;
+
+        // refresh central server TLE cache then rebuild the chooser
+        if (inBox (ui.tap, refresh_b)) {
+            drawStringInBox ("Refresh", refresh_b, true, RA8875_WHITE);
+            if (rns_fp) {
+                fclose (rns_fp);
+                rns_fp = NULL;
+            }
+            bool refresh_ok = refreshServerSatCache();
+            tft.fillRect (5, TBORDER-12, 420, 10, RA8875_BLACK);
+            tft.setTextColor (refresh_ok ? SATUP_COLOR : SOON_COLOR);
+            tft.setCursor (5, TBORDER-4);
+            tft.print (refresh_ok ? "TLEs refreshed" : "TLE refresh failed");
+            wdDelay (500);
+            if (refresh_ok)
+                return (askSat (selections));
+            drawStringInBox ("Refresh", refresh_b, false, RA8875_WHITE);
+            continue;
+        }
 
         // find table index at tap
         int r = (ui.tap.y - TBORDER)/CELL_H;
@@ -1277,7 +1442,9 @@ static bool checkSatUpToDate (SatState &s, bool *updated)
     // confirm age still ok
     time_t now_wo = nowWO();
     if (!satEpochOk (s.sat, s.name, now_wo)) {
-        fatalSatError ("Epoch for %s is out of date", s.name);
+        // not fatal: flag as missing/stale and let caller drop it
+        Serial.printf ("SAT: Epoch for %s is out of date\n", s.name);
+        noteMissingSat (s.name);
         return (false);
     }
 
@@ -1298,6 +1465,23 @@ static bool checkSatUpToDate (SatState &s, bool *updated)
 
     // lookup succeeded regardless of whether elements changed
     return (true);
+}
+
+/* lightweight TLE lookup for a satellite NOT part of the globally-tracked sat_state[] --
+ * does not disturb sat_state[], the map display, or NVRAM. used by satsked.cpp's group
+ * schedule feature to get orbital elements for many satellites at once.
+ * returns a heap-allocated Satellite* the caller owns (delete when done), or NULL if the
+ * name isn't found or its TLE is unavailable/stale.
+ */
+Satellite *lookupSatByName (const char *name, int *norad)
+{
+    SatState tmp{};
+    strncpySubChar (tmp.name, name, '_', ' ', NV_SATNAME_LEN);
+    if (!checkSatUpToDate (tmp, NULL))
+        return (NULL);
+    if (norad)
+        *norad = tmp.norad;
+    return (tmp.sat);
 }
 
 /* show pass time of sat_rs(void)
@@ -1429,6 +1613,9 @@ bool getSatCir (Observer *snow_obs, time_t t0, SatNow &sat_at_t0)
 
     // public name
     strncpySubChar (sat_at_t0.name, s.name, ' ', '_', NV_SATNAME_LEN);
+
+    // catalog id for callers wanting transmitter lookups
+    sat_at_t0.norad = s.norad;
 
     // compute location now
     DateTime t_now = userDateTime(t0);
@@ -1921,8 +2108,11 @@ bool initSat()
         s0.show_path = s1.show_path;
         NVWriteUInt8 (s0.nv_flags, s0.show_path ? SF_PATH_MASK : 0);
         unsetSat (s1);                                  // resets s1 name and nv_name
-        if (!checkSatUpToDate (s0, NULL))
-            fatalError ("sat %s disappeared", s0.name);
+        if (!checkSatUpToDate (s0, NULL)) {
+            // not fatal: it was already flagged missing by satLookup; just drop it
+            Serial.printf ("SAT: %s disappeared during startup consolidation\n", s0.name);
+            unsetSat (s0);
+        }
     }
 
     // set current to lowest set
@@ -2221,6 +2411,1431 @@ static void showNextSatEvents (SatState &s)
     drawStringInBox (button_name, ok_b, true, RA8875_GREEN);
 }
 
+/* ----- Satellite frequency / mode table (parallel server file esats-freq.txt) ----- */
+
+// server file with one transmitter per line, keyed by NORAD; see backend fetch_sat_freq.sh.
+// fields: norad,name,status,type,mode,uplink_low,uplink_high,downlink_low,downlink_high,baud,invert,description
+static const char esatfq_sfn[] = "esats-freq.txt";          // local cached file from server
+static const char esatfq_url[] = "/esats/esats-freq.txt";   // server file URL
+
+// SatFreq struct is declared in HamClock.h so other modules (e.g. webserver) can use it.
+
+/* load all transmitter rows for the given NORAD id from the cached freq file.
+ * returns count and, if > 0, sets *fpp to a malloc'd array the caller must free().
+ */
+/* return field idx from split row f[0..nf-1], or "" if absent/out of range */
+static const char *satFreqField (char **f, int nf, int idx)
+{
+    return (idx >= 0 && idx < nf) ? f[idx] : "";
+}
+
+/* load all transmitter rows for the given NORAD id from the cached freq file.
+ * The file's "# fields:" header line is parsed to map columns by name, so the
+ * column order may vary and an absent "status" column defaults to "active".
+ * returns count and, if > 0, sets *fpp to a malloc'd array the caller must free().
+ */
+int getSatFreqs (int norad, SatFreq **fpp)
+{
+    *fpp = NULL;
+    if (norad <= 0)
+        return (0);
+
+    FILE *fp = openCachedFile (esatfq_sfn, esatfq_url, MAX_CACHE_AGE, 0);    // ok if empty
+    if (!fp) {
+        Serial.printf ("SAT: no server freq file\n");
+        return (0);
+    }
+
+    // column positions resolved from the header; -1 means the column is absent
+    enum { F_NORAD, F_NAME, F_STATUS, F_TYPE, F_MODE, F_ULLO, F_ULHI, F_DLLO, F_DLHI,
+           F_BAUD, F_INVERT, F_CTCSS, F_DESC, F_NFIELDS };
+    int col[F_NFIELDS];
+    for (int i = 0; i < F_NFIELDS; i++)
+        col[i] = -1;
+    int ncols = 0;
+
+    enum { MAX_COLS = 16 };
+
+    SatFreq *list = NULL;
+    int n = 0;
+    char line[300];
+
+    while (fgets (line, sizeof(line), fp)) {
+        chompString (line);
+
+        if (line[0] == '#') {
+            // learn column layout from the "fields:" header line, if present
+            const char *fl = strstr (line, "fields:");
+            if (fl) {
+                char tmp[300];
+                quietStrncpy (tmp, fl + 7, sizeof(tmp));
+                int idx = 0;
+                for (char *tok = strtok (tmp, " ,\t"); tok; tok = strtok (NULL, " ,\t"), idx++) {
+                    if      (!strcasecmp (tok, "norad"))         col[F_NORAD]  = idx;
+                    else if (!strcasecmp (tok, "name"))          col[F_NAME]   = idx;
+                    else if (!strcasecmp (tok, "status"))        col[F_STATUS] = idx;
+                    else if (!strcasecmp (tok, "type"))          col[F_TYPE]   = idx;
+                    else if (!strcasecmp (tok, "mode"))          col[F_MODE]   = idx;
+                    else if (!strcasecmp (tok, "uplink_low"))    col[F_ULLO]   = idx;
+                    else if (!strcasecmp (tok, "uplink_high"))   col[F_ULHI]   = idx;
+                    else if (!strcasecmp (tok, "downlink_low"))  col[F_DLLO]   = idx;
+                    else if (!strcasecmp (tok, "downlink_high")) col[F_DLHI]   = idx;
+                    else if (!strcasecmp (tok, "baud"))          col[F_BAUD]   = idx;
+                    else if (!strcasecmp (tok, "invert"))        col[F_INVERT] = idx;
+                    else if (!strcasecmp (tok, "ctcss"))         col[F_CTCSS]  = idx;
+                    else if (!strcasecmp (tok, "description"))   col[F_DESC]   = idx;
+                }
+                ncols = idx;
+            }
+            continue;
+        }
+        if (line[0] == '\0')
+            continue;
+        if (ncols == 0 || col[F_NORAD] < 0)
+            continue;                       // no usable header seen yet
+
+        // split into exactly ncols fields; the final field keeps any remainder so
+        // commas inside a trailing free-text description are preserved.
+        char *f[MAX_COLS];
+        int want = ncols < MAX_COLS ? ncols : MAX_COLS;
+        int nf = 0;
+        char *p = line;
+        while (nf < want) {
+            f[nf++] = p;
+            char *c = strchr (p, ',');
+            if (!c || nf == want)
+                break;
+            *c = '\0';
+            p = c + 1;
+        }
+        if (nf < want)
+            continue;                       // short row
+
+        if (atoi (satFreqField (f, nf, col[F_NORAD])) != norad)
+            continue;
+
+        list = (SatFreq *) realloc (list, (n+1) * sizeof(SatFreq));
+        if (!list)
+            fatalError ("no memory for %d SatFreq", n+1);
+        SatFreq *sf = &list[n++];
+        memset (sf, 0, sizeof(*sf));
+
+        const char *st = satFreqField (f, nf, col[F_STATUS]);
+        quietStrncpy (sf->status, st[0] ? st : "active", sizeof(sf->status));
+        quietStrncpy (sf->type, satFreqField (f, nf, col[F_TYPE]), sizeof(sf->type));
+        quietStrncpy (sf->mode, satFreqField (f, nf, col[F_MODE]), sizeof(sf->mode));
+        sf->ul_lo  = atol (satFreqField (f, nf, col[F_ULLO]));
+        sf->ul_hi  = atol (satFreqField (f, nf, col[F_ULHI]));
+        sf->dl_lo  = atol (satFreqField (f, nf, col[F_DLLO]));
+        sf->dl_hi  = atol (satFreqField (f, nf, col[F_DLHI]));
+        sf->baud   = atof (satFreqField (f, nf, col[F_BAUD]));
+        sf->invert = (strcasecmp (satFreqField (f, nf, col[F_INVERT]), "true") == 0);
+        quietStrncpy (sf->ctcss, satFreqField (f, nf, col[F_CTCSS]), sizeof(sf->ctcss));
+        quietStrncpy (sf->desc, satFreqField (f, nf, col[F_DESC]), sizeof(sf->desc));
+    }
+    fclose (fp);
+
+    *fpp = list;
+    return (n);
+}
+
+/* format a Hz freq pair into b as MHz: "low-high" for a passband, single value
+ * otherwise, or "-" if none.
+ */
+static void fmtSatFreqMHz (char *b, size_t bl, long lo, long hi)
+{
+    if (lo <= 0)
+        quietStrncpy (b, "-", bl);
+    else if (hi > 0 && hi != lo)
+        snprintf (b, bl, "%.3f-%.3f", lo/1e6, hi/1e6);
+    else
+        snprintf (b, bl, "%.3f", lo/1e6);
+}
+
+/* full-screen table of the frequency/mode info for satellite s, dismissed with Ok.
+ * built to mirror showNextSatEvents().
+ */
+/* live, self-updating Doppler detail for ONE transmitter tx of satellite s.
+ * Recomputes from the satellite's current range rate ~once a second so the
+ * RX/TX tuning frequencies visibly track the pass. Dismissed with Ok.
+ */
+/* draw a small weather condition glyph in a box of size s at (x,y), chosen from the condition text.
+ * like the sun/moon, these are drawn from primitives -- there are no icon files.
+ */
+static void wxDrawCloud (uint16_t x, uint16_t y, uint16_t s, uint16_t col)
+{
+    uint16_t r = s/5;
+    uint16_t by = y + s*3/5;
+    tft.fillCircle (x + s*3/10, by, r, col);
+    tft.fillCircle (x + s*7/10, by, r, col);
+    tft.fillCircle (x + s/2,    by - r/2, r, col);
+    tft.fillRect   (x + s*3/10, by, s*2/5, r+1, col);
+}
+
+static void wxDrawSun (uint16_t cx, uint16_t cy, uint16_t r, uint16_t col)
+{
+    for (int a = 0; a < 8; a++) {
+        float ang = a*M_PIF/4;
+        tft.drawLine (cx + (r+2)*cosf(ang), cy + (r+2)*sinf(ang),
+                      cx + (r+5)*cosf(ang), cy + (r+5)*sinf(ang), col);
+    }
+    tft.fillCircle (cx, cy, r, col);
+}
+
+static void drawWXGlyph (uint16_t x, uint16_t y, uint16_t s, const char *cond)
+{
+    // case-insensitive copy for keyword matching
+    char c[40];
+    size_t i = 0;
+    for (; cond[i] && i < sizeof(c)-1; i++) {
+        char ch = cond[i];
+        c[i] = (ch >= 'A' && ch <= 'Z') ? ch + 32 : ch;
+    }
+    c[i] = 0;
+    #define WX_HAS(k) (strstr(c,(k)) != NULL)
+
+    const uint16_t cloud_col = BRGRAY;
+    const uint16_t rain_col  = RGB565(100,150,255);
+
+    if (WX_HAS("thunder") || WX_HAS("storm")) {
+        wxDrawCloud (x, y, s, cloud_col);
+        uint16_t bx = x + s/2, by = y + s*3/5 + s/6;
+        tft.drawLine (bx, by, bx - s/10, by + s/5, RA8875_YELLOW);
+        tft.drawLine (bx - s/10, by + s/5, bx + s/12, by + s/5, RA8875_YELLOW);
+        tft.drawLine (bx + s/12, by + s/5, bx - s/12, y + s, RA8875_YELLOW);
+    } else if (WX_HAS("snow") || WX_HAS("sleet")) {
+        wxDrawCloud (x, y, s, cloud_col);
+        for (int k = 0; k < 3; k++)
+            tft.fillCircle (x + s*(3+3*k)/10, y + s*9/10, 1, RA8875_WHITE);
+    } else if (WX_HAS("rain") || WX_HAS("drizzle") || WX_HAS("shower")) {
+        wxDrawCloud (x, y, s, cloud_col);
+        for (int k = 0; k < 3; k++) {
+            uint16_t dx = x + s*(3+3*k)/10;
+            tft.drawLine (dx, y + s*4/5, dx - s/12, y + s, rain_col);
+        }
+    } else if (WX_HAS("mist") || WX_HAS("fog") || WX_HAS("haze") || WX_HAS("smoke")) {
+        for (int k = 0; k < 4; k++)
+            tft.drawLine (x + 2, y + s*(3+2*k)/12, x + s - 2, y + s*(3+2*k)/12, cloud_col);
+    } else if (WX_HAS("few") || WX_HAS("scattered") || WX_HAS("partly")) {
+        wxDrawSun (x + s/3, y + s/3, s/6, RA8875_YELLOW);
+        wxDrawCloud (x + s/6, y + s/5, s*3/4, cloud_col);
+    } else if (WX_HAS("cloud") || WX_HAS("overcast") || WX_HAS("broken")) {
+        wxDrawCloud (x, y, s, cloud_col);
+    } else if (WX_HAS("clear") || WX_HAS("sun") || WX_HAS("fair")) {
+        wxDrawSun (x + s/2, y + s/2, s/4, RA8875_YELLOW);
+    } else {
+        wxDrawCloud (x, y, s, cloud_col);       // sensible default
+    }
+    #undef WX_HAS
+}
+
+
+static void showSatDoppler (SatState &s, const SatFreq &tx)
+{
+    hideClocks();
+    eraseScreen();
+
+    const uint16_t W = tft.width();
+    const uint16_t H = tft.height();
+    const uint16_t P = H/16;                            // proportional row pitch
+    const uint16_t LR = (W/80 < 6) ? 6 : W/80;          // left/right border
+    #define _SD_TIMEOUT 1000                            // ms between live refreshes
+    const double C_MPS = 2.99792458e8;                  // speed of light, m/s
+
+    // baseline y of text row i; (i+1)*P stays < H for i <= 14 on every build
+    #define ROWY(i)  ((uint16_t)(((i)+1)*P))
+
+    char user_name[NV_SATNAME_LEN];
+    strncpySubChar (user_name, s.name, ' ', '_', NV_SATNAME_LEN);
+
+    // Ok button, bottom right (clear of the dome, which sits top-right)
+    SBox ok_b;
+    ok_b.w = (W/8 < 70) ? 70 : W/8;
+    ok_b.h = P;
+    ok_b.x = W - ok_b.w - LR;
+    ok_b.y = ROWY(12) - P;
+    static const char ok_name[] = "Ok";
+    selectFontStyle (LIGHT_FONT, SMALL_FONT);
+    drawStringInBox (ok_name, ok_b, false, RA8875_GREEN);
+
+    // ---- sky dome geometry: right column, sized from the screen ----
+    uint16_t dome_top = P;                              // below the title band
+    uint16_t dome_bot = 8*P;                            // above the live zone (row 9)
+    uint16_t rv = (dome_bot - dome_top)/2;
+    uint16_t left_edge = (uint16_t)(W*3/5);             // text left of here, dome right of it
+    uint16_t rh = (W - LR - left_edge)/2;
+    uint16_t r0 = rv < rh ? rv : rh;
+    SCircle dome_c;
+    dome_c.r   = r0;
+    dome_c.s.x = W - LR - r0;
+    dome_c.s.y = dome_top + r0;
+    SBox dome_erase;
+    dome_erase.x = dome_c.s.x - r0 - 4;
+    dome_erase.y = dome_c.s.y - r0 - P/2;
+    dome_erase.w = 2*r0 + 8;
+    dome_erase.h = 2*r0 + P;
+
+    // ---- static left-column header (drawn once) ----
+    selectFontStyle (BOLD_FONT, SMALL_FONT);
+    tft.setTextColor (DE_COLOR);
+    tft.setCursor (LR, ROWY(0));
+    tft.printf ("%s Doppler", user_name);
+
+    selectFontStyle (LIGHT_FONT, SMALL_FONT);
+    char dbuf[80];
+    tft.setTextColor (RA8875_WHITE);
+    tft.setCursor (LR, ROWY(1));
+    tft.printf ("Mode %s   Type %s", tx.mode[0] ? tx.mode : "-", tx.type[0] ? tx.type : "-");
+    quietStrncpy (dbuf, tx.desc[0] ? tx.desc : "-", sizeof(dbuf));
+    (void) maxStringW (dbuf, left_edge - 2*LR);         // keep description clear of the dome
+    tft.setCursor (LR, ROWY(2));
+    tft.print (dbuf);
+
+    // local (DE) weather on the gap row: temperature in the user's units + a condition glyph.
+    // getFastWx is a non-blocking cache lookup; if cold we simply omit the line.
+    WXInfo wxi;
+    if (getFastWx (de_ll, wxi)) {
+        selectFontStyle (LIGHT_FONT, SMALL_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        tft.setCursor (LR, ROWY(3));
+        float t = showTempC() ? wxi.temperature_c : CEN2FAH(wxi.temperature_c);
+        tft.printf ("Wx %.0f %c", t, showTempC() ? 'C' : 'F');
+        uint16_t gx = tft.getCursorX() + LR;            // glyph just right of the temperature
+        uint16_t gs = P*3/4;
+        const char *cond = wxi.conditions[0] ? wxi.conditions : wxi.clouds;
+        drawWXGlyph (gx, ROWY(3) - gs + 2, gs, cond);
+        char cbuf[28];
+        quietStrncpy (cbuf, cond, sizeof(cbuf));
+        uint16_t tx0 = gx + gs + LR;
+        if (left_edge > tx0 + LR) {
+            (void) maxStringW (cbuf, left_edge - tx0 - LR);
+            tft.setTextColor (GRAY);
+            tft.setCursor (tx0, ROWY(3));
+            tft.print (cbuf);
+        }
+    }
+
+    char nb[48];
+    tft.setTextColor (GRAY);
+    tft.setCursor (LR, ROWY(4));
+    fmtSatFreqMHz (nb, sizeof(nb), tx.dl_lo, tx.dl_hi);
+    tft.printf ("Downlink nominal  %s MHz", nb);
+    tft.setCursor (LR, ROWY(5));
+    fmtSatFreqMHz (nb, sizeof(nb), tx.ul_lo, tx.ul_hi);
+    tft.printf ("Uplink   nominal  %s MHz", nb);
+
+    if (tx.ctcss[0]) {
+        tft.setTextColor (GRAY);
+        tft.setCursor (LR, ROWY(6));
+        tft.printf ("CTCSS tone  %s Hz", tx.ctcss);
+    }
+
+    // ---- next-pass summary (computed once); rs is also reused for the dome arc ----
+    time_t now = nowWO();
+    SatRiseSet rs;
+    findNextPass (s.sat, NULL, now, rs);
+    {
+        char ln[120];
+        if (!rs.rise_ok && !rs.set_ok) {
+            quietStrncpy (ln, rs.ever_up ? "Always up (no AOS/LOS)" : "No pass within 2 days",
+                          sizeof(ln));
+        } else {
+            DateTime dt_now = userDateTime (now);
+            bool up_now = (rs.set_ok && rs.rise_ok && rs.set_time < rs.rise_time)
+                                    || (rs.set_ok && !rs.rise_ok);
+            time_t aos_t = 0, los_t = 0;
+            if (rs.rise_ok) aos_t = now + (time_t)((rs.rise_time - dt_now)*SECSPERDAY + 0.5);
+            if (rs.set_ok)  los_t = now + (time_t)((rs.set_time  - dt_now)*SECSPERDAY + 0.5);
+            time_t wa = up_now ? now : aos_t;
+            time_t wb = los_t;
+            time_t tca_t = wa;
+            if (rs.set_ok && wb > wa) {
+                float best = 1e30f;
+                for (int i = 0; i <= 60; i++) {
+                    time_t tsm = wa + (time_t)((double)(wb - wa)*i/60);
+                    float el2, az2, rng2, rate2;
+                    s.sat->predict (userDateTime (tsm));
+                    s.sat->topo (obs, el2, az2, rng2, rate2);
+                    if (rng2 < best) { best = rng2; tca_t = tsm; }
+                }
+            }
+            int tz = getTZ (de_tz);
+            if (up_now) {
+                int q = snprintf (ln, sizeof(ln), "Up now");
+                if (rs.set_ok && wb > wa) {
+                    time_t c = tca_t + tz;
+                    q += snprintf (ln+q, sizeof(ln)-q, "   TCA %02d:%02d", hour(c), minute(c));
+                }
+                if (rs.set_ok) {
+                    time_t l = los_t + tz;
+                    int rem = (int)(los_t - now);
+                    q += snprintf (ln+q, sizeof(ln)-q, "   LOS %02d:%02d (in %dm)",
+                                   hour(l), minute(l), rem/60);
+                }
+            } else if (rs.rise_ok && rs.set_ok) {
+                time_t a = aos_t + tz, c = tca_t + tz, l = los_t + tz;
+                int dur = (int)(los_t - aos_t);
+                snprintf (ln, sizeof(ln),
+                          "AOS %02d:%02d   TCA %02d:%02d   LOS %02d:%02d   dur %dm%02ds",
+                          hour(a), minute(a), hour(c), minute(c), hour(l), minute(l), dur/60, dur%60);
+            } else {
+                time_t a = aos_t + tz;
+                snprintf (ln, sizeof(ln), "AOS %02d:%02d", hour(a), minute(a));
+            }
+        }
+        selectFontStyle (LIGHT_FONT, SMALL_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        (void) maxStringW (ln, left_edge - 2*LR);
+        tft.setCursor (LR, ROWY(7));
+        tft.print (ln);
+    }
+
+    // live-line baselines (full width, below the dome)
+    const uint16_t stat_y = ROWY(9);
+    const uint16_t rx_y   = ROWY(11);
+    const uint16_t tx_y   = ROWY(12);
+
+    SBox screen_b; screen_b.x = 0; screen_b.y = 0; screen_b.w = W; screen_b.h = H;
+    UserInput ui = {
+        screen_b, UI_UFuncNone, UF_UNUSED, _SD_TIMEOUT, UF_NOCLOCKS,
+        {0, 0}, TT_NONE, CHAR_NONE, false, false
+    };
+
+    for (;;) {
+
+        // live geometry for THIS sat (computed before the dome re-predicts)
+        float el = 0, az = 0, range = 0, rate = 0;
+        if (s.sat && obs) {
+            DateTime t = userDateTime (nowWO());
+            s.sat->predict (t);
+            s.sat->topo (obs, el, az, range, rate);
+        }
+        double dop = rate / C_MPS;
+
+        // dome + live now-dot (redrawn each tick; dome erases its own region)
+        drawSatSkyDomeXY (s, rs, dome_c, dome_erase);
+        if (el >= 0)
+            drawSatPassMarkerXY (dome_c, az, el);
+
+        selectFontStyle (LIGHT_FONT, SMALL_FONT);
+
+        // az/el/range/rate
+        tft.fillRect (0, stat_y - (P*4/5), ok_b.x - LR, P, RA8875_BLACK);   // stop left of Ok button
+        tft.setTextColor (el >= 0 ? RA8875_GREEN : GRAY);
+        tft.setCursor (LR, stat_y);
+        tft.printf ("Az %.1f  El %.1f  Range %.0f km  Rate %+.0f m/s %s",
+                    az, el, range, rate, rate >= 0 ? "(receding)" : "(approaching)");
+
+        // RX (downlink, lower when receding)
+        tft.fillRect (0, rx_y - (P*4/5), ok_b.x - LR, P, RA8875_BLACK);   // stop left of Ok button
+        if (tx.dl_lo > 0) {
+            tft.setTextColor (RA8875_WHITE);
+            tft.setCursor (LR, rx_y);
+            double rxlo = tx.dl_lo*(1-dop);
+            if (tx.dl_hi > 0 && tx.dl_hi != tx.dl_lo) {
+                double rxhi = tx.dl_hi*(1-dop);
+                tft.printf ("RX tune  %.5f - %.5f MHz", rxlo/1e6, rxhi/1e6);
+            } else
+                tft.printf ("RX tune  %.5f MHz   (%+.2f kHz)", rxlo/1e6, (rxlo - tx.dl_lo)/1e3);
+        }
+
+        // TX (uplink, higher when receding)
+        tft.fillRect (0, tx_y - (P*4/5), ok_b.x - LR, P, RA8875_BLACK);   // stop left of Ok button
+        if (tx.ul_lo > 0) {
+            tft.setTextColor (RA8875_WHITE);
+            tft.setCursor (LR, tx_y);
+            double txlo = tx.ul_lo*(1+dop);
+            if (tx.ul_hi > 0 && tx.ul_hi != tx.ul_lo) {
+                double txhi = tx.ul_hi*(1+dop);
+                tft.printf ("TX xmit  %.5f - %.5f MHz", txlo/1e6, txhi/1e6);
+            } else
+                tft.printf ("TX xmit  %.5f MHz   (%+.2f kHz)", txlo/1e6, (txlo - tx.ul_lo)/1e3);
+        }
+
+        if (waitForUser (ui)) {
+            if (ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL || ui.kb_char == CHAR_ESC
+                            || inBox (ui.tap, ok_b))
+                break;
+            ui.kb_char = CHAR_NONE;
+            ui.tap.x = ui.tap.y = 0;
+        }
+    }
+
+    selectFontStyle (LIGHT_FONT, SMALL_FONT);
+    drawStringInBox (ok_name, ok_b, true, RA8875_GREEN);
+}
+
+/* full-screen, paginated table of the frequency/mode info for satellite s.
+ * Tap a row to highlight it, then Ok to open a live Doppler view for that
+ * transmitter. With nothing highlighted, Ok (or Enter/Esc) dismisses.
+ * The highlight is temporary - it is never saved.
+ */
+static void showSatFreqs (SatState &s)
+{
+    hideClocks();
+
+    #define _SF_LR_B      10                    // left/right border
+    #define _SF_TIMEOUT   60000                 // ms
+    #define _SF_ROWH      30                    // data row height
+    #define _SF_TITLE_Y   8                     // title/button band y
+    #define _SF_HDR_Y     70                    // column header baseline
+    #define _SF_DATA_Y    100                   // first data row baseline
+
+    // column x positions (tuned for 800-wide; wider builds just extend Description)
+    #define _SF_MODE_X    (_SF_LR_B)
+    #define _SF_UP_X      120
+    #define _SF_DN_X      305
+    #define _SF_BAUD_X    490
+    #define _SF_STAT_X    548
+    #define _SF_DESC_X    660
+
+    // load transmitters for this sat
+    SatFreq *fl = NULL;
+    int n = getSatFreqs (s.norad, &fl);
+
+    // friendly name (underscores back to spaces)
+    char user_name[NV_SATNAME_LEN];
+    strncpySubChar (user_name, s.name, ' ', '_', NV_SATNAME_LEN);
+
+    // paging math
+    int rows_per_page = (tft.height() - _SF_DATA_Y) / _SF_ROWH;
+    if (rows_per_page < 1)
+        rows_per_page = 1;
+    int npages = (n > 0) ? (n + rows_per_page - 1) / rows_per_page : 1;
+    int page = 0;
+
+    // temporary (unsaved) highlighted transmitter, -1 = none
+    int sel = -1;
+
+    // Ok and (when paging) More buttons, top right
+    SBox ok_b;
+    ok_b.w = 90; ok_b.h = _SF_ROWH;
+    ok_b.x = tft.width() - ok_b.w - _SF_LR_B;
+    ok_b.y = _SF_TITLE_Y;
+    SBox more_b;
+    more_b.w = 90; more_b.h = _SF_ROWH;
+    more_b.x = ok_b.x - more_b.w - 10;
+    more_b.y = _SF_TITLE_Y;
+    static const char ok_name[] = "Ok";
+    static const char more_name[] = "More";
+
+    // input watches the whole screen so any button/row/key is caught
+    SBox screen_b;
+    screen_b.x = 0; screen_b.y = 0;
+    screen_b.w = tft.width(); screen_b.h = tft.height();
+    UserInput ui = {
+        screen_b, UI_UFuncNone, UF_UNUSED, _SF_TIMEOUT, UF_NOCLOCKS,
+        {0, 0}, TT_NONE, CHAR_NONE, false, false
+    };
+
+    bool need_draw = true;
+    for (;;) {
+
+        int i0 = page * rows_per_page;
+        int i1 = i0 + rows_per_page;
+        if (i1 > n)
+            i1 = n;
+
+        if (need_draw) {
+            eraseScreen();
+
+            // title
+            selectFontStyle (BOLD_FONT, SMALL_FONT);
+            tft.setTextColor (DE_COLOR);
+            tft.setCursor (_SF_LR_B, _SF_TITLE_Y + 22);
+            if (npages > 1)
+                tft.printf ("%s freq/modes  %d-%d of %d", user_name, i0+1, i1, n);
+            else
+                tft.printf ("%s frequencies & modes", user_name);
+
+            // buttons — use LIGHT/SMALL so Ok text fits inside the box
+            selectFontStyle (LIGHT_FONT, SMALL_FONT);
+            drawStringInBox (ok_name, ok_b, false, RA8875_GREEN);
+            if (npages > 1)
+                drawStringInBox (more_name, more_b, false, RA8875_GREEN);
+
+            // column header
+            selectFontStyle (LIGHT_FONT, SMALL_FONT);
+            tft.setTextColor (DE_COLOR);
+            tft.setCursor (_SF_MODE_X, _SF_HDR_Y); tft.print ("Mode");
+            tft.setCursor (_SF_UP_X,   _SF_HDR_Y); tft.print ("Up MHz");
+            tft.setCursor (_SF_DN_X,   _SF_HDR_Y); tft.print ("Dn MHz");
+            tft.setCursor (_SF_BAUD_X, _SF_HDR_Y); tft.print ("Baud");
+            tft.setCursor (_SF_STAT_X, _SF_HDR_Y); tft.print ("Status");
+            tft.setCursor (_SF_DESC_X, _SF_HDR_Y); tft.print ("Description");
+
+            if (n == 0) {
+
+                tft.setTextColor (RA8875_WHITE);
+                tft.setCursor (_SF_LR_B, _SF_DATA_Y);
+                tft.print (s.norad <= 0 ? "No catalog id known for this satellite"
+                                        : "No frequency data available");
+
+            } else {
+
+                char buf[64];
+                uint16_t y = _SF_DATA_Y;
+
+                for (int i = i0; i < i1; i++) {
+                    SatFreq *sf = &fl[i];
+
+                    // color by status
+                    uint16_t tc = RA8875_WHITE;
+                    if (!strcmp (sf->status, "active"))        tc = RA8875_GREEN;
+                    else if (!strcmp (sf->status, "inactive")) tc = GRAY;
+                    else if (!strcmp (sf->status, "future"))   tc = RA8875_YELLOW;
+                    tft.setTextColor (tc);
+
+                    // mode, clipped to its column width so it can't bleed right
+                    char mbuf[28];
+                    quietStrncpy (mbuf, sf->mode[0] ? sf->mode : "-", sizeof(mbuf));
+                    (void) maxStringW (mbuf, _SF_UP_X - _SF_MODE_X - 8);
+                    tft.setCursor (_SF_MODE_X, y); tft.print (mbuf);
+
+                    // uplink
+                    fmtSatFreqMHz (buf, sizeof(buf), sf->ul_lo, sf->ul_hi);
+                    tft.setCursor (_SF_UP_X, y); tft.print (buf);
+
+                    // downlink (+ 'i' for inverting transponder)
+                    fmtSatFreqMHz (buf, sizeof(buf), sf->dl_lo, sf->dl_hi);
+                    tft.setCursor (_SF_DN_X, y); tft.print (buf);
+                    if (sf->invert)
+                        tft.print ('i');
+
+                    // baud, compact (9600 -> 9k6, 1200 -> 1k2)
+                    tft.setCursor (_SF_BAUD_X, y);
+                    if (sf->baud >= 1000) {
+                        int k = (int)(sf->baud/1000);
+                        int frac = (int)((sf->baud - k*1000)/100);
+                        if (frac)
+                            snprintf (buf, sizeof(buf), "%dk%d", k, frac);
+                        else
+                            snprintf (buf, sizeof(buf), "%dk", k);
+                        tft.print (buf);
+                    } else if (sf->baud > 0) {
+                        snprintf (buf, sizeof(buf), "%g", sf->baud);
+                        tft.print (buf);
+                    } else
+                        tft.print ("-");
+
+                    // status word
+                    tft.setCursor (_SF_STAT_X, y);
+                    tft.print (sf->status[0] ? sf->status : "-");
+
+                    // description, clipped to the remaining width so it cannot
+                    // wrap past the right edge and overprint the Mode column
+                    char dbuf[64];
+                    quietStrncpy (dbuf, sf->desc[0] ? sf->desc : "-", sizeof(dbuf));
+                    (void) maxStringW (dbuf, tft.width() - _SF_DESC_X - _SF_LR_B);
+                    tft.setCursor (_SF_DESC_X, y); tft.print (dbuf);
+
+                    // highlight box on the selected row
+                    if (i == sel)
+                        tft.drawRect (_SF_LR_B - 5, y - 22,
+                                      tft.width() - 2*(_SF_LR_B - 5), _SF_ROWH - 2, RA8875_WHITE);
+
+                    y += _SF_ROWH;
+                }
+            }
+
+            // bottom hint
+            selectFontStyle (LIGHT_FONT, SMALL_FONT);
+            tft.setTextColor (GRAY);
+            tft.setCursor (_SF_LR_B, tft.height() - tft.height()/32);   // leave room for descenders on any size
+            tft.print ("Tap a row, then Ok, for its live Doppler");
+
+            need_draw = false;
+        }
+
+        // wait for input (table is static, so a timeout just dismisses)
+        if (!waitForUser (ui))
+            break;
+
+        if (ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL || ui.kb_char == CHAR_ESC)
+            break;                                      // keyboard always exits
+
+        if (inBox (ui.tap, ok_b)) {
+            if (sel >= 0 && sel < n) {
+                showSatDoppler (s, fl[sel]);            // drill into live Doppler
+                need_draw = true;                       // then restore the table
+            } else
+                break;                                  // nothing selected -> exit
+        } else if (npages > 1 && inBox (ui.tap, more_b)) {
+            page = (page + 1) % npages;                 // next page, wrapping
+            sel = -1;                                   // clear selection on page change
+            need_draw = true;
+        } else if (n > 0 && ui.tap.y >= (uint16_t)(_SF_DATA_Y - 22)) {
+            // tap in the data area selects/toggles a row on this page
+            int rk = (ui.tap.y - (_SF_DATA_Y - 22)) / _SF_ROWH;
+            if (rk >= 0 && i0 + rk < i1) {
+                int abs_i = i0 + rk;
+                sel = (sel == abs_i) ? -1 : abs_i;      // toggle
+                need_draw = true;
+            }
+        }
+
+        // reset before next wait
+        ui.kb_char = CHAR_NONE;
+        ui.tap.x = ui.tap.y = 0;
+    }
+
+    // ack and clean up
+    drawStringInBox (ok_name, ok_b, true, RA8875_GREEN);
+    if (fl)
+        free (fl);
+}
+
+static void showSatPassProg (SatState &s)
+{
+    #define _SPP_LABEL_W   50
+    #define _SPP_TITLE_H   (LISTING_Y0 + 8)   // 55px: title@PANETITLE_H, legend@SUBTITLE_Y0, ruler@LISTING_Y0
+    #define _SPP_N_DAYS    14
+    #define _SPP_MAX_PASS  (_SPP_N_DAYS*12)
+    #define _SPP_TIMEOUT   120000
+    #define _SPP_BAR_MINW  4
+    #define _SPP_SUNLIT_C  RGB565(50, 210, 80)
+    #define _SPP_ECLIP_C   RGB565(70, 120, 210)
+    #define _SPP_GRID_C    RGB565(35, 35, 50)
+    #define _SPP_NOON_C    RGB565(60, 60, 80)
+    #define _SPP_LBL_C     BRGRAY
+    #define _SPP_RULER_C   RGB565(80, 80, 100)
+    #define _SPP_TODAY_C   RA8875_WHITE
+
+    int row_h = (map_b.h - _SPP_TITLE_H) / _SPP_N_DAYS;
+    if (row_h < 10) row_h = 10;
+    int tl_x = map_b.x + _SPP_LABEL_W;
+    int tl_w = map_b.w - _SPP_LABEL_W - 2;
+    auto sod2x = [&](int sod) -> uint16_t {
+        return (uint16_t)(tl_x + (long)sod * tl_w / SECSPERDAY);
+    };
+
+    time_t now_t = nowWO();
+    time_t tz     = (time_t) getTZ (de_tz);  // DE UTC offset, secs
+
+    // Find start of current LOCAL day (midnight DE time) expressed as UTC
+    time_t now_local  = now_t + tz;
+    struct tm *tm_l   = gmtime (&now_local);
+    struct tm tm_mid  = *tm_l;
+    tm_mid.tm_hour = tm_mid.tm_min = tm_mid.tm_sec = 0;
+    time_t t_midnight = timegm (&tm_mid) - tz;  // UTC of local midnight
+    time_t t_end_all  = t_midnight + (time_t)_SPP_N_DAYS * SECSPERDAY;
+
+    struct SPEntry { time_t aos, los, tca; float max_el; bool sunlit; };
+    SPEntry *passes = (SPEntry *) malloc (_SPP_MAX_PASS * sizeof(SPEntry));
+    if (!passes) { plotMessage (map_b, RA8875_RED, "Out of memory"); return; }
+    int n_passes = 0;
+
+    if (!satEpochOk (s.sat, s.name, t_midnight)) {
+        plotMessage (map_b, RA8875_RED, "TLE expired - update TLEs");
+        free (passes);
+        return;
+    }
+    {
+        DateTime t0dt = userDateTime (t_midnight);
+        time_t t      = t_midnight;
+        Sun sun;
+        while (t < t_end_all && n_passes < _SPP_MAX_PASS) {
+            SatRiseSet rs;
+            findNextPass (s.sat, NULL, t, rs);
+            if (!rs.rise_ok || !rs.set_ok) break;
+            time_t rt = t_midnight + (time_t)(SECSPERDAY*(rs.rise_time - t0dt) + 0.5F);
+            time_t st = t_midnight + (time_t)(SECSPERDAY*(rs.set_time  - t0dt) + 0.5F);
+            if (rt >= t_end_all) break;
+            if (st <= rt) st = rt + 300;
+            float    max_el   = 0;
+            DateTime t_max_dt = rs.rise_time;
+            {
+                float el, az, range, rate;
+                DateTime t_ep = rs.set_time < rs.rise_time
+                              ? rs.rise_time + 10.0F/1440.0F : rs.set_time;
+                for (DateTime ts = rs.rise_time; ts < t_ep; ts += 20.0F/SECSPERDAY) {
+                    s.sat->predict (ts);
+                    s.sat->topo (obs, el, az, range, rate);
+                    if (el > max_el) { max_el = el; t_max_dt = ts; }
+                }
+            }
+            if (max_el >= SAT_MIN_EL) {
+                sun.predict    (t_max_dt);
+                s.sat->predict (t_max_dt);
+                time_t tca_t = t_midnight
+                             + (time_t)(SECSPERDAY*(t_max_dt - t0dt) + 0.5F);
+                passes[n_passes++] = { rt, st, tca_t, max_el, !s.sat->eclipsed(&sun) };
+            }
+            t = st + (time_t)(s.sat->period() * SECSPERDAY / 2);
+            updateClocks (false);
+        }
+    }
+
+    char user_name[NV_SATNAME_LEN];
+    strncpySubChar (user_name, s.name, ' ', '_', NV_SATNAME_LEN);
+    char title[48];
+    snprintf (title, sizeof(title), "%s Pass Progression", user_name);
+
+    SBox resume_b;
+    resume_b.w = 78; resume_b.h = 20;
+    resume_b.x = map_b.x + map_b.w - resume_b.w - 3;
+    resume_b.y = map_b.y + 3;              // top-right corner
+    // Helper: draw all bars and labels into map_b (called on init and popup dismiss)
+    auto drawAll = [&]() {
+        fillSBox (map_b, RA8875_BLACK);
+        // Resume button — top-right, small, drawn first
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        drawStringInBox ("Resume", resume_b, false, RA8875_GREEN);
+        // Title on its own line using standard HC font-metric height
+        selectFontStyle (LIGHT_FONT, SMALL_FONT);
+        tft.setTextColor (DE_COLOR);
+        tft.setCursor (map_b.x + 2, map_b.y + PANETITLE_H);
+        tft.print (title);
+        // Legend: on same row as Resume, directly left of it
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        { uint16_t lx=(uint16_t)(resume_b.x-192), ly=(uint16_t)(resume_b.y+2);
+          tft.fillRect(lx,ly,9,7,_SPP_SUNLIT_C); tft.setTextColor(_SPP_SUNLIT_C);
+          tft.setCursor(lx+12,ly); tft.print("Sunlit");
+          tft.fillRect(lx+66,ly,9,7,_SPP_ECLIP_C); tft.setTextColor(_SPP_ECLIP_C);
+          tft.setCursor(lx+79,ly); tft.print("Eclipse"); }
+        // Hour ruler on the listing line — labels just above ticks
+        selectFontStyle (LIGHT_FONT, FAST_FONT); tft.setTextColor (_SPP_RULER_C);
+        {
+            // Show timezone offset at left of ruler
+            char tz_lbl[10];
+            int tz_h = (int)(tz / 3600);
+            snprintf (tz_lbl, sizeof(tz_lbl), "UTC%+d", tz_h);
+            tft.setCursor (map_b.x + 2, map_b.y + LISTING_Y0 - LISTING_DY);
+            tft.print (tz_lbl);
+        }
+        uint16_t ry0 = map_b.y + LISTING_Y0 + 2;   // tick bottom
+        for (int h=0; h<=24; h+=3) {
+            uint16_t rx=sod2x(h*3600);
+            tft.drawLine(rx,ry0-5,rx,ry0,1,_SPP_RULER_C);  // tick upward
+            if (h%6==0 && h<24) { char lb[4]; snprintf(lb,sizeof(lb),"%02d",h);
+              tft.setCursor(rx+2, map_b.y + LISTING_Y0 - LISTING_DY); tft.print(lb); } }
+        // day rows
+        for (int d=0; d<_SPP_N_DAYS; d++) {
+            time_t t_ds=t_midnight+(time_t)d*SECSPERDAY, t_de=t_ds+SECSPERDAY;
+            uint16_t ry=map_b.y+_SPP_TITLE_H+d*row_h;
+            time_t t_ds_local = t_ds + tz;               // local midnight
+            struct tm *tm_d=gmtime(&t_ds_local); char lbl[16];
+            snprintf(lbl,sizeof(lbl),"%s %02d/%02d",
+                     dayShortStr(tm_d->tm_wday+1),tm_d->tm_mon+1,tm_d->tm_mday);
+            selectFontStyle(LIGHT_FONT,FAST_FONT);
+            tft.setTextColor(d==0 ? _SPP_TODAY_C : _SPP_LBL_C);
+            tft.setCursor(map_b.x+1,ry+row_h/2-4); tft.print(lbl);
+            for (int h=6;h<24;h+=6) {
+                uint16_t gx=sod2x(h*3600);
+                tft.drawLine(gx,ry,gx,ry+row_h-1,1,h==12?_SPP_NOON_C:_SPP_GRID_C); }
+            int n_today=0;
+            for (int i=0;i<n_passes;i++) {
+                if (passes[i].aos>=t_de||passes[i].los<=t_ds) continue;
+                n_today++;
+                int aos_sod=(int)(passes[i].aos-t_ds); if(aos_sod<0)aos_sod=0;
+                int los_sod=(int)(passes[i].los-t_ds); if(los_sod>SECSPERDAY)los_sod=SECSPERDAY;
+                uint16_t x1=sod2x(aos_sod),x2=sod2x(los_sod);
+                uint16_t bw=(x2>x1+_SPP_BAR_MINW)?x2-x1:_SPP_BAR_MINW;
+                uint16_t bh=(uint16_t)(passes[i].max_el/45.0F*(row_h-2));
+                if(bh>(uint16_t)(row_h-1))bh=(uint16_t)(row_h-1);
+                if(bh<4)bh=4;
+                tft.fillRect(x1,ry+row_h-bh,bw,bh,
+                             passes[i].sunlit?_SPP_SUNLIT_C:_SPP_ECLIP_C); }
+            if (n_today==0) {
+                selectFontStyle(LIGHT_FONT,FAST_FONT);
+                tft.setTextColor(RGB565(50,50,65));
+                tft.setCursor(tl_x+tl_w/2-20,ry+row_h/2-4); tft.print("no passes"); }
+            tft.drawLine(map_b.x+1,ry+row_h-1,map_b.x+map_b.w-2,ry+row_h-1,
+                         1,RGB565(30,30,45)); }
+        // "You are here" — dashed yellow line at current local time
+        {
+            time_t now_local = nowWO() + tz;
+            int now_sod = (int)(now_local % SECSPERDAY);
+            if (now_sod < 0) now_sod += SECSPERDAY;
+            uint16_t nx = sod2x(now_sod);
+            if (nx >= (uint16_t)tl_x && nx < map_b.x + map_b.w) {
+                // Dashed line across all 14 rows
+                for (int d2=0; d2<_SPP_N_DAYS; d2++) {
+                    uint16_t ry2 = map_b.y + _SPP_TITLE_H + d2*row_h;
+                    for (uint16_t y2=ry2+2; y2<ry2+row_h-2; y2+=5)
+                        tft.drawLine(nx,y2,nx,y2+2,1,RGB565(255,220,0));
+                }
+                // Downward triangle at ruler
+                uint16_t ry0 = map_b.y + LISTING_Y0 + 2;
+                tft.fillTriangle(nx-3,ry0-8,nx+3,ry0-8,nx,ry0-2,RGB565(255,220,0));
+            }
+        }
+        tft.drawPR();
+    };
+
+    SBox   popup_b = {0,0,0,0};
+    bool   popup_up = false;
+    char   popup_line1[50] = {};
+    char   popup_line2[50] = {};
+
+    // Draw once up front, then refresh every 2 s so the sky dome
+    // and "you are here" line stay live without blocking the left pane.
+    drawAll();
+
+    time_t expire_t = nowWO() + _SPP_TIMEOUT / 1000;
+
+    for (;;) {
+        // Refresh "you are here" + keep left-pane sky dome live
+        drawAll();
+        if (popup_up) {
+            tft.fillRect(popup_b.x,popup_b.y,popup_b.w,popup_b.h,RGB565(15,15,30));
+            tft.drawRect(popup_b.x,popup_b.y,popup_b.w,popup_b.h,DE_COLOR);
+            selectFontStyle(LIGHT_FONT,FAST_FONT);
+            tft.setTextColor(RA8875_WHITE);
+            tft.setCursor(popup_b.x+5,popup_b.y+6);  tft.print(popup_line1);
+            tft.setCursor(popup_b.x+5,popup_b.y+20); tft.print(popup_line2);
+        }
+        tft.drawPR();
+        drawSatPass ();           // update sky dome in left pane
+
+        if (nowWO() >= expire_t) break;
+
+        UserInput ui = { map_b, UI_UFuncNone, UF_UNUSED, 2000, UF_CLOCKSOK,
+                         {0,0}, TT_NONE, '\0', false, false };
+        bool _got = waitForUser (ui);
+        if (!_got) continue;   // 2-second tick — loop and redraw
+
+        if (ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL || ui.kb_char == CHAR_ESC
+                || inBox (ui.tap, resume_b)
+                || (ui.kb_char == CHAR_NONE && !inBox (ui.tap, map_b)))
+            break;
+
+        if (ui.tap.x > (uint16_t)tl_x && ui.tap.y > map_b.y + _SPP_TITLE_H) {
+            int d = (ui.tap.y - map_b.y - _SPP_TITLE_H) / row_h;
+            if (d >= 0 && d < _SPP_N_DAYS) {
+                time_t t_ds = t_midnight + (time_t)d * SECSPERDAY;
+                time_t t_de = t_ds + SECSPERDAY;
+                SPEntry *hit = NULL; int best_dx = INT_MAX;
+                for (int i = 0; i < n_passes; i++) {
+                    if (passes[i].aos >= t_de || passes[i].los <= t_ds) continue;
+                    int a=(int)(passes[i].aos-t_ds); if(a<0)a=0;
+                    int l=(int)(passes[i].los-t_ds); if(l>SECSPERDAY)l=SECSPERDAY;
+                    uint16_t x1=sod2x(a),x2=sod2x(l);
+                    if((int)ui.tap.x>=x1-6&&(int)ui.tap.x<=x2+6) {
+                        int dx=abs((int)ui.tap.x-(x1+x2)/2);
+                        if(dx<best_dx){best_dx=dx;hit=&passes[i];} }
+                }
+                if (hit) {
+                    // Build popup — copy gmtime structs before second call
+                    // (gmtime returns pointer to static buf; two calls overwrite each other)
+                    char aos_s[10],tca_s[10],los_s[10],dur_s[12];
+                    time_t aos_l = hit->aos + tz;
+                    time_t tca_l = hit->tca + tz;
+                    time_t los_l = hit->los + tz;
+                    struct tm tm_aos = *gmtime(&aos_l);
+                    struct tm tm_tca = *gmtime(&tca_l);
+                    struct tm tm_los = *gmtime(&los_l);
+                    snprintf(aos_s,sizeof(aos_s),"%02d:%02d",tm_aos.tm_hour,tm_aos.tm_min);
+                    snprintf(tca_s,sizeof(tca_s),"%02d:%02d",tm_tca.tm_hour,tm_tca.tm_min);
+                    snprintf(los_s,sizeof(los_s),"%02d:%02d",tm_los.tm_hour,tm_los.tm_min);
+                    int dur=(int)(hit->los-hit->aos); if(dur<0)dur=0;
+                    if(dur<3600) snprintf(dur_s,sizeof(dur_s),"%dm%02ds",(int)(dur/60),(int)(dur%60));
+                    else snprintf(dur_s,sizeof(dur_s),"%dh%02dm",(int)(dur/3600),(int)((dur%3600)/60));
+                    snprintf(popup_line1,sizeof(popup_line1),
+                             "AOS %s  TCA %s  LOS %s",aos_s,tca_s,los_s);
+                    snprintf(popup_line2,sizeof(popup_line2),"Max %.0f\xc2\xb0   Up %s   %s",
+                             hit->max_el,dur_s,hit->sunlit?"Sunlit":"Eclipse");
+                    uint16_t pw=280,ph=36;
+                    uint16_t px=(uint16_t)(ui.tap.x+8);
+                    uint16_t py=(uint16_t)(ui.tap.y-ph-6);
+                    if(px+pw>map_b.x+map_b.w) px=(uint16_t)(ui.tap.x-pw-2);
+                    if(py<map_b.y) py=(uint16_t)(ui.tap.y+4);
+                    popup_b={px,py,pw,ph};
+                    tft.fillRect(px,py,pw,ph,RGB565(15,15,30));
+                    tft.drawRect(px,py,pw,ph,DE_COLOR);
+                    selectFontStyle(LIGHT_FONT,FAST_FONT);
+                    tft.setTextColor(RA8875_WHITE);
+                    tft.setCursor(px+5,py+6);  tft.print(popup_line1);
+                    tft.setCursor(px+5,py+20); tft.print(popup_line2);
+                    popup_up=true;
+                    tft.drawPR();
+                } else if (popup_up) {
+                    // Tapped empty space — dismiss popup
+                    popup_up = false;
+                    drawAll();
+                }
+            }
+        } else if (popup_up && inBox(ui.tap, map_b)) {
+            // Tapped title/ruler area with popup showing — dismiss
+            popup_up = false;
+            drawAll();
+        }
+    }
+
+    // Flash Resume for tactile feedback, brief pause so user sees it
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
+    drawStringInBox ("Resume", resume_b, true, RA8875_GREEN);
+    tft.drawPR();
+    delay (250);
+    free (passes);
+
+    #undef _SPP_LABEL_W
+    #undef _SPP_TITLE_H
+    #undef _SPP_N_DAYS
+    #undef _SPP_MAX_PASS
+    #undef _SPP_TIMEOUT
+    #undef _SPP_BAR_MINW
+    #undef _SPP_SUNLIT_C
+    #undef _SPP_ECLIP_C
+    #undef _SPP_GRID_C
+    #undef _SPP_NOON_C
+    #undef _SPP_LBL_C
+    #undef _SPP_RULER_C
+    #undef _SPP_TODAY_C
+}
+
+
+static float starLST (time_t utc)
+{
+    double jd   = (double)utc / 86400.0 + 2440587.5;
+    double d    = jd - 2451545.0;
+    double gmst = fmod (280.46061837 + 360.98564736629*d
+                        + 0.000387933*(d/36525.0)*(d/36525.0), 360.0);
+    double lst  = fmod (gmst + (double)de_ll.lng_d, 360.0);
+    if (lst < 0) lst += 360.0;
+    return (float)lst;
+}
+
+static void showSkyView (SatState &s)
+{
+    const uint16_t TITLE_H = PANETITLE_H;
+    const uint16_t INFO_H  = 36;
+    uint16_t sky_x = map_b.x, sky_y = map_b.y + TITLE_H;
+    uint16_t sky_w = map_b.w, sky_h = map_b.h - TITLE_H - INFO_H;
+    uint16_t hz_y  = sky_y + (uint16_t)(sky_h * 0.62F);
+    float px_per_el = (hz_y - sky_y) / 90.0F;
+    float px_per_az = sky_w / 360.0F;
+
+    SBox resume_b;
+    resume_b.w = 78; resume_b.h = 20;
+    resume_b.x = map_b.x + map_b.w - resume_b.w - 3;
+    resume_b.y = map_b.y + 3;
+
+    // az_offset is updated before every drawAll() so satellite stays centred.
+    float az_offset = 0.0F;
+
+    auto az2x = [&](float az) -> int {
+        float daz = az - az_offset;
+        while (daz >  180) daz -= 360;
+        while (daz < -180) daz += 360;
+        int x = (int)(sky_x + sky_w/2 + daz * px_per_az + 0.5F);
+        // clamp -- callers may feed in extreme az (eg satellite trail) that would
+        // otherwise map to a pixel outside the frame buffer
+        if (x < 0) x = 0;
+        else if (x > (int)tft.width()-1) x = tft.width()-1;
+        return x;
+    };
+    auto el2y = [&](float el) -> int {
+        int y = (int)(hz_y - el * px_per_el + 0.5F);
+        // clamp -- eg a satellite trail point well below the horizon (el near -90)
+        // would otherwise map to a pixel outside the frame buffer
+        if (y < 0) y = 0;
+        else if (y > (int)tft.height()-1) y = tft.height()-1;
+        return y;
+    };
+
+    // Trailing track — record last _SKY_TRAIL_MAX positions (az/el/sunlit)
+    // Updated each tick; drawn inside drawAll before the crosshair.
+    #define _SKY_TRAIL_MAX  90              // ~3 min at 2s/tick
+    float trail_az[_SKY_TRAIL_MAX] = {};
+    float trail_el[_SKY_TRAIL_MAX] = {};
+    bool  trail_sl[_SKY_TRAIL_MAX] = {};
+    int   trail_n  = 0;
+
+    auto drawAll = [&](float sat_az, float sat_el, bool sat_sunlit, float sat_range) {
+        fillSBox (map_b, RA8875_BLACK);
+        tft.fillRect (sky_x, hz_y+1, sky_w, (sky_y+sky_h)-(hz_y+1), RGB565(8,18,8));
+
+        float lst=starLST(myNow()), lat_r=de_ll.lat_d*(float)M_PIF/180.0F;
+        float sinlat=sinf(lat_r), coslat=cosf(lat_r);
+        for (int si=0; si<N_STARS; si++) {
+            const StarEntry &se=stars_bsc5[si];
+            float ra_deg=se.ra_cd/100.0F, dec_r=se.dec_cd/100.0F*(float)M_PIF/180.0F;
+            float sindec=sinf(dec_r), cosdec=cosf(dec_r);
+            float H_r=(lst-ra_deg)*(float)M_PIF/180.0F, cosH=cosf(H_r), sinH=sinf(H_r);
+            float sinEl=sindec*sinlat+cosdec*coslat*cosH;
+            if (sinEl<sinf(-6.0F*(float)M_PIF/180.0F)) continue;
+            float el_d=asinf(sinEl)*180.0F/(float)M_PIF, cosEl=cosf(asinf(sinEl));
+            float cosAz=(sindec-sinlat*sinEl)/(coslat*cosEl+1e-9F);
+            if(cosAz>1)cosAz=1;
+            if(cosAz<-1)cosAz=-1;
+            float az_d=acosf(cosAz)*180.0F/(float)M_PIF;
+            if(sinH>0) az_d=360.0F-az_d;
+            int sy=el2y(el_d);
+            if(sy<(int)sky_y-4||sy>(int)(sky_y+sky_h)) continue;
+            {
+                int sx=az2x(az_d);
+                if(sx>=(int)sky_x && sx<(int)(sky_x+sky_w)){
+                    uint16_t col=(el_d<0)?RGB565(55,55,75):(el_d<12)?RGB565(140,140,155):RA8875_WHITE;
+                    if(se.vmag_t<=10){tft.drawPixel(sx,sy,col);tft.drawPixel(sx+1,sy,col);
+                                     tft.drawPixel(sx,sy+1,col);tft.drawPixel(sx+1,sy+1,col);}
+                    else if(se.vmag_t<=25) tft.fillCircle(sx,sy,1,col);
+                    else tft.drawPixel(sx,sy,col);
+                }
+            }
+        }
+
+        selectFontStyle(LIGHT_FONT,FAST_FONT);
+        for(int eg=30;eg<=60;eg+=30){
+            int gy=el2y(eg);
+            if(gy<(int)sky_y||gy>(int)hz_y) continue;
+            for(uint16_t gx=sky_x;gx<sky_x+sky_w;gx+=12)
+                tft.drawLine(gx,gy,gx+6,gy,1,RGB565(35,35,60));
+            tft.setTextColor(RGB565(55,55,90));
+            char lb[6]; snprintf(lb,sizeof(lb),"%d\xc2\xb0",eg);
+            tft.setCursor(sky_x+3,gy-8); tft.print(lb);
+        }
+
+        tft.drawLine(sky_x,hz_y,sky_x+sky_w-1,hz_y,1,RGB565(255,140,0));
+        for(int at=0;at<360;at+=10){
+            int tx=az2x(at); bool major=(at%45==0);
+            if(tx<(int)sky_x||tx>=(int)(sky_x+sky_w)) continue;
+            tft.drawLine(tx,hz_y-(major?5:2),tx,hz_y+(major?5:2),
+                         1,major?RGB565(255,200,80):RGB565(100,75,30));
+        }
+        const struct{float az;const char*lbl;}dirs[]={
+            {0,"N"},{45,"NE"},{90,"E"},{135,"SE"},
+            {180,"S"},{225,"SW"},{270,"W"},{315,"NW"}};
+        for(auto &d:dirs){
+            int cx=az2x(d.az);
+            if(cx<(int)sky_x+2||cx>=(int)(sky_x+sky_w)-10) continue;
+            tft.setTextColor(RGB565(220,170,60));
+            tft.setCursor((uint16_t)(cx-4),hz_y+7); tft.print(d.lbl);
+        }
+
+        // Trailing track — fade from invisible at tail to full at head
+        if (trail_n > 1) {
+            for (int ti = 1; ti < trail_n; ti++) {
+                // Skip segments that cross the az=0/360 wrap
+                float daz = fabsf (trail_az[ti] - trail_az[ti-1]);
+                if (daz > 180.0F) continue;
+                // Brightness: 0 at oldest, 200 near head
+                float frac = (float)(ti-1) / (float)(trail_n > 1 ? trail_n-1 : 1);
+                uint8_t v  = (uint8_t)(frac * 200.0F);
+                uint16_t tcol = trail_sl[ti]
+                    ? RGB565(0, v, 0)         // green — sunlit
+                    : RGB565(v, v/2, 0);      // orange — eclipse
+                int tx1=az2x(trail_az[ti-1]), tx2=az2x(trail_az[ti]);
+                if(tx1>=(int)sky_x && tx1<(int)(sky_x+sky_w) &&
+                   tx2>=(int)sky_x && tx2<(int)(sky_x+sky_w))
+                    tft.drawLine (tx1, el2y(trail_el[ti-1]),
+                                  tx2, el2y(trail_el[ti]), 1, tcol);
+            }
+        }
+
+        int sat_sx=az2x(sat_az), sat_sy=el2y(sat_el), csy=sat_sy;
+        // Clamp crosshair to the correct zone:
+        //   above horizon (el >= 0) → sky area  [sky_y+4 .. hz_y-4]
+        //   below horizon (el <  0) → ground area [hz_y+4 .. sky_y+sky_h-4]
+        if (sat_el >= 0) {
+            if (csy < (int)sky_y+4)   csy = sky_y+4;
+            if (csy > (int)hz_y-4)    csy = hz_y-4;
+        } else {
+            if (csy < (int)hz_y+4)    csy = hz_y+4;
+            if (csy > (int)(sky_y+sky_h-4)) csy = sky_y+sky_h-4;
+        }
+        // Full brightness when visible; dim when underground
+        uint16_t scol = sat_el >= 0
+            ? (sat_sunlit ? RGB565(50,230,50) : RGB565(255,110,0))
+            : RGB565(60,60,60);
+        tft.drawLine(sat_sx-8,csy,sat_sx+8,csy,1,scol);
+        tft.drawLine(sat_sx,csy-8,sat_sx,csy+8,1,scol);
+        tft.fillCircle(sat_sx,csy,3,scol);
+        // Dashed guide line from crosshair down to horizon (above-horizon only)
+        if (sat_el >= 0 && sat_sy < (int)hz_y)
+            for(int gy=csy+10;gy<(int)hz_y;gy+=8)
+                tft.drawLine(sat_sx,gy,sat_sx,gy+4,1,RGB565(40,80,40));
+
+        selectFontStyle(LIGHT_FONT,SMALL_FONT);
+        tft.setTextColor(DE_COLOR);
+        char ttl[48]; snprintf(ttl,sizeof(ttl),"%s \xe2\x80\x94 Sky View",s.name);
+        maxStringW(ttl,map_b.w-resume_b.w-12);
+        tft.setCursor(map_b.x+2,map_b.y+PANETITLE_H); tft.print(ttl);
+        selectFontStyle(LIGHT_FONT,FAST_FONT);
+        drawStringInBox("Resume",resume_b,false,RA8875_GREEN);
+
+        tft.setTextColor(BRGRAY);
+        char info[90];
+        if(sat_el>=-1)
+            snprintf(info,sizeof(info),"Az %5.1f\xc2\xb0   El %+5.1f\xc2\xb0   Range %6.0f km   %s",
+                     sat_az,sat_el,sat_range,sat_sunlit?"Sunlit":"Eclipse");
+        else
+            snprintf(info,sizeof(info),"Az %5.1f\xc2\xb0   El %+5.1f\xc2\xb0   (Below horizon)",
+                     sat_az,sat_el);
+        uint16_t iw=getTextWidth(info);
+        tft.setCursor(map_b.x+(map_b.w-iw)/2,map_b.y+map_b.h-INFO_H+14); tft.print(info);
+    };
+
+    // Named star lookup table
+    // Named star lookup table — IAU proper names + key Bayer designations
+// Matched against stars_bsc5[] by RA/Dec proximity (within 0.5 degrees).
+static const struct {
+    uint16_t   ra_cd;
+    int16_t    dec_cd;
+    const char *name;
+} star_names[] = {
+    {  1090,  -1799, "Diphda"},
+    {  1474,   6052, "Schedar"},
+    {  1620,   2905, "Alpheratz"},
+    {  2443,  -5724, "Achernar"},
+    {  2501,   8926, "Polaris"},
+    {  3174,   4090, "Algol"},
+    {  3180,   2346, "Hamal"},
+    {  3374,   2407, "Mirach"},
+    {  3914,  -1356, "Cursa"},
+    {  4305,  -5338, "Ankaa"},
+    {  5108,   4986, "Mirfak"},
+    {  5706,  -1796, "Phakt"},
+    {  6047,   4498, "Menkalinan"},
+    {  6399,  -5270, "Canopus"},
+    {  6898,   1651, "Aldebaran"},
+    {  7864,   -820, "Rigel"},
+    {  7917,   4600, "Capella"},
+    {  8007,  -4001, "Naos"},
+    {  8063,     -3, "Mintaka"},
+    {  8128,    635, "Bellatrix"},
+    {  8157,   2861, "Elnath"},
+    {  8405,   -120, "Alnilam"},
+    {  8519,   -194, "Alnitak"},
+    {  8879,    741, "Betelgeuse"},
+    {  9360,  -5950, "Tureis"},
+    {  9567,  -1796, "Mirzam"},
+    {  9943,   1640, "Alhena"},
+    { 10128,  -1672, "Sirius"},
+    { 10466,  -2897, "Adhara"},
+    { 10710,  -2639, "Wezen"},
+    { 11310,  -1758, "Aludra"},
+    { 11365,   3189, "Castor"},
+    { 11483,    522, "Procyon"},
+    { 11633,   2803, "Pollux"},
+    { 12184,  -5796, "Aspidiske"},
+    { 12239,  -4734, "Gamma Vel."},
+    { 12563,  -5951, "Avior"},
+    { 13117,  -5471, "Delta Vel."},
+    { 13249,   5496, "Mizar"},
+    { 13830,  -6972, "Miaplacidus"},
+    { 14039,  -3638, "Gienah"},
+    { 14190,   -865, "Alphard"},
+    { 15017,   1154, "Coxa"},
+    { 15209,   1197, "Regulus"},
+    { 15499,   1984, "Algieba"},
+    { 15884,   1215, "Denebola"},
+    { 16087,   1961, "Zosma"},
+    { 16524,   6175, "Merak"},
+    { 16593,   6175, "Dubhe"},
+    { 17252,  -3628, "Menkent"},
+    { 17847,   2843, "Alphecca"},
+    { 17860,   5367, "Phecda"},
+    { 18665,  -6310, "Acrux"},
+    { 18779,  -5711, "Gacrux"},
+    { 19192,  -5969, "Mimosa"},
+    { 19351,   5596, "Alioth"},
+    { 19629,   1429, "Rasalgethi"},
+    { 20052,   3086, "Eltanin"},
+    { 20130,  -1116, "Spica"},
+    { 20543,   4553, "Sadr 2"},
+    { 20688,   4931, "Alkaid"},
+    { 21096,  -6037, "Hadar"},
+    { 21391,   1918, "Arcturus"},
+    { 21990,  -6083, "Rigil Kent."},
+    { 22230,   7415, "Kochab"},
+    { 22523,   -384, "Sadalsuud"},
+    { 22796,  -3864, "Kaus Bor."},
+    { 23552,   7763, "Alderamin"},
+    { 24735,  -2643, "Antares"},
+    { 25012,  -1958, "Dschubba"},
+    { 25218,  -6903, "Atria"},
+    { 26168,  -3763, "Wei"},
+    { 26266,   -978, "Rasalhague"},
+    { 26340,  -3710, "Shaula"},
+    { 26433,  -4300, "Sargas"},
+    { 26528,  -3707, "Lesath"},
+    { 26792,  -3406, "Girtab"},
+    { 27531,  -3438, "Kaus Aust."},
+    { 27856,   4528, "Sadr"},
+    { 27923,   3878, "Vega"},
+    { 27930,   2774, "Albireo"},
+    { 28382,  -2630, "Nunki"},
+    { 28830,  -2678, "Ascella"},
+    { 29110,  -2101, "Kaus Med."},
+    { 29770,    887, "Altair"},
+    { 30360,    -16, "Enif"},
+    { 30506,   2778, "Gienah Cyg."},
+    { 30641,  -5674, "Peacock"},
+    { 31036,   4528, "Deneb"},
+    { 32081,   1521, "Sadalmelik"},
+    { 33131,  -4696, "Al Nair"},
+    { 33671,   1521, "Markab"},
+    { 33993,   2817, "Scheat"},
+    { 34441,  -2962, "Fomalhaut"},
+};
+#define N_STAR_NAMES 94
+
+    SBox   star_popup_b = {0,0,0,0};
+    bool   star_popup_up = false;
+    char   star_popup_line1[32] = {};
+    char   star_popup_line2[24] = {};
+    Sun    sun;
+
+    for(;;){
+        DateTime t=userDateTime(myNow());
+        s.sat->predict(t);
+        float el,az,range,rate;
+        s.sat->topo(obs,el,az,range,rate);
+        sun.predict(t); s.sat->predict(t);
+        bool sunlit=!s.sat->eclipsed(&sun);
+        // Center panorama on current satellite azimuth
+        az_offset = az;
+
+        // Centre panorama on satellite before drawing
+        az_offset = az;
+
+        // Append position to trail (shift-down when full)
+        if (trail_n < _SKY_TRAIL_MAX) {
+            trail_az[trail_n] = az;
+            trail_el[trail_n] = el;
+            trail_sl[trail_n] = sunlit;
+            trail_n++;
+        } else {
+            memmove (trail_az, trail_az+1, (trail_n-1)*sizeof(float));
+            memmove (trail_el, trail_el+1, (trail_n-1)*sizeof(float));
+            memmove (trail_sl, trail_sl+1, (trail_n-1)*sizeof(bool));
+            trail_az[trail_n-1] = az;
+            trail_el[trail_n-1] = el;
+            trail_sl[trail_n-1] = sunlit;
+        }
+
+        drawAll(az,el,sunlit,range);
+
+        // Redraw star popup on top after each full redraw
+        if (star_popup_up) {
+            tft.fillRect(star_popup_b.x,star_popup_b.y,
+                         star_popup_b.w,star_popup_b.h,RGB565(15,15,35));
+            tft.drawRect(star_popup_b.x,star_popup_b.y,
+                         star_popup_b.w,star_popup_b.h,DE_COLOR);
+            selectFontStyle(LIGHT_FONT,FAST_FONT);
+            tft.setTextColor(RA8875_WHITE);
+            tft.setCursor(star_popup_b.x+5, star_popup_b.y+5);
+            tft.print(star_popup_line1);
+            tft.setTextColor(BRGRAY);
+            tft.setCursor(star_popup_b.x+5, star_popup_b.y+17);
+            tft.print(star_popup_line2);
+        }
+        tft.drawPR();
+        drawSatPass ();           // keep left-pane sky dome live
+
+        UserInput ui={map_b,UI_UFuncNone,UF_UNUSED,2000,UF_CLOCKSOK,
+                      {0,0},TT_NONE,'\0',false,false};
+        bool got=waitForUser(ui);
+
+        if (!got) continue;   // 2s timeout — loop and redraw satellite position
+
+        // Exit
+        if (inBox(ui.tap,resume_b)||ui.kb_char==CHAR_ESC||
+            ui.kb_char==CHAR_CR||ui.kb_char==CHAR_NL||
+            (!inBox(ui.tap,map_b)&&ui.kb_char==CHAR_NONE)) break;
+
+        // Star tap — find nearest star within 14px of tap
+        if (ui.tap.x > 0 && inBox(ui.tap,map_b) &&
+            ui.tap.y > (uint16_t)(map_b.y+PANETITLE_H) &&
+            ui.tap.y < (uint16_t)(map_b.y+map_b.h-INFO_H)) {
+
+            float lst2=starLST(myNow());
+            float lat2=de_ll.lat_d*(float)M_PIF/180.0F;
+            float sl2=sinf(lat2), cl2=cosf(lat2);
+            float best_d=14.0F; int best_i=-1;
+
+            for (int si=0; si<N_STARS; si++) {
+                const StarEntry &se=stars_bsc5[si];
+                float ra_d=se.ra_cd/100.0F;
+                float dec_r=se.dec_cd/100.0F*(float)M_PIF/180.0F;
+                float sd=sinf(dec_r), cd=cosf(dec_r);
+                float H_r=(lst2-ra_d)*(float)M_PIF/180.0F;
+                float sinEl2=sd*sl2+cd*cl2*cosf(H_r);
+                if(sinEl2<sinf(-6.0F*(float)M_PIF/180.0F)) continue;
+                float el_s=asinf(sinEl2)*180.0F/(float)M_PIF;
+                float cosEl2=cosf(asinf(sinEl2));
+                float cAz=(sd-sl2*sinEl2)/(cl2*cosEl2+1e-9F);
+                if(cAz>1)cAz=1;
+                if(cAz<-1)cAz=-1;
+                float az_s=acosf(cAz)*180.0F/(float)M_PIF;
+                if(sinf(H_r)>0) az_s=360.0F-az_s;
+                int sx=az2x(az_s), sy=el2y(el_s);
+                float d=hypotf(sx-(int)ui.tap.x, sy-(int)ui.tap.y);
+                if(d<best_d){best_d=d; best_i=si;}
+            }
+
+            star_popup_up = false;
+
+            if (best_i >= 0) {
+                const StarEntry &bs=stars_bsc5[best_i];
+                const char *sname=NULL;
+                for (int ni=0; ni<N_STAR_NAMES; ni++) {
+                    if (abs((int)bs.ra_cd-(int)star_names[ni].ra_cd)<60 &&
+                        abs((int)bs.dec_cd-(int)star_names[ni].dec_cd)<60) {
+                        sname=star_names[ni].name; break;
+                    }
+                }
+                snprintf(star_popup_line1, sizeof(star_popup_line1),
+                         "%s", sname ? sname : "Star");
+                snprintf(star_popup_line2, sizeof(star_popup_line2),
+                         "Magnitude %.1f", bs.vmag_t/10.0F);
+
+                uint16_t pw=150, ph=28;
+                uint16_t px=(uint16_t)(ui.tap.x+10);
+                uint16_t py=(uint16_t)(ui.tap.y-ph-4);
+                if(px+pw>map_b.x+map_b.w) px=(uint16_t)(ui.tap.x-pw-4);
+                if(py<(uint16_t)(map_b.y+PANETITLE_H)) py=(uint16_t)(ui.tap.y+6);
+                star_popup_b={px,py,pw,ph};
+                tft.fillRect(px,py,pw,ph,RGB565(15,15,35));
+                tft.drawRect(px,py,pw,ph,DE_COLOR);
+                selectFontStyle(LIGHT_FONT,FAST_FONT);
+                tft.setTextColor(RA8875_WHITE);
+                tft.setCursor(px+5,py+5);  tft.print(star_popup_line1);
+                tft.setTextColor(BRGRAY);
+                tft.setCursor(px+5,py+17); tft.print(star_popup_line2);
+                star_popup_up=true;
+                tft.drawPR();
+            }
+        }
+    }
+    selectFontStyle(LIGHT_FONT,FAST_FONT);
+    drawStringInBox("Resume",resume_b,true,RA8875_GREEN);
+    tft.drawPR(); delay(250);
+}
+
+/* Build OrbTrack URL for this satellite.
+ * Uses NORAD catalog ID (satSCN) when known, falls back to URL-encoded name.
+ */
+static void buildOrbTrackURL (const SatState &s, char *buf, int bufsz)
+{
+    if (s.norad > 0) {
+        snprintf (buf, bufsz, "https://www.orbtrack.org/#/?satSCN=%d", s.norad);
+    } else {
+        // HC stores spaces as underscores; encode for URL
+        char enc[128] = {};
+        int  ei = 0;
+        for (const char *p = s.name; *p && ei < (int)sizeof(enc) - 4; p++) {
+            char c = (*p == '_') ? ' ' : *p;
+            if      (c == ' ')  { enc[ei++] = '%'; enc[ei++] = '2'; enc[ei++] = '0'; }
+            else if (c == '(')  { enc[ei++] = '%'; enc[ei++] = '2'; enc[ei++] = '8'; }
+            else if (c == ')')  { enc[ei++] = '%'; enc[ei++] = '2'; enc[ei++] = '9'; }
+            else                  enc[ei++] = c;
+        }
+        snprintf (buf, bufsz, "https://www.orbtrack.org/#/?satName=%s", enc);
+    }
+}
+
+/* Build SatNogs URL for this satellite (requires NORAD ID). */
+static void buildSatNogsURL (const SatState &s, char *buf, int bufsz)
+{
+    if (s.norad > 0)
+        snprintf (buf, bufsz,
+                  "https://db.satnogs.org/satellite/%d/#mapcontent", s.norad);
+    else
+        snprintf (buf, bufsz, "https://db.satnogs.org/");
+}
+
 /* called when tap within dx_info_b while showing a sat to show menu of choices.
  * s is known to be within dx_info_b.
  */
@@ -2232,9 +3847,20 @@ void drawDXSatMenu (const SCoord &s)
         _SMI_CHOOSE,
         _SMI_INFO,
         _SMI_NAME1,
-        _SMI_PATH1, _SMI_PASS1, _SMI_TABLE1, _SMI_PLAN1,
+        _SMI_PATH1, _SMI_PASS1, _SMI_TABLE1, _SMI_FREQ1, _SMI_PLAN1,
+        _SMI_MPROG1,
+        _SMI_SKYVIEW1,
+        _SMI_ORBTRACK1,
+        _SMI_SATNOGS1,
         _SMI_NAME2,
-        _SMI_PATH2, _SMI_PASS2, _SMI_TABLE2, _SMI_PLAN2,
+        _SMI_PATH2, _SMI_PASS2, _SMI_TABLE2, _SMI_FREQ2, _SMI_PLAN2,
+        _SMI_MPROG2,
+        _SMI_SKYVIEW2,
+        _SMI_ORBTRACK2,
+        _SMI_SATNOGS2,
+        _SMI_AMSAT_STATUS,
+        _SMI_GROUPSKED,
+        _SMI_COVIS,
         _SMI_N,
     };
 
@@ -2275,13 +3901,26 @@ void drawDXSatMenu (const SCoord &s)
         {menu_path1,  path1, 2, _DXS_INDENT2,  "Show track also", NULL},
         {menu_pass1,  false, 1, _DXS_INDENT2,  "Show pass here", NULL},
         {menu_sat1,   false, 1, _DXS_INDENT2,  "Show rise/set table", NULL},
+        {menu_sat1,   false, 1, _DXS_INDENT2,  "Show freq/modes", NULL},
         {menu_sat1,   false, 1, _DXS_INDENT2,  "Show planning tool", NULL},
+        {menu_sat1,   false, 1, _DXS_INDENT2,  "Show pass progression", NULL},
+        {menu_sat1,   false, 1, _DXS_INDENT2,  "Show sky view", NULL},
+        {menu_sat1,   false, 1, _DXS_INDENT2,  "Show OrbTrack", NULL},
+        {menu_sat1,   false, 1, _DXS_INDENT2,  "Show SatNogs",  NULL},
 
         {menu_name2,  false, 1, _DXS_INDENT1,  name2, NULL},
         {menu_path2,  path2, 3, _DXS_INDENT2,  "Show track also", NULL},
         {menu_pass2,  false, 1, _DXS_INDENT2,  "Show pass here", NULL},
         {menu_sat2,   false, 1, _DXS_INDENT2,  "Show rise/set table", NULL},
+        {menu_sat2,   false, 1, _DXS_INDENT2,  "Show freq/modes", NULL},
         {menu_sat2,   false, 1, _DXS_INDENT2,  "Show planning tool", NULL},
+        {menu_sat2,   false, 1, _DXS_INDENT2,  "Show pass progression", NULL},
+        {menu_sat2,   false, 1, _DXS_INDENT2,  "Show sky view", NULL},
+        {menu_sat2,   false, 1, _DXS_INDENT2,  "Show OrbTrack", NULL},
+        {menu_sat2,   false, 1, _DXS_INDENT2,  "Show SatNogs",  NULL},
+        {MENU_1OFN,   false, 1, _DXS_INDENT1,  "Show Status",   NULL},
+        {MENU_1OFN,   false, 1, _DXS_INDENT1,  "Group Schedule", NULL},
+        {MENU_1OFN,   false, 1, _DXS_INDENT1,  "Co-Visibility", NULL},
     };
 
     // box for menu
@@ -2338,9 +3977,15 @@ void drawDXSatMenu (const SCoord &s)
                     showNextSatEvents (sat_state[0]);
                     initScreen();
                     break;
+                case _SMI_FREQ1:
+                    // show freq/mode table for sat 0
+                    dxpaneSat = 0;
+                    showSatFreqs (sat_state[0]);
+                    initScreen();
+                    break;
                 case _SMI_PLAN1:
                     // restore DX pane and show tool for sat 0 then restore normal map
-                    dxpaneSat = 1;
+                    dxpaneSat = 0;
                     drawSatPass();
                     drawSatTool();
                     initEarthMap();
@@ -2359,12 +4004,75 @@ void drawDXSatMenu (const SCoord &s)
                     showNextSatEvents (sat_state[1]);
                     initScreen();
                     break;
+                case _SMI_FREQ2:
+                    // show freq/mode table for sat 1
+                    dxpaneSat = 1;
+                    showSatFreqs (sat_state[1]);
+                    initScreen();
+                    break;
                 case _SMI_PLAN2:
                     // restore DX pane and show tool for sat 1 then restore normal map
                     dxpaneSat = 1;
                     drawSatPass();
                     drawSatTool();
                     initEarthMap();
+                    break;
+                case _SMI_MPROG1:
+                    // show multi-day pass progression for sat 0
+                    dxpaneSat = 0;
+                    showSatPassProg (sat_state[0]);
+                    initEarthMap();
+                    break;
+                case _SMI_MPROG2:
+                    // show multi-day pass progression for sat 1
+                    dxpaneSat = 1;
+                    showSatPassProg (sat_state[1]);
+                    initEarthMap();
+                    break;
+                case _SMI_SKYVIEW1:
+                    dxpaneSat = 0;
+                    showSkyView (sat_state[0]);
+                    initEarthMap();
+                    break;
+                case _SMI_SKYVIEW2:
+                    dxpaneSat = 1;
+                    showSkyView (sat_state[1]);
+                    initEarthMap();
+                    break;
+                case _SMI_ORBTRACK1: {
+                    char url[128];
+                    buildOrbTrackURL (sat_state[0], url, sizeof(url));
+                    openURL (url);
+                    break;
+                }
+                case _SMI_ORBTRACK2: {
+                    char url[128];
+                    buildOrbTrackURL (sat_state[1], url, sizeof(url));
+                    openURL (url);
+                    break;
+                }
+                case _SMI_SATNOGS1: {
+                    char url[128];
+                    buildSatNogsURL (sat_state[0], url, sizeof(url));
+                    openURL (url);
+                    break;
+                }
+                case _SMI_SATNOGS2: {
+                    char url[128];
+                    buildSatNogsURL (sat_state[1], url, sizeof(url));
+                    openURL (url);
+                    break;
+                }
+                case _SMI_AMSAT_STATUS:
+                    openURL ("https://www.amsat.org/status/");
+                    break;
+                case _SMI_GROUPSKED:
+                    drawSatGroupSchedule ();
+                    initEarthMap ();
+                    break;
+                case _SMI_COVIS:
+                    drawSatCoVis ();
+                    initEarthMap ();
                     break;
                 case _SMI_N:
                     // lint

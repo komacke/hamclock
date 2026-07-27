@@ -4,6 +4,7 @@
 IMAGE_BASE=komacke/hamclock
 HC_UID=1199
 HC_GID=1199
+ON_TAG=false
 
 # Don't set anything past here
 TAG=$(git describe --exact-match --tags 2>/dev/null)
@@ -11,15 +12,17 @@ if [ $? -ne 0 ]; then
     echo "NOTE: Not currently on a tag. Using 'latest'."
     TAG=latest
     GIT_VERSION=$(git rev-parse --short HEAD)
+    ON_TAG=false
 else
     GIT_VERSION=$TAG
+    ON_TAG=true
 fi
 
 IMAGE=$IMAGE_BASE:$TAG
 CONTAINER=${IMAGE_BASE##*/}
 
 # Get our directory locations in figured out
-HERE="$(realpath -s "$(dirname "$0")")"
+HERE="$(cd "$(dirname "$0")" && pwd)"
 THIS="$(basename "$0")"
 cd $HERE
 
@@ -124,6 +127,18 @@ warn_local_edits() {
     return $LOCAL_EDITS
 }
 
+poke_version_cpp() {
+    if [ "$1" == restore ]; then
+        git restore ESPHamClock/version.cpp
+    elif [ $ON_TAG == true ]; then
+        # update version in HC source
+        HC_TAG=${GIT_VERSION%.*}
+        HC_TAG=${HC_TAG#v}
+        HC_TAG=${HC_TAG#V}
+        sed -i 's/\(hc_version = "\)[^"]\+\(".*\)/\1'$HC_TAG'\2/' ESPHamClock/version.cpp
+    fi
+}
+
 build_image() {
     if [ $NOCACHE == true ]; then
         NOCACHE_ARG="--no-cache"
@@ -131,18 +146,44 @@ build_image() {
     if [ -n "$HC_SIZE" ]; then
         SET_HC_SIZE="--build-arg HC_SIZE=${HC_SIZE}"
     fi
+
     # Build the image
     echo
     echo "Building image for '$IMAGE_BASE:$TAG'"
     pushd "$HERE/.." >/dev/null
-    echo $GIT_VERSION > git.version
+
+    poke_version_cpp
+
     if [ $MULTI_PLATFORM == true ]; then
-        docker buildx build $NOCACHE_ARG --pull --build-arg HC_UID=$HC_UID --build-arg HC_GID=$HC_GID $SET_HC_SIZE -t $IMAGE -f docker/Dockerfile --platform linux/amd64,linux/arm64 --push .
+        docker buildx build \
+            $NOCACHE_ARG \
+            --pull \
+            --build-arg GIT_VERSION=${GIT_VERSION} \
+            --build-arg HC_UID=$HC_UID \
+            --build-arg HC_GID=$HC_GID \
+            $SET_HC_SIZE \
+            -t $IMAGE \
+            -f docker/Dockerfile \
+            --platform linux/amd64,linux/arm64 \
+            --push \
+            .
+        RETVAL=$?
     else
-        docker build $NOCACHE_ARG --pull --build-arg HC_UID=$HC_UID --build-arg HC_GID=$HC_GID $SET_HC_SIZE -t $IMAGE -f docker/Dockerfile .
+        docker build \
+            $NOCACHE_ARG \
+            --pull \
+            --build-arg GIT_VERSION=${GIT_VERSION} \
+            --build-arg HC_UID=$HC_UID \
+            --build-arg HC_GID=$HC_GID \
+            $SET_HC_SIZE \
+            -t $IMAGE \
+            -f docker/Dockerfile \
+            .
+        RETVAL=$?
     fi
-    rm -f git.version
-    RETVAL=$?
+
+    poke_version_cpp restore
+
     popd >/dev/null
 }
 

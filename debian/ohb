@@ -1,0 +1,387 @@
+#!/bin/bash
+#
+# Copyright (c) 2026 Keith Maton G6NHU
+# https://qso365.co.uk
+#
+# Permission is granted to use, copy, modify and distribute this script,
+# provided that this notice is retained.
+# You may not misrepresent the original authorship of this work.
+#
+
+GITHUB_RAW_URL="https://raw.githubusercontent.com/openhamclock/hamclock/refs/heads/main/debian/ohb"
+SELF_UPDATE_FLAG="OHB_SELF_UPDATED"
+
+HOSTS_FILE="/etc/hosts"
+DOMAIN="clearskyinstitute.com"
+
+HOSTS_IP="44.32.64.64"
+BACKEND_HOST="ohb.hamclock.app"
+BACKEND_PORT="80"
+IP_NAME="Open HamClock backend"
+
+if [ -n "$BACKEND_PORT" ]; then
+    BACKEND_TARGET="${BACKEND_HOST}:${BACKEND_PORT}"
+else
+    BACKEND_TARGET="$BACKEND_HOST"
+fi
+
+BACKEND_PATTERN="[^[:space:]'\";)]+" 
+ENTRY="$HOSTS_IP $DOMAIN"
+DESKTOP_EXEC_LINE="Exec=sh -c 'until [ -n \"\$DISPLAY\" ] || [ -n \"\$WAYLAND_DISPLAY\" ]; do sleep 1; done; sleep 5; exec /usr/local/bin/hamclock -b $BACKEND_TARGET'"
+WRAPPER_WAIT_LINE_1='until [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; do sleep 1; done'
+WRAPPER_WAIT_LINE_2='sleep 5'
+
+# Work out which user's home to use when run via sudo
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+    USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+else
+    USER_HOME="$HOME"
+fi
+
+HAMCLOCK_DIR="$USER_HOME/.hamclock"
+
+DESKTOP_FILE="$USER_HOME/Desktop/hamclock.desktop"
+AUTOSTART_FILE="$USER_HOME/.config/autostart/hamclock.desktop"
+RUNNER_FILE="/usr/local/bin/hamclock-runner"
+XRANDR_WRAPPER_FILE="/usr/local/bin/hamclock-xrandr-wrapper"
+SERVICE_FILE="/etc/systemd/system/hamclock.service"
+CRON_SPOOL_DIR="/var/spool/cron/crontabs"
+ETC_CRONTAB="/etc/crontab"
+CRON_D_DIR="/etc/cron.d"
+
+hosts_changed=0
+cache_cleared=0
+service_changed=0
+anything_changed=0
+
+declare -a changed_files
+
+# Must be run as root
+if [ "$EUID" -ne 0 ]; then
+    echo "This script must be run with sudo or as root."
+    exit 1
+fi
+
+self_update() {
+    local script_path remote_tmp script_name flag_value
+
+    flag_value=$(printenv "$SELF_UPDATE_FLAG" 2>/dev/null || true)
+    if [ -n "$flag_value" ]; then
+        return 0
+    fi
+
+    script_path=$(readlink -f "$0" 2>/dev/null)
+    if [ -z "$script_path" ] || [ ! -f "$script_path" ] || [ ! -w "$script_path" ]; then
+        return 0
+    fi
+
+    remote_tmp=$(mktemp) || {
+        echo "Warning: could not create temporary file for update check. Continuing."
+        return 0
+    }
+
+    if command -v curl >/dev/null 2>&1; then
+        if ! curl -fsSL "$GITHUB_RAW_URL" -o "$remote_tmp"; then
+            rm -f "$remote_tmp"
+            echo "Warning: update check failed. Continuing with installed version."
+            return 0
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if ! wget -qO "$remote_tmp" "$GITHUB_RAW_URL"; then
+            rm -f "$remote_tmp"
+            echo "Warning: update check failed. Continuing with installed version."
+            return 0
+        fi
+    else
+        rm -f "$remote_tmp"
+        echo "Warning: neither curl nor wget is available. Skipping update check."
+        return 0
+    fi
+
+    if ! head -n 1 "$remote_tmp" | grep -q '^#!/bin/bash'; then
+        rm -f "$remote_tmp"
+        echo "Warning: downloaded update does not look valid. Continuing with installed version."
+        return 0
+    fi
+
+    if cmp -s "$script_path" "$remote_tmp"; then
+        rm -f "$remote_tmp"
+        return 0
+    fi
+
+    chmod 755 "$remote_tmp"
+
+    if ! mv "$remote_tmp" "$script_path"; then
+        rm -f "$remote_tmp"
+        echo "Warning: failed to update $script_path. Continuing with installed version."
+        return 0
+    fi
+
+    script_name=$(basename "$script_path")
+    echo "A newer version of $script_name was found and installed."
+    echo "Restarting with the updated version..."
+
+    printf -v "$SELF_UPDATE_FLAG" '%s' 1
+    export "$SELF_UPDATE_FLAG"
+
+    exec "$script_path" "$@"
+}
+
+self_update "$@"
+
+# Safety check
+if [ ! -f "$HOSTS_FILE" ]; then
+    echo "Error: $HOSTS_FILE not found."
+    exit 1
+fi
+
+preserve_user_ownership() {
+    local file="$1"
+
+    if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+        case "$file" in
+            "$USER_HOME"/*)
+                chown "$SUDO_USER:$SUDO_USER" "$file" 2>/dev/null || true
+                ;;
+        esac
+    fi
+}
+
+patch_file() {
+    local file="$1"
+    local mode="$2"
+    local tmpfile
+    local tmpfile2
+    local cleanfile
+    local user
+
+    [ -f "$file" ] || return 1
+
+    tmpfile=$(mktemp) || {
+        echo "Error: could not create temporary file."
+        exit 1
+    }
+
+    case "$mode" in
+        desktop)
+            sed -E "/^[[:space:]]*Exec=/ {
+                /hamclock-xrandr-wrapper/ b
+                /hamclock-runner/ b
+                /(^|[^[:alnum:]_/-])(\/usr\/local\/bin\/)?hamclock(-4k)?([[:space:]'\";)]|$)/ {
+                    c\\
+$DESKTOP_EXEC_LINE
+                }
+            }" "$file" > "$tmpfile"
+            ;;
+        runner)
+            sed -E "/^[[:space:]]*exec=[[:space:]]*\\\$[[:space:]]*\\(/ {
+                s/[[:space:]]+-b[[:space:]]+$BACKEND_PATTERN//g
+                s#(^|[^[:alnum:]_/-])(/usr/local/bin/)?(hamclock|hamclock-4k)([[:space:]'\";)]|$)#\1\2\3 -b $BACKEND_TARGET\4#
+            }" "$file" > "$tmpfile"
+            ;;
+        xrandr_wrapper)
+            tmpfile2=$(mktemp) || {
+                rm -f "$tmpfile"
+                echo "Error: could not create temporary file."
+                exit 1
+            }
+
+            if grep -Eq '\$DISPLAY|\$WAYLAND_DISPLAY' "$file"; then
+                cat "$file" > "$tmpfile2"
+            else
+                awk -v wait1="$WRAPPER_WAIT_LINE_1" -v wait2="$WRAPPER_WAIT_LINE_2" '
+                    NR == 1 && /^#!/ {
+                        print
+                        print wait1
+                        print wait2
+                        next
+                    }
+                    NR == 1 {
+                        print wait1
+                        print wait2
+                    }
+                    { print }
+                ' "$file" > "$tmpfile2"
+            fi
+
+            sed -E "/^[[:space:]]*exec=[[:space:]]*\\\$[[:space:]]*\\(/ {
+                s/[[:space:]]+-b[[:space:]]+$BACKEND_PATTERN//g
+                s#(^|[^[:alnum:]_/-])(/usr/local/bin/)?(hamclock|hamclock-4k)([[:space:]'\";)]|$)#\1\2\3 -b $BACKEND_TARGET\4#
+            }" "$tmpfile2" > "$tmpfile"
+
+            rm -f "$tmpfile2"
+            ;;
+        service)
+            sed -E "/^[[:space:]]*ExecStart=/ {
+                s/[[:space:]]+-b[[:space:]]+$BACKEND_PATTERN//g
+                s#(^|[^[:alnum:]_/-])(/usr/local/bin/)?(hamclock|hamclock-4k)([[:space:]'\";)]|$)#\1\2\3 -b $BACKEND_TARGET\4#
+            }" "$file" > "$tmpfile"
+            ;;
+        cron_spool|cron_file)
+            sed -E "/^[[:space:]]*#/ b
+                     /hamclock-runner/ b
+                     /hamclock-xrandr-wrapper/ b
+                     {
+                        s/[[:space:]]+-b[[:space:]]+$BACKEND_PATTERN//g
+                        s#(^|[^[:alnum:]_/-])(/usr/local/bin/)?(hamclock|hamclock-4k)([[:space:]'\";)]|$)#\1\2\3 -b $BACKEND_TARGET\4#
+                     }" "$file" > "$tmpfile"
+            ;;
+        *)
+            rm -f "$tmpfile"
+            return 1
+            ;;
+    esac
+
+    if cmp -s "$file" "$tmpfile"; then
+        rm -f "$tmpfile"
+        return 1
+    fi
+
+    case "$mode" in
+        cron_spool)
+            user=$(basename "$file")
+
+            cleanfile=$(mktemp) || {
+                rm -f "$tmpfile"
+                echo "Error: could not create temporary file."
+                exit 1
+            }
+
+            grep -Ev '^# DO NOT EDIT THIS FILE - edit the master and reinstall\.$|^# \(.* installed on .*\)$|^# \(Cron version -- .*' "$tmpfile" > "$cleanfile"
+
+            if ! crontab -u "$user" "$cleanfile"; then
+                rm -f "$tmpfile" "$cleanfile"
+                echo "Error: failed to install crontab for $user."
+                exit 1
+            fi
+
+            rm -f "$cleanfile"
+            ;;
+        *)
+            if ! cat "$tmpfile" > "$file"; then
+                rm -f "$tmpfile"
+                echo "Error: failed to update $file."
+                exit 1
+            fi
+            preserve_user_ownership "$file"
+            ;;
+    esac
+
+    rm -f "$tmpfile"
+    changed_files+=("$file")
+    anything_changed=1
+    return 0
+}
+
+# Check current /etc/hosts state
+match_count=$(grep -E "^[[:space:]]*[^#].*[[:space:]]$DOMAIN([[:space:]]|$)" "$HOSTS_FILE" | wc -l)
+
+if [ "$match_count" -gt 0 ]; then
+    tmpfile=$(mktemp) || {
+        echo "Error: could not create temporary file."
+        exit 1
+    }
+
+    # Remove all existing non-comment lines containing the domain
+    grep -Ev "^[[:space:]]*[^#].*[[:space:]]$DOMAIN([[:space:]]|$)" "$HOSTS_FILE" > "$tmpfile"
+
+    # Clear HamClock cache before replacing hosts file
+    if [ -d "$HAMCLOCK_DIR" ]; then
+        find "$HAMCLOCK_DIR" -maxdepth 1 -type f \( \
+            -name '*.bmp' -o \
+            \( -name '*.txt' ! -name 'diagnostic-log*' \) \
+        \) -delete
+        cache_cleared=1
+    fi
+
+    # Replace hosts file
+    if ! cat "$tmpfile" > "$HOSTS_FILE"; then
+        rm -f "$tmpfile"
+        echo "Error: failed to update $HOSTS_FILE."
+        exit 1
+    fi
+
+    rm -f "$tmpfile"
+    hosts_changed=1
+    anything_changed=1
+fi
+
+# Patch known launcher files
+patch_file "$DESKTOP_FILE" "desktop"
+patch_file "$AUTOSTART_FILE" "desktop"
+patch_file "$RUNNER_FILE" "runner"
+patch_file "$XRANDR_WRAPPER_FILE" "xrandr_wrapper"
+
+if patch_file "$SERVICE_FILE" "service"; then
+    service_changed=1
+fi
+
+# Patch cron spool files for all users, including root
+if [ -d "$CRON_SPOOL_DIR" ]; then
+    for file in "$CRON_SPOOL_DIR"/*; do
+        [ -f "$file" ] || continue
+        patch_file "$file" "cron_spool"
+    done
+fi
+
+# Patch /etc/crontab
+patch_file "$ETC_CRONTAB" "cron_file"
+
+# Patch /etc/cron.d/* files
+if [ -d "$CRON_D_DIR" ]; then
+    for file in "$CRON_D_DIR"/*; do
+        [ -f "$file" ] || continue
+        patch_file "$file" "cron_file"
+    done
+fi
+
+# Reload and restart systemd service if needed
+if [ "$service_changed" -eq 1 ]; then
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo "Updated $SERVICE_FILE, but systemctl is not available."
+        exit 1
+    fi
+
+    if ! systemctl daemon-reload; then
+        echo "Updated $SERVICE_FILE, but systemctl daemon-reload failed."
+        exit 1
+    fi
+
+    if ! systemctl restart hamclock.service; then
+        echo "Updated $SERVICE_FILE, but restarting hamclock.service failed."
+        exit 1
+    fi
+fi
+
+# Reporting
+if [ "$hosts_changed" -eq 1 ]; then
+    if [ "$match_count" -eq 1 ]; then
+        echo "Removed 1 entry for $DOMAIN."
+    else
+        echo "Removed $match_count entries for $DOMAIN."
+    fi
+fi
+
+if [ "$cache_cleared" -eq 1 ]; then
+    echo "Cleared HamClock cache files in $HAMCLOCK_DIR."
+fi
+
+for file in "${changed_files[@]}"; do
+    if [ "$file" = "$SERVICE_FILE" ]; then
+        echo "Updated HamClock service file: $file"
+    elif [[ "$file" == "$CRON_SPOOL_DIR/"* ]] || [ "$file" = "$ETC_CRONTAB" ] || [[ "$file" == "$CRON_D_DIR/"* ]]; then
+        echo "Updated cron file: $file"
+    else
+        echo "Updated HamClock launch file: $file"
+    fi
+done
+
+if [ "$service_changed" -eq 1 ]; then
+    echo "Reloaded systemd and restarted hamclock.service."
+fi
+
+if [ "$anything_changed" -eq 0 ]; then
+    echo "No change needed: Your HamClock is already using $IP_NAME."
+fi
+
+exit 0
