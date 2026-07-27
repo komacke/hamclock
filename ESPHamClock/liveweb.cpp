@@ -261,7 +261,8 @@ static void updateExistingClient (ws_cli_conn_t *client)
     typedef struct {
         uint8_t x, y, l;                                // region location and length in units of blocks
     } RegnLoc;
-    RegnLoc locs[MAX_REGNS];                            // room for max number of header region entries
+    StackMalloc locs_mem (MAX_REGNS * sizeof(RegnLoc));
+    RegnLoc *locs = (RegnLoc *) locs_mem.getMem();
     uint16_t n_regns = 0;                               // n regions defined so far
     int n_bloks = 0;                                    // n blocks within all regions so far
 
