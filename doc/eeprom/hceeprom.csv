@@ -226,3 +226,4 @@ Addr,Name,Len,Type,Description
 0xCBE,NV_PIAWAREHOST,36,s,"user's PiAware ADS-B receiver host name or IP, else unused"
 0xCE3,NV_ONTA_MODES,1,i,ONTA mode filter bitmask (see ONTAMB_* in ontheair.cpp)
 0xCE5,NV_ONTA_BANDS,4,i,"ONTA band filter bitmask, 1 bit per HamBandSetting"
+0xCEA,NV_CTYBORDERS_ON,1,i,whether to show the country-borders overlay

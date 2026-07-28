@@ -611,6 +611,9 @@ extern SCircle satpass_c;               // satellite pass horizon
 
 extern uint8_t night_on;                // show night portion of map on/off
 extern uint8_t names_on;                // show place names when roving
+extern void initCountryBorders(void);   // one-time fetch/load, call once at startup
+extern void updateCountryBorders(void); // reproject cached data to current pan/zoom/projection
+extern void drawCountryBorders(void);   // draw from the cached, already-projected data
 extern uint8_t lightning_on;            // show lightning strikes overlay
 
 extern SBox desrss_b, dxsrss_b;         // sun rise/set display
@@ -691,6 +694,7 @@ extern SBox satname_b;                  // satellite name pick
 extern SBox de_info_b;                  // de info pane
 extern SBox map_b;                      // main map 
 extern SBox view_btn_b;                 // map view menu button
+
 extern SBox motd_btn_b;                 // MOTD mailbox icon (next to UTC button)
 extern SBox adsb_btn_b;                 // ADS-B airplane icon (next to MOTD icon)
 extern SBox windy_btn_b;                // Windy.com wind icon (next to ADS-B icon)
@@ -2830,6 +2834,7 @@ extern bool showNewDXDEWx(void);
 extern int getPaneRotationPeriod (void);
 extern bool showPIP(void);
 extern bool showPlanets(void);
+extern bool showCountryBorders(void);
 extern bool autoMap(void);
 extern int getMapRotationPeriod(void);
 extern GrayDpy_t getGrayDisplay(void);
@@ -3437,6 +3442,7 @@ extern void scheduleRSSNow(void);
 extern bool getTCPLine (WiFiClient &client, char line[], uint16_t line_len, uint16_t *ll);
 extern void sendUserAgent (WiFiClient &client);
 extern void httpHCGET (WiFiClient &client, const char *server, const char *hc_page);
+extern bool downloadZFile (WiFiClient &client, const char *filename, long len);
 extern bool connecthttpsHCGET (WiFiClient &client, const char *server, const char *hc_page);
 extern bool httpSkipHeader (WiFiClient &client);
 extern bool httpSkipHeader (WiFiClient &client, const char *header, char *value, int value_len);

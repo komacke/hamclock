@@ -60,7 +60,7 @@ static const char muf_v_style[] = "MUFMap";
  * client is already postioned at first byte of compressed image then expect len more bytes.
  * if all ok return true and leave client positioned at end of image -- there might be another :-)
  */
-static bool downloadZFile (WiFiClient &client, const char *filename, long len)
+bool downloadZFile (WiFiClient &client, const char *filename, long len)
 {
         // create file
         FILE *fp = fopenOurs (filename, "w");
@@ -466,6 +466,7 @@ static FILE *openMapFile (CoreMaps cm, const char *filename, const char *title)
                         fp = fopenOurs (filename, "r");
                     client.stop();
                 }
+
                 if (!fp)
                     mapMsg (1000, "%s: download failed", title);
             }

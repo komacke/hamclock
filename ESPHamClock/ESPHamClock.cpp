@@ -1728,6 +1728,7 @@ void drawAllSymbols()
 
     if (mapScaleIsUp())
         drawMapScale();
+    drawCountryBorders();
     if (overMap(sun_c.s))
         drawSun();
     if (overMap(moon_c.s))

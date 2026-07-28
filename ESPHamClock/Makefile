@@ -98,6 +98,7 @@ OBJS = \
 	bands.o \
 	blinker.o \
 	bmp.o \
+	borders.o \
 	brightness.o \
 	cachefile.o \
 	callsign.o \

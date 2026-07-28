@@ -648,6 +648,7 @@ typedef enum {
     MAXTLEB_BPR,
 
     SHOWPLANETS_BPR,
+    SHOWBORDERS_BPR,
 
     // page "6" -- color editor
 
@@ -962,6 +963,9 @@ static BoolPrompt bool_pr[N_BPR] = {
 
     {4, { 10, R2Y(12), 190, PR_H}, {200, R2Y(12), 170, PR_H}, false, "Show Planets?", "No", "Yes", NOMATE,
                     "Whether to show the 7 visible planets on the map at their current position"},
+
+    {4, {400, R2Y(12), 190, PR_H}, {590, R2Y(12), 170, PR_H}, false, "Show Borders?", "No", "Yes", NOMATE,
+                    "Whether to overlay country and state borders on the Clouds and Terrain maps"},
 
 
 
@@ -4623,6 +4627,13 @@ static void initSetup()
     }
     bool_pr[SHOWPLANETS_BPR].state = (show_planets != 0);
 
+    uint8_t show_borders;
+    if (!NVReadUInt8 (NV_CTYBORDERS_ON, &show_borders)) {
+        show_borders = 1;
+        NVWriteUInt8 (NV_CTYBORDERS_ON, show_borders);
+    }
+    bool_pr[SHOWBORDERS_BPR].state = (show_borders != 0);
+
     uint8_t auto_map;
     if (!NVReadUInt8 (NV_AUTOMAP, &auto_map)) {
         auto_map = 0;
@@ -5479,6 +5490,7 @@ static void saveParams2NV()
     NVWriteUInt8 (NV_MAPROTP, getMapRotationPeriod());
     NVWriteUInt8 (NV_SHOWPIP, showPIP());
     NVWriteUInt8 (NV_SHOWPLANETS, showPlanets());
+    NVWriteUInt8 (NV_CTYBORDERS_ON, showCountryBorders());
     NVWriteUInt8 (NV_AUTOMAP, autoMap());
     NVWriteUInt8 (NV_GRAYDPY, (uint8_t)getGrayDisplay());
     NVWriteUInt8 (NV_QRZID, getQRZId());
@@ -6304,6 +6316,13 @@ bool showPIP()
 bool showPlanets()
 {
     return (bool_pr[SHOWPLANETS_BPR].state);
+}
+
+/* return whether to show the country-borders overlay on the map
+ */
+bool showCountryBorders()
+{
+    return (bool_pr[SHOWBORDERS_BPR].state);
 }
 
 /* return whether to run the automatic space weather map detection.
