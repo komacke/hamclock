@@ -1228,6 +1228,9 @@ void initEarthMap()
     updateZoneSCoords(ZONE_CQ);
     updateZoneSCoords(ZONE_ITU);
 
+    // reproject country-borders overlay if pan/zoom/projection/geometry changed
+    updateCountryBorders();
+
     // now main loop can resume with drawMoreEarth()
     scheduleMapRedraw();
 }

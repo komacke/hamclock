@@ -392,6 +392,9 @@ typedef enum {
     NV_ONTA_MODES,                 // ONTA mode filter bitmask (see ONTAMB_* in ontheair.cpp)
     NV_ONTA_BANDS,                 // ONTA band filter bitmask, 1 bit per HamBandSetting
 
+    // 258 -- appended so all prior EEPROM addresses remain unchanged
+    NV_CTYBORDERS_ON,               // whether to show the country-borders overlay
+
 	NV_N
 
 } NV_Name;
