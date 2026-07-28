@@ -100,7 +100,10 @@ float *gv)
 
 /* INITIALIZE CONSTANTS */
       maxord = *maxdeg;
-      sp[0] = 0.0;
+      // m = 0 must contribute nothing to the azimuthal field term.
+      // This array used to be static in the reference WMM code, where fm[0]
+      // was implicitly zero; as a local array it must be initialized explicitly.
+      sp[0] = fm[0] = 0.0;
       cp[0] = *p = pp[0] = 1.0;
       dp[0][0] = 0.0;
       a = 6378.137;
