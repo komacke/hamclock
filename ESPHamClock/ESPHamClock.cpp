@@ -1161,6 +1161,10 @@ bool desiredBearing (const LatLong &ll, float &bear)
         if (!magdecl (ll.lat_d, ll.lng_d, 200, yr, &decl)) {
             Serial.printf ("Magnetic model only valid %g .. %g\n", decl, decl+5);
             return (false);
+        } else if (!isfinite(decl)) {
+            // Never allow a bad model result to turn a valid true bearing into NaN.
+            Serial.printf ("Invalid magnetic declination at %g, %g\n", ll.lat_d, ll.lng_d);
+            return (false);
         } else {
             // Serial.printf ("magdecl @ %g = %g\n", yr, decl);
             bear = fmodf (bear - decl + 360, 360);
