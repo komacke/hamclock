@@ -39,7 +39,7 @@ main() {
     COMMAND=$1
     case $COMMAND in
         -h|--help|help)
-            usage
+            usage_pager
             ;;
         -v|--version|version)
             manager_version
@@ -133,6 +133,14 @@ get_compose_opts() {
     done
 
     SAVE_STICKY_VARS=true
+}
+
+usage_pager () {
+    if [ -t 1 ]; then 
+        usage | less -F -X
+    else 
+        usage
+    fi
 }
 
 usage () {
