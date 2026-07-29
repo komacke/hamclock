@@ -378,6 +378,9 @@ typedef enum {
     BAND10_CSPR,
     BAND6_CSPR,
     BAND2_CSPR,
+    // N.B. appended so existing bit-mask/table indices for prior entries remain unchanged
+    BORDERS_CSPR,
+    STATES_CSPR,
     N_CSPR
 } ColorSelection;
 
@@ -611,6 +614,9 @@ extern SCircle satpass_c;               // satellite pass horizon
 
 extern uint8_t night_on;                // show night portion of map on/off
 extern uint8_t names_on;                // show place names when roving
+extern uint8_t borders_on;              // show country/state borders overlay on Clouds/Terrain
+extern SBox borders_btn_b;              // on-map "Borders On/Off" badge, next to the View button
+extern bool bordersBadgeVisible(void);  // whether that badge should currently be shown
 extern void initCountryBorders(void);   // one-time fetch/load, call once at startup
 extern void updateCountryBorders(void); // reproject cached data to current pan/zoom/projection
 extern void drawCountryBorders(void);   // draw from the cached, already-projected data
@@ -2802,6 +2808,7 @@ extern void drawStringInBox (const char str[], const SBox &b, bool inverted, uin
 extern bool logUsageOk(void);
 extern uint16_t getMapColor (ColorSelection cid);
 extern const char* getMapColorName (ColorSelection cid);
+extern bool getMapColorThin (ColorSelection cid);
 extern uint8_t getBrMax(void);
 extern uint8_t getBrMin(void);
 extern bool getX11FullScreen(void);
@@ -2834,7 +2841,6 @@ extern bool showNewDXDEWx(void);
 extern int getPaneRotationPeriod (void);
 extern bool showPIP(void);
 extern bool showPlanets(void);
-extern bool showCountryBorders(void);
 extern bool autoMap(void);
 extern int getMapRotationPeriod(void);
 extern GrayDpy_t getGrayDisplay(void);
