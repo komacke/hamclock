@@ -1,3 +1,6 @@
 Changes with latest release:
 - clean stray pixels in status
 - snappier refresh of sat tracks
+- country lines on maps
+- US state lines on zoomed maps
+- fix magnetic bearing display issue
