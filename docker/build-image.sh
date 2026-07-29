@@ -79,6 +79,12 @@ main() {
         esac
     done
 
+    if [[ -n "$1" ]]; then
+        echo
+        echo "Invalid argument: $1"
+        exit 1
+    fi
+
     do_all
     build_done_message
 }
