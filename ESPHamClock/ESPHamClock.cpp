@@ -22,6 +22,7 @@ static SBox askde_b;                    // de lat/lng dialog
 SBox de_title_b;                        // de title location
 SBox map_b;                             // entire map, pixels only, not border
 SBox view_btn_b;                        // map View button
+SBox borders_btn_b;                     // on-map Borders On/Off badge, right of the View button
 SBox dx_maid_b;                         // dx maindenhead 
 SBox de_maid_b;                         // de maindenhead 
 
@@ -50,6 +51,7 @@ SCircle satpass_c;
 
 // whether to shade night or show place names
 uint8_t night_on, names_on;
+uint8_t borders_on;
 
 // handy flag when showing main page
 bool mainpage_up;
@@ -453,6 +455,18 @@ void setup()
     view_btn_b.y = map_b.y;                     // gets adjusted if showing grid label
     view_btn_b.w = 60;
     view_btn_b.h = 14;
+
+    // position Borders on-map badge just to the right of the View button, with a small gap.
+    // width is sized to fit "Borders Off", the longer of its two labels, plus padding.
+    {
+        const int gap = 4;                       // pixels between View button and badge
+        const int pad = 8;                       // pixels of horizontal padding inside the badge
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        borders_btn_b.x = view_btn_b.x + view_btn_b.w + gap;
+        borders_btn_b.y = view_btn_b.y;          // tracks view_btn_b.y each time it's (re)drawn
+        borders_btn_b.w = getTextWidth ("Borders Off") + pad;
+        borders_btn_b.h = view_btn_b.h;
+    }
 
     // redefine callsign for main screen
     cs_info.box.x = 0;
@@ -882,6 +896,11 @@ static void checkTouch()
             // set flag to draw map menu at next opportunity
             mapmenu_pending = true;
         }
+    } else if (bordersBadgeVisible() && inBox (s, borders_btn_b)) {
+        borders_on = !borders_on;
+        NVWriteUInt8 (NV_CTYBORDERS_ON, borders_on);
+        initEarthMap();
+        tft.drawPR();
     } else if (checkSatMapTouch (s)) {
         // set showing sat in DX box
         dx_info_for_sat = true;

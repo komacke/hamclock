@@ -29,8 +29,29 @@
 
 #include "HamClock.h"
 
-#define BORDERS_LINE_CLR  BRGRAY         // subdued -- shouldn't fight with whatever map is underneath
-#define STATES_LINE_CLR   BRGRAY         // same tone as country borders
+/* return c blended most of the way toward white, for a brighter day-side rendition of whatever
+ * base border/state color the user picked in Setup's color editor.
+ */
+static uint16_t brightenForDay (uint16_t c)
+{
+    uint8_t r = RGB565_R(c);
+    uint8_t g = RGB565_G(c);
+    uint8_t b = RGB565_B(c);
+    r += (255-r)*3/4;
+    g += (255-g)*3/4;
+    b += (255-b)*3/4;
+    return (RGB565(r,g,b));
+}
+
+/* return the night-side (base) line thickness, in pixels, for the given color selection.
+ * N.B. deliberately reads the color editor's thin/thick tick box directly rather than going through
+ * getRawPathWidth(), which also folds in that entry's on/off state -- borders' on/off is controlled by
+ * the on-map badge and the max-zoom auto-trigger, not this page, so its color-editor on/off is disabled.
+ */
+static int borderBaseThick (ColorSelection id)
+{
+    return (getMapColorThin(id) ? 1 : 2);
+}
 
 typedef struct {
     const char *filename;              // local cache filename
@@ -235,10 +256,26 @@ static void updateBorderSet (BorderSet *bs)
     bs->last_map_b = map_b;
 }
 
-/* draw bs's overlay from its cached projected points, in the given color.
- * cheap -- just connects points already computed by updateBorderSet().
+/* return whether the given border point (lat/lng, radians) currently falls in the sunlit half
+ * of the map. Same subsolar-angle test drawMapCoord() uses to shade the map itself, just reduced
+ * to a plain day/night bool since borders only need to pick between two line styles, not blend a
+ * full grayline gradient. If night shading is off entirely, the whole map reads as "day" so borders
+ * do too, matching what the user actually sees.
  */
-static void drawBorderSet (BorderSet *bs, uint16_t color)
+static bool borderPtIsDay (float lat, float lng)
+{
+    if (!night_on)
+        return (true);
+    float cos_t = ssslat*sinf(lat) + csslat*cosf(lat)*cosf(sun_ss_ll.lng-lng);
+    return (cos_t > 0);
+}
+
+/* draw bs's overlay from its cached projected points, using day_color/day_thick over the sunlit
+ * half of the map and night_color/night_thick over the night (or twilight) half, so the overlay
+ * stays visible against the brighter daytime map imagery.
+ */
+static void drawBorderSet (BorderSet *bs, uint16_t day_color, uint16_t night_color,
+                            uint16_t day_thick, uint16_t night_thick)
 {
     if (!bs->loaded)
         return;
@@ -249,8 +286,11 @@ static void drawBorderSet (BorderSet *bs, uint16_t color)
         for (uint16_t p = 0; p < npts; p++) {
             uint32_t i0 = pi + p;
             uint32_t i1 = pi + (p+1) % npts;             // wrap last vertex back to first, closed ring
-            if (segmentSpanOkRaw (bs->scr[i0], bs->scr[i1], 1))
-                tft.drawLineRaw (bs->scr[i0].x, bs->scr[i0].y, bs->scr[i1].x, bs->scr[i1].y, 1, color);
+            if (segmentSpanOkRaw (bs->scr[i0], bs->scr[i1], 1)) {
+                bool day = borderPtIsDay (bs->lat[i0], bs->lng[i0]);
+                tft.drawLineRaw (bs->scr[i0].x, bs->scr[i0].y, bs->scr[i1].x, bs->scr[i1].y,
+                                  day ? day_thick : night_thick, day ? day_color : night_color);
+            }
         }
         pi += npts;
     }
@@ -283,8 +323,8 @@ void updateCountryBorders(void)
 }
 
 /* draw whichever overlays are enabled and applicable at the current zoom.
- * Both are gated on the single "Show Borders?" Setup option -- states are
- * an automatic extra level of detail at max zoom, not a separate toggle.
+ * Both are gated on the single "Borders" on-map badge -- states are an
+ * automatic extra level of detail at max zoom, not a separate toggle.
  *
  * Only applies to Clouds and Terrain. DRAP, Aurora, Weather and Tropo still
  * get borders baked in server-side (see OHB's update_*_maps.sh) so older
@@ -296,11 +336,32 @@ void drawCountryBorders(void)
     if (core_map != CM_CLOUDS && core_map != CM_TERRAIN)
         return;
 
-    if (!showCountryBorders())
+    if (!borders_on)
         return;
 
-    drawBorderSet (&bset_borders, BORDERS_LINE_CLR);
+    uint16_t bclr_night = getMapColor (BORDERS_CSPR);
+    uint16_t bclr_day = brightenForDay (bclr_night);
+    int bthick_night = borderBaseThick (BORDERS_CSPR);
 
-    if (pan_zoom.zoom == MAX_ZOOM)
-        drawBorderSet (&bset_states, STATES_LINE_CLR);
+    drawBorderSet (&bset_borders, bclr_day, bclr_night, bthick_night+1, bthick_night);
+
+    if (pan_zoom.zoom == MAX_ZOOM) {
+        uint16_t sclr_night = getMapColor (STATES_CSPR);
+        uint16_t sclr_day = brightenForDay (sclr_night);
+        int sthick_night = borderBaseThick (STATES_CSPR);
+
+        drawBorderSet (&bset_states, sclr_day, sclr_night, sthick_night+1, sthick_night);
+    }
+}
+
+/* return whether the on-map "Borders On/Off" badge should currently be shown.
+ * Only offered on Clouds/Terrain, and only in the Mercator or Robinson projections -- the badge
+ * is just a UI convenience, not the source of truth, so hiding it never touches borders_on: whatever
+ * the user last set stays in effect (and keeps drawing, per drawCountryBorders() above) even while
+ * the badge itself is off-screen, e.g. after switching to an azimuthal projection.
+ */
+bool bordersBadgeVisible(void)
+{
+    return ((core_map == CM_CLOUDS || core_map == CM_TERRAIN)
+                        && (map_proj == MAPP_MERCATOR || map_proj == MAPP_ROB));
 }

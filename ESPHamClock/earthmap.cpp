@@ -932,6 +932,38 @@ static void drawMapMenuButton()
     tft.print (str);
 }
 
+/* draw (or blank) the on-map "Borders On/Off" badge just to the right of the View button.
+ * Only shown on Clouds/Terrain in the Mercator or Robinson projections -- see bordersBadgeVisible().
+ * Hiding it never touches borders_on, so whatever the user last set just keeps applying silently.
+ *
+ * Deliberately looks different when engaged: filled light with dark text, like a pressed button,
+ * vs its normal black-fill/white-outline/white-text look when off -- same visual family as the
+ * View button next to it, just inverted to read as "active".
+ */
+static void drawBordersButton()
+{
+    borders_btn_b.y = view_btn_b.y;             // track the View button's row, incl grid-label offset
+
+    if (!bordersBadgeVisible()) {
+        // wrong core map or an azimuthal projection -- just be sure it's left blank
+        tft.fillRect (borders_btn_b.x, borders_btn_b.y, borders_btn_b.w-1, borders_btn_b.h-1, RA8875_BLACK);
+        return;
+    }
+
+    uint16_t fill_clr = borders_on ? RA8875_WHITE : RA8875_BLACK;
+    uint16_t text_clr = borders_on ? RA8875_BLACK : RA8875_WHITE;
+    const char *label = borders_on ? "Borders On" : "Borders Off";
+
+    tft.fillRect (borders_btn_b.x, borders_btn_b.y, borders_btn_b.w-1, borders_btn_b.h-1, fill_clr);
+    tft.drawRect (borders_btn_b.x, borders_btn_b.y, borders_btn_b.w-1, borders_btn_b.h-1, RA8875_WHITE);
+
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
+    uint16_t lbl_w = getTextWidth(label);
+    tft.setCursor (borders_btn_b.x+(borders_btn_b.w-lbl_w)/2, borders_btn_b.y+2);
+    tft.setTextColor (text_clr);
+    tft.print (label);
+}
+
 /* draw, perform and engage results of the map View menu
  */
 static void drawMapMenu()
@@ -1205,6 +1237,7 @@ void initEarthMap()
 
     // draw map view button
     drawMapMenuButton();
+    drawBordersButton();
 
     // update astro info
     updateCircumstances();
@@ -1313,6 +1346,11 @@ void drawMoreEarth()
             drawSatName();
             drawInfoBox();
         }
+
+        // the sweep just painted over the whole map, including these -- restore them every time,
+        // not just after a full initEarthMap(), or they silently vanish after the next redraw
+        drawMapMenuButton();
+        drawBordersButton();
 
         // draw now
         tft.drawPR();
@@ -1859,12 +1897,16 @@ void antipode (LatLong &to, const LatLong &from)
     to.normalize();
 }
 
-/* return whether s is over the view_btn_b, including an extra border for fat lines or DX etc
+/* return whether s is over the view_btn_b, including an extra border for fat lines or DX etc.
+ * also extends over the Borders badge, when it's currently shown, since the two sit side by side.
  */
 bool overViewBtn (const SCoord &s, uint16_t border)
 {
     border += 1;
-    return (s.x < view_btn_b.x + view_btn_b.w + border && s.y < view_btn_b.y + view_btn_b.h + border);
+    uint16_t right_edge = view_btn_b.x + view_btn_b.w;
+    if (bordersBadgeVisible())
+        right_edge = borders_btn_b.x + borders_btn_b.w;
+    return (s.x < right_edge + border && s.y < view_btn_b.y + view_btn_b.h + border);
 }
 
 /* return whether the given line segment spans a reasonable portion of the map.

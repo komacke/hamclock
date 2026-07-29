@@ -227,3 +227,5 @@ Addr,Name,Len,Type,Description
 0xCE3,NV_ONTA_MODES,1,i,ONTA mode filter bitmask (see ONTAMB_* in ontheair.cpp)
 0xCE5,NV_ONTA_BANDS,4,i,"ONTA band filter bitmask, 1 bit per HamBandSetting"
 0xCEA,NV_CTYBORDERS_ON,1,i,whether to show the country-borders overlay
+0xCEC,NV_BORDERCOLOR,2,RGB,country border overlay color as RGB565
+0xCEF,NV_STATECOLOR,2,RGB,state/province border overlay color as RGB565
