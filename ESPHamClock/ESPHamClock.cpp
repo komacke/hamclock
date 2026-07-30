@@ -1766,13 +1766,13 @@ void drawAllSymbols()
     drawHamsatOnMap();
     drawMeshtasticOnMap();
     drawPlanetsOnMap();
-    drawStormsOnMap();
     drawLaunchesOnMap();
     drawActiveNetsOnMap();
     drawDEMarker(false);
     drawDXMarker(false);
     drawFarthestPSKSpots();
     drawLightningOnMap();
+    drawStormsOnMap();
     drawSatPathAndFoot();
     drawSanta ();
     drawEnterprise ();
