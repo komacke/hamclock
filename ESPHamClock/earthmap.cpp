@@ -1910,6 +1910,24 @@ bool overViewBtn (const SCoord &s, uint16_t border)
     return (s.x < right_edge + border && s.y < view_btn_b.y + view_btn_b.h + border);
 }
 
+/* return whether raw-space point s, expanded by border pixels in every direction, stays fully
+ * within map_b's own rectangle (map_b converted to raw/supersampled pixel units to match s).
+ * Shared guard against fat dots/circles/arrowheads/lines -- whose *center* point might be
+ * legitimately on-map but whose drawn edge isn't -- bleeding into whatever sits just outside
+ * the map, such as the DE/DX info panes. Used by segmentSpanOkRaw() below and by any other
+ * overlay (e.g. hurricane.cpp's storm track markers) that draws shapes with real extent in
+ * raw pixel space.
+ */
+bool rawPointClearOfMapEdge (const SCoord &s, uint16_t border)
+{
+    uint16_t map_x = tft.SCALESZ*map_b.x;
+    uint16_t map_y = tft.SCALESZ*map_b.y;
+    uint16_t map_w = tft.SCALESZ*map_b.w;
+    uint16_t map_h = tft.SCALESZ*map_b.h;
+    return (s.x >= map_x+border && s.x <= map_x+map_w-border
+                        && s.y >= map_y+border && s.y <= map_y+map_h-border);
+}
+
 /* return whether the given line segment spans a reasonable portion of the map.
  * beware map edge, view button, wrap-around and crossing center of azm map
  * .x == 0 denotes off the map entirely.
@@ -1931,11 +1949,9 @@ bool segmentSpanOk (const SCoord &s0, const SCoord &s1, uint16_t border)
     // Reject anything whose drawn extent (border) would poke past map_b's own rectangle --
     // e.g. a fat dot or arrowhead whose *center* point is on-map but whose edge isn't, which
     // otherwise bleeds into whatever sits just outside the map (like the DE/DX info panes).
-    if (s0.x < map_b.x+border || s0.x > map_b.x+map_b.w-border
-                        || s0.y < map_b.y+border || s0.y > map_b.y+map_b.h-border)
-        return (false);
-    if (s1.x < map_b.x+border || s1.x > map_b.x+map_b.w-border
-                        || s1.y < map_b.y+border || s1.y > map_b.y+map_b.h-border)
+    SCoord s0r = {(uint16_t)(s0.x*tft.SCALESZ), (uint16_t)(s0.y*tft.SCALESZ)};
+    SCoord s1r = {(uint16_t)(s1.x*tft.SCALESZ), (uint16_t)(s1.y*tft.SCALESZ)};
+    if (!rawPointClearOfMapEdge(s0r, border*tft.SCALESZ) || !rawPointClearOfMapEdge(s1r, border*tft.SCALESZ))
         return (false);
     return (true);              // ok!
 }
@@ -1948,7 +1964,6 @@ bool segmentSpanOk (const SCoord &s0, const SCoord &s1, uint16_t border)
 bool segmentSpanOkRaw (const SCoord &s0, const SCoord &s1, uint16_t border)
 {
     uint16_t map_x = tft.SCALESZ*map_b.x;
-    uint16_t map_y = tft.SCALESZ*map_b.y;
     uint16_t map_w = tft.SCALESZ*map_b.w;
     uint16_t map_h = tft.SCALESZ*map_b.h;
 
@@ -1968,11 +1983,7 @@ bool segmentSpanOkRaw (const SCoord &s0, const SCoord &s1, uint16_t border)
     // same edge-extent guard as segmentSpanOk() above, just in raw (scaled) pixel space --
     // keeps fat dots/arrowheads on satellite/DX paths from bleeding past map_b into whatever
     // sits just outside it (DE/DX info panes, view button, etc).
-    if (s0.x < map_x+border || s0.x > map_x+map_w-border
-                        || s0.y < map_y+border || s0.y > map_y+map_h-border)
-        return (false);
-    if (s1.x < map_x+border || s1.x > map_x+map_w-border
-                        || s1.y < map_y+border || s1.y > map_y+map_h-border)
+    if (!rawPointClearOfMapEdge(s0, border) || !rawPointClearOfMapEdge(s1, border))
         return (false);
     return (true);              // ok!
 }

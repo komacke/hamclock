@@ -404,10 +404,23 @@ static void drawStormDot (const LatLong &ll, uint16_t color, bool current)
 
     ll2sRaw (ll, s, 1);
     int r = stormDotRadius();
+    if (!rawPointClearOfMapEdge (s, r))          // dot's edge, not just its center, must stay on-map
+        return;
     tft.fillCircleRaw (s.x, s.y, r, color);
     tft.drawCircleRaw (s.x, s.y, r, RA8875_BLACK);      // thin edge for contrast over the map
     if (current)
         tft.drawPixelRaw (s.x, s.y, RA8875_WHITE);      // mark the storm's current position
+}
+
+/* return destination point given start (lat1/lon1, radians), true bearing theta (radians,
+ * standard compass convention: 0=north, clockwise positive, matching propPath()'s bearing),
+ * and angular distance delta (radians). Standard spherical "direct geodesic" formula.
+ */
+static void destPoint (float lat1, float lon1, float theta, float delta, float *lat2, float *lon2)
+{
+    float s = CLAMPF (sinf(lat1)*cosf(delta) + cosf(lat1)*sinf(delta)*cosf(theta), -1, 1);
+    *lat2 = asinf (s);
+    *lon2 = lon1 + atan2f (sinf(theta)*sinf(delta)*cosf(lat1), cosf(delta) - sinf(lat1)*sinf(*lat2));
 }
 
 /* draw a dramatic direction indicator at the last forecast track point:
@@ -418,68 +431,83 @@ static void drawStormDot (const LatLong &ll, uint16_t color, bool current)
  *     arrow never spirals back on itself
  *   - a filled arrowhead at the far end of the extension line
  *
- * All geometry is done in raw screen pixels after ll2sRaw() conversion.
+ * Direction and curvature are derived from actual geographic bearings (great-circle, via
+ * propPath()) rather than by differencing raw on-screen pixel positions of the real track
+ * points. At low zoom, consecutive forecast points -- often just a few hours apart -- can
+ * land on the very same raw pixel, or just 1-2 pixels apart; differencing such tiny, heavily
+ * quantized pixel deltas produced noisy/wrong directions and made the arrow curl into a shape
+ * that didn't match the real forecast track, visibly different from the same storm zoomed in
+ * further. Bearings computed straight from lat/lon are exact regardless of zoom, so a fixed,
+ * generously-sized synthetic probe point along that true bearing (still run back through
+ * ll2sRaw(), so it still reflects this map's actual on-screen orientation) gives a reliable,
+ * non-quantized screen direction. The rest of the geometry (extension line, arrowhead) is
+ * still done in raw screen pixels after ll2sRaw() conversion.
  */
 static void drawStormDirectionArrow (const Storm &st)
 {
     if (st.n_pts < 2)
         return;
 
-    // --- screen coords of the last two track points ---
+    // --- last two track points ---
     const StormPoint &p_prev = st.pts[st.n_pts - 2];
     const StormPoint &p_last = st.pts[st.n_pts - 1];
 
     LatLong ll_prev (p_prev.lat, p_prev.lon);
     LatLong ll_last (p_last.lat, p_last.lon);
 
-    SCoord sc_prev, sc_last;
-    ll2s (ll_prev, sc_prev, 1);
+    SCoord sc_last;
     ll2s (ll_last, sc_last, 1);
-    if (!overMap(sc_prev) || !overMap(sc_last))
+    if (!overMap(sc_last))
         return;
-    ll2sRaw (ll_prev, sc_prev, 1);
     ll2sRaw (ll_last, sc_last, 1);
 
-    // unit direction vector of the last track segment
-    float dx = (float)(sc_last.x - sc_prev.x);
-    float dy = (float)(sc_last.y - sc_prev.y);
+    // true bearing of the last track segment
+    float bear_last, dist_unused;
+    propPath (false, ll_prev, sinf(ll_prev.lat), cosf(ll_prev.lat), ll_last, &dist_unused, &bear_last);
+
+    // project a synthetic probe point a fixed, generous geographic distance along that
+    // bearing, then convert *that* through ll2sRaw() to get a reliable on-screen unit vector
+    #define DIR_PROBE_DEG 3.0F              // far enough to resolve cleanly even at min zoom
+    float plat, plon;
+    destPoint (ll_last.lat, ll_last.lng, bear_last, deg2rad(DIR_PROBE_DEG), &plat, &plon);
+    LatLong ll_probe (rad2deg(plat), rad2deg(plon));
+    SCoord sc_probe;
+    ll2sRaw (ll_probe, sc_probe, 1);
+
+    float dx = (float)((int)sc_probe.x - (int)sc_last.x);
+    float dy = (float)((int)sc_probe.y - (int)sc_last.y);
     float seg_len = sqrtf (dx*dx + dy*dy);
     if (seg_len < 0.5f)
         return;
     dx /= seg_len;
     dy /= seg_len;
 
-    // --- derive per-pixel angular turn rate from the penultimate segment ---
-    // positive = clockwise in screen coords (Y-down), negative = counter-clockwise
+    // --- derive per-pixel angular turn rate from the penultimate segment, same bearing-based
+    // approach as above; positive = clockwise in screen coords (Y-down), negative = ccw ---
     float turn_rate = 0.0f;
     if (st.n_pts >= 3) {
         const StormPoint &p_prev2 = st.pts[st.n_pts - 3];
         LatLong ll_prev2 (p_prev2.lat, p_prev2.lon);
-        SCoord sc_prev2;
-        ll2s (ll_prev2, sc_prev2, 1);
-        if (overMap(sc_prev2)) {
-            ll2sRaw (ll_prev2, sc_prev2, 1);
-            float dx1 = (float)(sc_prev.x - sc_prev2.x);
-            float dy1 = (float)(sc_prev.y - sc_prev2.y);
-            float len1 = sqrtf (dx1*dx1 + dy1*dy1);
-            if (len1 > 0.5f) {
-                dx1 /= len1;
-                dy1 /= len1;
-                // signed angle between consecutive segment directions
-                float angle_change = atan2f (dx1*dy - dy1*dx, dx1*dx + dy1*dy);
-                turn_rate = angle_change / seg_len;   // radians per screen-pixel
-                // cap total curvature at 90 degrees so the arrow cannot curl back
-                float ext_f  = (float)(stormSizeUnit() * 3);
-                float max_tr = 1.5707963f / ext_f;    // pi/2 spread over extension
-                if (turn_rate >  max_tr) turn_rate =  max_tr;
-                if (turn_rate < -max_tr) turn_rate = -max_tr;
-            }
-        }
+        float bear_prev, dist_unused2;
+        propPath (false, ll_prev2, sinf(ll_prev2.lat), cosf(ll_prev2.lat), ll_prev,
+                                                                        &dist_unused2, &bear_prev);
+
+        // signed turn between the two true bearings, wrapped to -pi..pi
+        float angle_change = fmodf (bear_last - bear_prev + 3*M_PIF, 2*M_PIF) - M_PIF;
+
+        turn_rate = angle_change / seg_len;    // radians per screen-pixel (of the probe segment)
+        // cap total curvature at 90 degrees so the arrow cannot curl back
+        float ext_f  = (float)(stormSizeUnit() * 3);
+        float max_tr = 1.5707963f / ext_f;     // pi/2 spread over extension
+        if (turn_rate >  max_tr) turn_rate =  max_tr;
+        if (turn_rate < -max_tr) turn_rate = -max_tr;
     }
+    #undef DIR_PROBE_DEG
 
     // --- draw the extension line from the last dot's edge ---
     int ext_len  = stormSizeUnit() * 3;     // extension length in screen pixels
     int lw       = stormTrackWidth();
+    int ow       = lw + 2;                  // outline width, 1px black border each side
     int step_px  = std::max (2, lw);        // one draw-call per step_px pixels
     int r        = stormDotRadius();
     uint16_t color = stormCategoryColor (p_last.category, p_last.wind_kt);
@@ -494,11 +522,34 @@ static void drawStormDirectionArrow (const Storm &st)
     float cur_dx = dx;
     float cur_dy = dy;
 
-    for (int drawn = 0; drawn < ext_len; drawn += step_px) {
+    // Walk the curve once to collect its points, then draw in two full passes below (all
+    // black, then all color) rather than alternating black/color segment-by-segment. Each
+    // straight segment has flat end caps at a slightly different angle than its neighbor
+    // (the curve bends a little every step), so outlining segments individually left a
+    // visible black seam/notch at every joint. Drawing the whole black path first -- with a
+    // small round black "joint patch" at each interior point to fill those notches -- then
+    // the whole color path on top the same way gives one smooth continuous outlined curve
+    // instead of a chain of separately-outlined segments.
+    #define MAX_EXT_PTS 64                  // ext_len is a small fixed multiple of stormSizeUnit()
+    float pts_x[MAX_EXT_PTS], pts_y[MAX_EXT_PTS];
+    int n_ext_pts = 0;
+    pts_x[n_ext_pts] = cur_x;
+    pts_y[n_ext_pts] = cur_y;
+    n_ext_pts++;
+
+    for (int drawn = 0; drawn < ext_len && n_ext_pts < MAX_EXT_PTS; drawn += step_px) {
         float nx = cur_x + cur_dx * (float)step_px;
         float ny = cur_y + cur_dy * (float)step_px;
-        tft.drawLineRaw ((int16_t)cur_x, (int16_t)cur_y,
-                         (int16_t)nx,    (int16_t)ny, lw, color);
+        // stop extending once the next step would poke past the map's own edge -- this
+        // extrapolates well beyond the last known (on-map) track point with no natural
+        // limit otherwise, and was bleeding into whatever sits just outside the map
+        // (e.g. the DE/DX info panes) when a storm's last point was near the map edge
+        SCoord nend = {(uint16_t)(int32_t)nx, (uint16_t)(int32_t)ny};
+        if (!rawPointClearOfMapEdge (nend, ow/2+1))
+            break;
+        pts_x[n_ext_pts] = nx;
+        pts_y[n_ext_pts] = ny;
+        n_ext_pts++;
         cur_x = nx;
         cur_y = ny;
         // rotate direction for the next step; renormalize to prevent float drift
@@ -508,11 +559,37 @@ static void drawStormDirectionArrow (const Storm &st)
         if (nlen > 0.01f) { cur_dx = ndx / nlen;  cur_dy = ndy / nlen; }
     }
 
+    // pass 1: black outline, wide, with round joints
+    for (int i = 1; i < n_ext_pts; i++) {
+        if (i > 1)
+            tft.fillCircleRaw ((int16_t)pts_x[i-1], (int16_t)pts_y[i-1], ow/2, RA8875_BLACK);
+        tft.drawLineRaw ((int16_t)pts_x[i-1], (int16_t)pts_y[i-1],
+                         (int16_t)pts_x[i],   (int16_t)pts_y[i], ow, RA8875_BLACK);
+    }
+    // pass 2: category color on top, narrower, with round joints of its own
+    for (int i = 1; i < n_ext_pts; i++) {
+        if (i > 1)
+            tft.fillCircleRaw ((int16_t)pts_x[i-1], (int16_t)pts_y[i-1], lw/2, color);
+        tft.drawLineRaw ((int16_t)pts_x[i-1], (int16_t)pts_y[i-1],
+                         (int16_t)pts_x[i],   (int16_t)pts_y[i], lw, color);
+    }
+    #undef MAX_EXT_PTS
+
     // --- arrowhead at the end of the extension, in the final travel direction ---
     int alen = r * 2 + lw;   // arrowhead height
     int awid = r + 1;        // arrowhead half-width at base
     float perp_x = -cur_dy;
     float perp_y =  cur_dx;
+
+    SCoord a_tip   = {(uint16_t)(int32_t)(cur_x + cur_dx * alen), (uint16_t)(int32_t)(cur_y + cur_dy * alen)};
+    SCoord a_left  = {(uint16_t)(int32_t)(cur_x + perp_x * awid), (uint16_t)(int32_t)(cur_y + perp_y * awid)};
+    SCoord a_right = {(uint16_t)(int32_t)(cur_x - perp_x * awid), (uint16_t)(int32_t)(cur_y - perp_y * awid)};
+
+    // skip the arrowhead entirely rather than draw a partial/clipped triangle if any vertex
+    // would land off the map (e.g. the extension line above got cut short right at the edge)
+    if (!rawPointClearOfMapEdge (a_tip, 0) || !rawPointClearOfMapEdge (a_left, 0)
+                                            || !rawPointClearOfMapEdge (a_right, 0))
+        return;
 
     tft.fillTriangleRaw (
         (int16_t)(cur_x + cur_dx * alen),              // tip
@@ -566,8 +643,13 @@ void drawStormsOnMap (void)
 
             ll2sRaw (ll0, a, 1);
             ll2sRaw (ll1, b, 1);
+            int tw = stormTrackWidth();
+            int ow = tw + 2;                     // outline width, 1px black border each side
+            if (!rawPointClearOfMapEdge (a, ow/2+1) || !rawPointClearOfMapEdge (b, ow/2+1))
+                continue;
             uint16_t color = stormCategoryColor (p0.category, p0.wind_kt);
-            tft.drawLineRaw (a.x, a.y, b.x, b.y, stormTrackWidth(), color);
+            tft.drawLineRaw (a.x, a.y, b.x, b.y, ow, RA8875_BLACK);  // black border first, wider
+            tft.drawLineRaw (a.x, a.y, b.x, b.y, tw, color);         // category color on top
         }
 
         // 2. category-colored dot at each position; the current position is flagged

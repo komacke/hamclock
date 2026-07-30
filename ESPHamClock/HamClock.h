@@ -1565,6 +1565,7 @@ extern void roundLatLong (LatLong &ll);
 extern void initScreen(void);
 extern float lngDiff (float dlng);
 extern bool overViewBtn (const SCoord &s, uint16_t border);
+extern bool rawPointClearOfMapEdge (const SCoord &s, uint16_t border);
 extern bool segmentSpanOk (const SCoord &s0, const SCoord &s1, uint16_t border);
 extern bool segmentSpanOkRaw (const SCoord &s0, const SCoord &s1, uint16_t border);
 extern bool desiredBearing (const LatLong &ll, float &bear);
