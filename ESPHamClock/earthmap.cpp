@@ -945,8 +945,9 @@ static void drawBordersButton()
     borders_btn_b.y = view_btn_b.y;             // track the View button's row, incl grid-label offset
 
     if (!bordersBadgeVisible()) {
-        // wrong core map or an azimuthal projection -- just be sure it's left blank
-        tft.fillRect (borders_btn_b.x, borders_btn_b.y, borders_btn_b.w-1, borders_btn_b.h-1, RA8875_BLACK);
+        // wrong core map or an azimuthal projection -- leave it alone. The map sweep already
+        // painted real map pixels through this area, so don't stamp a black box over them --
+        // that just leaves a stray black bar sitting on top of the map.
         return;
     }
 
@@ -1927,6 +1928,15 @@ bool segmentSpanOk (const SCoord &s0, const SCoord &s1, uint16_t border)
         return (false);         // over the view button
     if (!overMap(s0) || !overMap(s1))
         return (false);         // off the map entirely
+    // Reject anything whose drawn extent (border) would poke past map_b's own rectangle --
+    // e.g. a fat dot or arrowhead whose *center* point is on-map but whose edge isn't, which
+    // otherwise bleeds into whatever sits just outside the map (like the DE/DX info panes).
+    if (s0.x < map_b.x+border || s0.x > map_b.x+map_b.w-border
+                        || s0.y < map_b.y+border || s0.y > map_b.y+map_b.h-border)
+        return (false);
+    if (s1.x < map_b.x+border || s1.x > map_b.x+map_b.w-border
+                        || s1.y < map_b.y+border || s1.y > map_b.y+map_b.h-border)
+        return (false);
     return (true);              // ok!
 }
 
@@ -1938,6 +1948,7 @@ bool segmentSpanOk (const SCoord &s0, const SCoord &s1, uint16_t border)
 bool segmentSpanOkRaw (const SCoord &s0, const SCoord &s1, uint16_t border)
 {
     uint16_t map_x = tft.SCALESZ*map_b.x;
+    uint16_t map_y = tft.SCALESZ*map_b.y;
     uint16_t map_w = tft.SCALESZ*map_b.w;
     uint16_t map_h = tft.SCALESZ*map_b.h;
 
@@ -1954,5 +1965,14 @@ bool segmentSpanOkRaw (const SCoord &s0, const SCoord &s1, uint16_t border)
         return (false);         // over the view button
     if (!overMap(raw2appSCoord(s0)) || !overMap(raw2appSCoord(s1)))
         return (false);         // off the map entirely
+    // same edge-extent guard as segmentSpanOk() above, just in raw (scaled) pixel space --
+    // keeps fat dots/arrowheads on satellite/DX paths from bleeding past map_b into whatever
+    // sits just outside it (DE/DX info panes, view button, etc).
+    if (s0.x < map_x+border || s0.x > map_x+map_w-border
+                        || s0.y < map_y+border || s0.y > map_y+map_h-border)
+        return (false);
+    if (s1.x < map_x+border || s1.x > map_x+map_w-border
+                        || s1.y < map_y+border || s1.y > map_y+map_h-border)
+        return (false);
     return (true);              // ok!
 }

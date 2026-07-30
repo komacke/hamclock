@@ -29,19 +29,7 @@
 
 #include "HamClock.h"
 
-/* return c blended most of the way toward white, for a brighter day-side rendition of whatever
- * base border/state color the user picked in Setup's color editor.
- */
-static uint16_t brightenForDay (uint16_t c)
-{
-    uint8_t r = RGB565_R(c);
-    uint8_t g = RGB565_G(c);
-    uint8_t b = RGB565_B(c);
-    r += (255-r)*3/4;
-    g += (255-g)*3/4;
-    b += (255-b)*3/4;
-    return (RGB565(r,g,b));
-}
+#define STATES_MIN_SPAN_PX  16           // LOD cutoff for states/provinces -- see drawBorderSet()
 
 /* return the night-side (base) line thickness, in pixels, for the given color selection.
  * N.B. deliberately reads the color editor's thin/thick tick box directly rather than going through
@@ -270,12 +258,24 @@ static bool borderPtIsDay (float lat, float lng)
     return (cos_t > 0);
 }
 
-/* draw bs's overlay from its cached projected points, using day_color/day_thick over the sunlit
- * half of the map and night_color/night_thick over the night (or twilight) half, so the overlay
- * stays visible against the brighter daytime map imagery.
+/* draw bs's overlay from its cached projected points. Line color is always the actual color the
+ * user picked in Setup's color editor (day and night use the same color now -- no brightening),
+ * but thickness still steps up by one pixel on the sunlit half so the overlay stays visible
+ * against the brighter daytime map imagery.
+ *
+ * min_span_px, if nonzero, is a level-of-detail cutoff in ordinary screen pixels: any ring whose
+ * on-screen bounding box is smaller than this in both dimensions is skipped outright rather than
+ * drawn as an unreadable speck. (bs->scr[] itself is in HamClock's raw/supersampled pixel space,
+ * tft.SCALESZ times bigger than the screen -- converted internally so callers can just think in
+ * normal pixels.) Judged per-ring from the already-projected screen points, so it naturally scales with
+ * zoom -- a small country/province gets skipped over a wide view but appears once zoomed in
+ * enough to actually read. Mainly needed for states/provinces: many countries define dozens of
+ * small first-level divisions that otherwise turn into unreadable clutter (e.g. central Africa).
+ * National borders don't pass this (see drawCountryBorders()) since even small countries are
+ * still meaningful at any zoom level borders are shown at.
  */
 static void drawBorderSet (BorderSet *bs, uint16_t day_color, uint16_t night_color,
-                            uint16_t day_thick, uint16_t night_thick)
+                            uint16_t day_thick, uint16_t night_thick, uint16_t min_span_px = 0)
 {
     if (!bs->loaded)
         return;
@@ -283,6 +283,26 @@ static void drawBorderSet (BorderSet *bs, uint16_t day_color, uint16_t night_col
     uint32_t pi = 0;
     for (uint16_t r = 0; r < bs->n_rings; r++) {
         uint16_t npts = bs->ring_len[r];
+
+        if (min_span_px > 0) {
+            uint32_t min_span_raw = (uint32_t)min_span_px * tft.SCALESZ;   // scr[] is raw pixel space
+            int32_t xlo = INT32_MAX, xhi = INT32_MIN, ylo = INT32_MAX, yhi = INT32_MIN;
+            for (uint16_t p = 0; p < npts; p++) {
+                const SCoord &s = bs->scr[pi+p];
+                if (s.x == 0)                        // off-map sentinel
+                    continue;
+                if (s.x < xlo) xlo = s.x;
+                if (s.x > xhi) xhi = s.x;
+                if (s.y < ylo) ylo = s.y;
+                if (s.y > yhi) yhi = s.y;
+            }
+            bool degenerate = (xlo > xhi);            // no valid on-screen points at all
+            if (degenerate || ((uint32_t)(xhi-xlo) < min_span_raw && (uint32_t)(yhi-ylo) < min_span_raw)) {
+                pi += npts;
+                continue;
+            }
+        }
+
         for (uint16_t p = 0; p < npts; p++) {
             uint32_t i0 = pi + p;
             uint32_t i1 = pi + (p+1) % npts;             // wrap last vertex back to first, closed ring
@@ -339,18 +359,16 @@ void drawCountryBorders(void)
     if (!borders_on)
         return;
 
-    uint16_t bclr_night = getMapColor (BORDERS_CSPR);
-    uint16_t bclr_day = brightenForDay (bclr_night);
+    uint16_t bclr = getMapColor (BORDERS_CSPR);
     int bthick_night = borderBaseThick (BORDERS_CSPR);
 
-    drawBorderSet (&bset_borders, bclr_day, bclr_night, bthick_night+1, bthick_night);
+    drawBorderSet (&bset_borders, bclr, bclr, bthick_night+1, bthick_night);
 
     if (pan_zoom.zoom == MAX_ZOOM) {
-        uint16_t sclr_night = getMapColor (STATES_CSPR);
-        uint16_t sclr_day = brightenForDay (sclr_night);
+        uint16_t sclr = getMapColor (STATES_CSPR);
         int sthick_night = borderBaseThick (STATES_CSPR);
 
-        drawBorderSet (&bset_states, sclr_day, sclr_night, sthick_night+1, sthick_night);
+        drawBorderSet (&bset_states, sclr, sclr, sthick_night+1, sthick_night, STATES_MIN_SPAN_PX);
     }
 }
 
