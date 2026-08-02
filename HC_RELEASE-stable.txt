@@ -1,10 +1,7 @@
 Changes with latest release:
-- Add Sat Alerts via Hams.at
-- Add plane icon to launch to ADSB
-- Add Planets Display in Setup
-- Add POTA spot support
-- Add proton data plots
-- Add Meshtastic watch support
-- improve display refresh performance
-- improve icons
-- fix storms on non-mercator maps
+- country lines on maps
+- US state lines on zoomed maps
+- clean stray pixels in status
+- snappier refresh of sat tracks
+- fix magnetic bearing display issue
+- fix various cyclon display issues
