@@ -1561,6 +1561,38 @@ bool httpSkipHeader (WiFiClient &client)
     return (httpSkipHeader (client, "Remote_Addr: ", remote_addr, sizeof(remote_addr)));
 }
 
+/* Open a movie URL. First check if the backend returns 404 for hc_page.
+ * If 404 (or connecting fails), open orig_url.
+ * Otherwise open backend URL.
+ */
+void openMovieURL (const char *hc_page, const char *orig_url)
+{
+    WiFiClient client;
+    bool is_404 = false;
+
+    if (client.connect (backend_host, backend_port)) {
+        httpHCGET (client, backend_host, hc_page);
+        char status_line[100];
+        int code = 0;
+        if (getTCPLine (client, status_line, sizeof(status_line), NULL)) {
+            if (sscanf (status_line, "HTTP/%*s %d", &code) == 1 && code == 404)
+                is_404 = true;
+        }
+        client.stop();
+    } else {
+        is_404 = true;
+    }
+
+    if (is_404) {
+        openURL (orig_url);
+    } else {
+        char backend_url[256];
+        snprintf (backend_url, sizeof(backend_url), "http://%s:%d/ham/HamClock%s",
+                  backend_host, backend_port, hc_page);
+        openURL (backend_url);
+    }
+}
+
 /* retrieve and plot latest and predicted DRAP indices, return whether io ok
  */
 static bool updateDRAP (const SBox &box)

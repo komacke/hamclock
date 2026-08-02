@@ -112,7 +112,7 @@ bool checkMoonTouch (const SCoord &s, const SBox &box)
             drawEMETool();
         }
         if (mitems[1].set)
-            openURL ("https://apod.nasa.gov/apod/ap240602.html");
+            openMovieURL ("/moon/movies/ap240602.html", "https://apod.nasa.gov/apod/ap240602.html");
 
         // refresh
         scheduleNewPlot (PLOT_CH_MOON);

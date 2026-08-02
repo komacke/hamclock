@@ -37,6 +37,16 @@ static const char *sdo_url[SDOT_N] = {
     "https://sdo.gsfc.nasa.gov/assets/img/latest/mpeg/latest_1024_0304.mp4",
 };
 
+static const char *sdo_filenames[SDOT_N] = {
+    "1024_211193171.mp4",
+    "1024_HMIB.mp4",
+    "1024_HMIIC.mp4",
+    "1024_0131.mp4",
+    "1024_0193.mp4",
+    "1024_0211.mp4",
+    "1024_0304.mp4",
+};
+
 static const char *sdo_file[SDOT_N] = {
     #if defined(_CLOCK_1600x960) 
         "f_211_193_171_340.bmp",
@@ -261,7 +271,11 @@ bool updateSDOPane (const SBox &box)
  */
 static void showSDOmovie (void)
 {
-    openURL (sdo_url[sdo_choice]);
+    char hc_page[256];
+
+    snprintf (hc_page, sizeof(hc_page), "/SDO/movies/%s", sdo_filenames[sdo_choice]);
+
+    openMovieURL (hc_page, sdo_url[sdo_choice]);
 }
 
 /* check for our touch in the given pane box.

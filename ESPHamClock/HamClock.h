@@ -2458,6 +2458,7 @@ extern QRZURLTable qrz_urltable[QRZ_N];
 
 extern void openQRZBio (const DXSpot &s);
 extern void openURL (const char *url);
+extern void openMovieURL (const char *hc_page, const char *orig_url);
 
 
 
