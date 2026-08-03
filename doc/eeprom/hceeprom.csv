@@ -229,3 +229,6 @@ Addr,Name,Len,Type,Description
 0xCEA,NV_CTYBORDERS_ON,1,i,whether to show the country-borders overlay
 0xCEC,NV_BORDERCOLOR,2,RGB,country border overlay color as RGB565
 0xCEF,NV_STATECOLOR,2,RGB,state/province border overlay color as RGB565
+0xCF2,NV_WEFAX_REGION,1,i,index into wefax_regions[] of last-selected region
+0xCF4,NV_WEFAX_PRODUCT,1,i,index into wefax_products[] of last-selected product
+0xCF6,NV_WEFAX_ENABLE,1,i,whether the WEFAX feature is offered at all (Setup screen)

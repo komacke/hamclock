@@ -176,6 +176,7 @@ OBJS = \
 	tz.o \
 	version.o \
 	webserver.o \
+	wefax.o \
 	watchlist.o \
 	wifi.o \
 	wifimeter.o \

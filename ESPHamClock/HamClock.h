@@ -617,6 +617,19 @@ extern uint8_t names_on;                // show place names when roving
 extern uint8_t borders_on;              // show country/state borders overlay on Clouds/Terrain
 extern SBox borders_btn_b;              // on-map "Borders On/Off" badge, next to the View button
 extern bool bordersBadgeVisible(void);  // whether that badge should currently be shown
+
+/*********************************************************************************************
+ *
+ * wefax.cpp
+ *
+ */
+
+extern uint8_t wefax_on;                // whether the viewer is currently open; runtime only, not NV
+extern SBox wefax_btn_b;                // on-map "WEFAX On/Off" badge, shares the Borders badge's slot
+extern bool wefaxBadgeVisible(void);    // whether that badge should currently be shown -- CM_WX only
+extern void drawWefaxButton(void);      // draw (or blank) the badge
+extern void initWefax(void);            // restore NV state at startup
+extern void runWefaxViewer(void);       // take over map_b showing the chart, until the user leaves
 extern void initCountryBorders(void);   // one-time fetch/load, call once at startup
 extern void updateCountryBorders(void); // reproject cached data to current pan/zoom/projection
 extern void drawCountryBorders(void);   // draw from the cached, already-projected data
@@ -2461,7 +2474,6 @@ extern void openURL (const char *url);
 extern void openMovieURL (const char *hc_page, const char *orig_url);
 
 
-
 /*********************************************************************************************
  *
  * radio.cpp
@@ -2843,6 +2855,7 @@ extern bool showNewDXDEWx(void);
 extern int getPaneRotationPeriod (void);
 extern bool showPIP(void);
 extern bool showPlanets(void);
+extern bool wefaxEnabled(void);
 extern bool autoMap(void);
 extern int getMapRotationPeriod(void);
 extern GrayDpy_t getGrayDisplay(void);

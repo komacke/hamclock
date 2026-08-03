@@ -652,6 +652,7 @@ typedef enum {
     MAXTLEB_BPR,
 
     SHOWPLANETS_BPR,
+    WEFAX_ENABLE_BPR,
 
     // page "6" -- color editor
 
@@ -966,6 +967,9 @@ static BoolPrompt bool_pr[N_BPR] = {
 
     {4, { 10, R2Y(12), 190, PR_H}, {200, R2Y(12), 170, PR_H}, false, "Show Planets?", "No", "Yes", NOMATE,
                     "Whether to show the 7 visible planets on the map at their current position"},
+
+    {4, {400, R2Y(12), 190, PR_H}, {590, R2Y(12), 85, PR_H}, false, "WEFAX?", "No", "Yes", NOMATE,
+                    "Whether to offer the WEFAX chart viewer badge when the Weather map style is active"},
 
 
 
@@ -4655,6 +4659,13 @@ static void initSetup()
     }
     bool_pr[SHOWPLANETS_BPR].state = (show_planets != 0);
 
+    uint8_t wefax_enable;
+    if (!NVReadUInt8 (NV_WEFAX_ENABLE, &wefax_enable)) {
+        wefax_enable = 1;                          // default On -- NVWriteUInt8 below makes this
+        NVWriteUInt8 (NV_WEFAX_ENABLE, wefax_enable);  // sticky, so a later explicit Off persists
+    }                                                   // and never gets defaulted back to On
+    bool_pr[WEFAX_ENABLE_BPR].state = (wefax_enable != 0);
+
     uint8_t auto_map;
     if (!NVReadUInt8 (NV_AUTOMAP, &auto_map)) {
         auto_map = 0;
@@ -5511,6 +5522,7 @@ static void saveParams2NV()
     NVWriteUInt8 (NV_MAPROTP, getMapRotationPeriod());
     NVWriteUInt8 (NV_SHOWPIP, showPIP());
     NVWriteUInt8 (NV_SHOWPLANETS, showPlanets());
+    NVWriteUInt8 (NV_WEFAX_ENABLE, wefaxEnabled());
     NVWriteUInt8 (NV_AUTOMAP, autoMap());
     NVWriteUInt8 (NV_GRAYDPY, (uint8_t)getGrayDisplay());
     NVWriteUInt8 (NV_QRZID, getQRZId());
@@ -6345,6 +6357,13 @@ bool showPIP()
 bool showPlanets()
 {
     return (bool_pr[SHOWPLANETS_BPR].state);
+}
+
+/* return whether the WEFAX feature is enabled at all (Setup screen master switch)
+ */
+bool wefaxEnabled()
+{
+    return (bool_pr[WEFAX_ENABLE_BPR].state);
 }
 
 

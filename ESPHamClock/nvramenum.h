@@ -376,28 +376,33 @@ typedef enum {
     // 253 -- retain the experimental marker so already-patched EEPROM files remain compatible
     NV_PLOTSCHEMA,                 // reserved plot settings schema marker
 
-    // 254 -- appended so all prior EEPROM addresses remain unchanged
+    // 254
     NV_PANE0ROTSET_HI,            // high 32 bits of pane 0 PlotChoice rotation mask
     NV_PANE1ROTSET_HI,            // high 32 bits of pane 1 PlotChoice rotation mask
     NV_PANE2ROTSET_HI,            // high 32 bits of pane 2 PlotChoice rotation mask
     NV_PANE3ROTSET_HI,            // high 32 bits of pane 3 PlotChoice rotation mask
 
-    // 255 -- appended so all prior EEPROM addresses remain unchanged
+    // 255
     NV_MESHWATCHLIST,             // comma-separated Meshtastic node IDs to draw neighbour links for
 
-    // 256 -- appended so all prior EEPROM addresses remain unchanged
+    // 256
     NV_PIAWAREHOST,                // user's PiAware ADS-B receiver host name or IP, else unused
 
-    // 257 -- appended so all prior EEPROM addresses remain unchanged
+    // 257
     NV_ONTA_MODES,                 // ONTA mode filter bitmask (see ONTAMB_* in ontheair.cpp)
     NV_ONTA_BANDS,                 // ONTA band filter bitmask, 1 bit per HamBandSetting
 
-    // 258 -- appended so all prior EEPROM addresses remain unchanged
+    // 258
     NV_CTYBORDERS_ON,               // whether to show the country-borders overlay
 
-    // 259 -- appended so all prior EEPROM addresses remain unchanged
+    // 259
     NV_BORDERCOLOR,                 // country border overlay color as RGB565
     NV_STATECOLOR,                  // state/province border overlay color as RGB565
+
+    // 260
+    NV_WEFAX_REGION,                // index into wefax_regions[] of last-selected region
+    NV_WEFAX_PRODUCT,               // index into wefax_products[] of last-selected product
+    NV_WEFAX_ENABLE,                // whether the WEFAX feature is offered at all (Setup screen)
 
 	NV_N
 
