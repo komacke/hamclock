@@ -1239,6 +1239,7 @@ void initEarthMap()
     // draw map view button
     drawMapMenuButton();
     drawBordersButton();
+    drawWefaxButton();
 
     // update astro info
     updateCircumstances();
@@ -1352,6 +1353,7 @@ void drawMoreEarth()
         // not just after a full initEarthMap(), or they silently vanish after the next redraw
         drawMapMenuButton();
         drawBordersButton();
+        drawWefaxButton();
 
         // draw now
         tft.drawPR();
