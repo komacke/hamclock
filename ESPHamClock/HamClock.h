@@ -2049,6 +2049,12 @@ typedef struct {
     int n_cols;                 // number of columns in which to display items
     int n_items;                // number of items[]
     MenuItem *items;            // list -- user must manage memory
+    const char *footer_text;    // optional colored status line below the items, above Ok/
+                                 // Cancel -- NULL means no footer. Every existing call site
+                                 // brace-initializes with 7 values, so this (and the field
+                                 // below) is automatically NULL/0 for all of them: adding
+                                 // this changes nothing for callers that don't know about it.
+    uint16_t footer_color;      // ignored if footer_text is NULL; 0 falls back to MENU_FGC
 } MenuInfo;
 
 extern bool runMenu (MenuInfo &menu);

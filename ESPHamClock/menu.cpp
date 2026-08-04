@@ -33,7 +33,15 @@
 
 // basic parameters
 // allow setting some/all these in Menu?
-#define MENU_TBM        2               // top and bottom margin
+#define MENU_TBM        5               // top and bottom margin -- was 2px, which read as
+                                        // cramped once longer item lists (eg pane choice, now
+                                        // 25 items) made menus tall enough for the tight margin
+                                        // to be visually obvious. Deliberately a small, uniform
+                                        // bump applied to every menu rather than special-cased
+                                        // to one -- adds ~6px total height (top+bottom) against
+                                        // boxes already well over 100px tall, and doesn't touch
+                                        // width at all, unlike the column-count approach that
+                                        // caused this menu to overlap neighboring panes.
 #define MENU_RM         2               // right margin
 #define MENU_RH         11              // row height, includes room for MENU_TEXT cursor
 #define MENU_IS         6               // indicator size
@@ -619,8 +627,11 @@ bool runMenu (MenuInfo &menu)
     // number of rows in each table column
     int n_tblrows = (n_table + menu.n_cols - 1)/menu.n_cols;
 
-    // set menu height, +1 for each MENU_TEXT, +1 for ok/cancel
-    menu.menu_b.h = MENU_TBM + (n_tblrows + n_mt + 1)*MENU_RH + MENU_TBM + MENU_BG;
+    // one more row if there's a footer status line -- 0 for every caller that doesn't set one
+    int n_footer = menu.footer_text ? 1 : 0;
+
+    // set menu height, +1 for each MENU_TEXT, +1 for an optional footer, +1 for ok/cancel
+    menu.menu_b.h = MENU_TBM + (n_tblrows + n_mt + n_footer + 1)*MENU_RH + MENU_TBM + MENU_BG;
 
     // set ok button size, don't know position yet
     menu.ok_b.w = getTextWidth (ok_label) + MENU_BDX*2;
@@ -718,6 +729,20 @@ bool runMenu (MenuInfo &menu)
             menuDrawItem (mi, pb, true, false);
             tblcell_i++;
         }
+    }
+
+    // optional footer status line -- drawn once here, same as the items above it; the
+    // interactive loop below only ever redraws a specific tapped item or the Ok button, so
+    // this persists for the life of the menu without needing to be part of that redraw path.
+    // Deliberately does NOT grow menu_b.w to fit -- unlike table items, which do grow the box
+    // -- so a long footer_text clips rather than risking the box widening into whatever's next
+    // to it; keep footer text short.
+    if (menu.footer_text) {
+        uint16_t fy = menu.menu_b.y + MENU_TBM + (n_tblrows + n_mt)*MENU_RH;
+        tft.setTextColor (menu.footer_color ? menu.footer_color : MENU_FGC);
+        tft.setCursor (menu.menu_b.x + MENU_RM, fy + MENU_BDROP);
+        tft.print (menu.footer_text);
+        tft.setTextColor (MENU_FGC);           // restore default for Ok/Cancel drawn next
     }
 
     // immediate draw if menu is over map
