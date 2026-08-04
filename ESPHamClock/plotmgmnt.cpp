@@ -190,6 +190,68 @@ bool enforceCDownAlone (const SBox &box, PlotMask rotset)
  * always return a selection even if it's the current selection again, never PLOT_CH_NONE.
  * N.B. do not use this for PANE_0
  */
+/* category grouping for askPaneChoice()'s pane-choice picker -- keeps each individual
+ * checklist short and fixed-size regardless of how many PLOT_CH choices exist in total,
+ * rather than one ever-growing list whose box has to keep growing to match (which is what
+ * caused the original cramped-then-overlapping problems this replaces).
+ */
+static const char *pane_categories[] = {
+    "Space Wx",
+    "DX & Contest",
+    "Weather",
+    "Sky & Space",
+    "Station & Sensors",
+    "Other",
+};
+#define N_PANE_CATEGORIES  NARRAY(pane_categories)
+
+/* which category a given PlotChoice belongs to, for the picker above.
+ * N.B. deliberately falls through to "Other" (category 5) via default: rather than
+ * enumerating every single PlotChoice explicitly -- a future PLOT_CH_* added here without
+ * being explicitly categorized still shows up (in Other) instead of silently vanishing
+ * from the menu entirely, which would be a much worse failure mode than just being in the
+ * wrong bucket until someone gives it a real category.
+ */
+static int categoryOfChoice (PlotChoice pc)
+{
+    switch (pc) {
+    case PLOT_CH_AURORA: case PLOT_CH_BZBT: case PLOT_CH_DST: case PLOT_CH_DRAP:
+    case PLOT_CH_NOAASPW: case PLOT_CH_KP: case PLOT_CH_FLUX: case PLOT_CH_SOLWIND:
+    case PLOT_CH_SSN: case PLOT_CH_XRAY:
+        return 0;   // Space Weather
+
+    case PLOT_CH_CONTESTS: case PLOT_CH_DXCLUSTER: case PLOT_CH_DXPEDS: case PLOT_CH_HFCOND:
+    case PLOT_CH_PSK: case PLOT_CH_ONTA: case PLOT_CH_VHFCOND: case PLOT_CH_BC:
+        return 1;   // DX & Contest
+
+    case PLOT_CH_DEWX: case PLOT_CH_DXWX: case PLOT_CH_STORMS:
+        return 2;   // Weather
+
+    case PLOT_CH_MOON: case PLOT_CH_SDO: case PLOT_CH_SATACT:
+        return 3;   // Sky & Space
+
+    case PLOT_CH_GIMBAL: case PLOT_CH_TEMPERATURE: case PLOT_CH_PRESSURE:
+    case PLOT_CH_HUMIDITY: case PLOT_CH_DEWPOINT: case PLOT_CH_ADIF:
+        return 4;   // Station & Sensors
+
+    default:
+        return 5;   // Other -- Nets, Mesh_Mon, Launches, Countdown, and anything new
+                     // that hasn't been explicitly categorized yet
+    }
+}
+
+/* reverse lookup: MenuItem.label (a pointer into plot_names[]) back to its PlotChoice,
+ * or PLOT_CH_NONE if not found. Same match-by-label technique askPaneChoice()'s commit
+ * step already used inline; factored out since the category loop below needs it too.
+ */
+static PlotChoice labelToChoice (const char *label)
+{
+    for (int j = 0; j < PLOT_CH_N; j++)
+        if (PLOT_CH_IS_REAL(j) && strcmp (plot_names[j], label) == 0)
+            return (PlotChoice) j;
+    return PLOT_CH_NONE;
+}
+
 static PlotChoice askPaneChoice (PlotPane pp)
 {
     // not for use for PANE_0
@@ -199,7 +261,9 @@ static PlotChoice askPaneChoice (PlotPane pp)
     // set this temporarily to show all choices, just for testing worst-case layout
     #define ASKP_SHOWALL 0                      // RBF
 
-    // build items from all candidates suitable for this pane
+    // build items from all candidates suitable for this pane -- unchanged from before;
+    // categorization only affects how this list gets displayed/edited below, not what's
+    // tracked. mitems[].set is the running truth for the whole operation throughout.
     MenuItem *mitems = NULL;
     int n_mitems = 0;
     for (int i = 0; i < PLOT_CH_N; i++) {
@@ -215,7 +279,14 @@ static PlotChoice askPaneChoice (PlotPane pp)
             if (!mitems)
                 fatalError ("pane alloc: %d", n_mitems);
             MenuItem &mi = mitems[n_mitems++];
-            mi.type = MENU_AL1OFN;
+            // MENU_TOGGLE, not MENU_AL1OFN: renders identically (same checkbox fallthrough
+            // in menuDrawItem()) but isn't subject to menuStateOk()'s "Ok disabled if none
+            // set" rule. That rule made sense for the original single flat list (a pane needs
+            // >=1 choice overall) but once split into per-category sub-menus it was firing
+            // per category independently, blocking Ok whenever any one category was reduced
+            // to zero even with plenty selected elsewhere. The overall "at least one total"
+            // guarantee is now enforced once, explicitly, at the picker's finish point below.
+            mi.type = MENU_TOGGLE;
             mi.set = paneHasChoice (pp, pc) ? true : false;
             mi.label = plot_names[pc];
             mi.indent = 2;
@@ -226,16 +297,147 @@ static PlotChoice askPaneChoice (PlotPane pp)
     // nice sort by label
     qsort (mitems, n_mitems, sizeof(MenuItem), menuChoiceQS);
 
-    // run
-    SBox box = plot_b[pp];       // copy
-    SBox ok_b;
-    MenuInfo menu = {box, ok_b, UF_CLOCKSOK, M_CANCELOK, 2, n_mitems, mitems};
-    bool menu_ok = runMenu (menu);
+    // category loop: repeatedly show a small category picker, drill into whichever one is
+    // picked (its own short checklist, editing mitems[].set in place), then loop back --
+    // so the user can still touch items across multiple categories in one operation, the
+    // same thing the old single giant checklist allowed, just one category at a time.
+    // Cancelling the picker itself abandons everything (same meaning Cancel has everywhere
+    // else); picking the synthetic "Total Selections" entry (or pressing Ok with nothing
+    // picked -- see below for why that's possible) stops browsing and applies mitems[] as-is.
+    SBox box = plot_b[pp];       // copy -- pristine, never mutated; every runMenu() call
+                                  // below gets its own fresh copy of this, not a shared/
+                                  // reused SBox, since runMenu() resizes menu_b/ok_b in place
+                                  // and a reused box could carry over a previous call's size
+    bool proceed = false;
+
+    for (;;) {
+
+        // per-category selected/total counts, for the summary shown on each picker row --
+        // a bounded "(N/M)" suffix rather than listing selected item names, which is the
+        // right call specifically because it can't grow unwieldy: the format is the same
+        // width whether a category has 1 selected item or 20, unlike a name list would be
+        int cat_total[N_PANE_CATEGORIES] = {0};
+        int cat_selected[N_PANE_CATEGORIES] = {0};
+        for (int i = 0; i < n_mitems; i++) {
+            PlotChoice pc = labelToChoice (mitems[i].label);
+            if (pc != PLOT_CH_NONE) {
+                int c = categoryOfChoice(pc);
+                cat_total[c]++;
+                if (mitems[i].set)
+                    cat_selected[c]++;
+            }
+        }
+        int total_selected = 0;
+        for (int i = 0; i < n_mitems; i++)
+            if (mitems[i].set)
+                total_selected++;
+
+        // build the picker: one radio row per non-empty category. No synthetic "done" row --
+        // pressing Ok with no category picked (menuStateOk() doesn't gate MENU_1OFN groups,
+        // confirmed earlier) already means "finish", same as Ok always means "confirm and
+        // proceed" in every other menu in the app; a running total is shown as a footer
+        // status line instead of a fake selectable row.
+        // cat_labels[] holds the "Name (N/M)" strings runMenu() reads from -- must stay
+        // alive through the runMenu() call below, hence declared here, not in a helper
+        char cat_labels[N_PANE_CATEGORIES][64];
+        MenuItem cat_items[N_PANE_CATEGORIES];
+        int cat_of_row[N_PANE_CATEGORIES];     // picker row -> category index
+        int n_cat_items = 0;
+        for (int c = 0; c < (int)N_PANE_CATEGORIES; c++) {
+            if (cat_total[c] == 0)
+                continue;
+            MenuItem &mi = cat_items[n_cat_items];
+            mi.type = MENU_1OFN;
+            mi.set = false;
+            snprintf (cat_labels[n_cat_items], sizeof(cat_labels[0]), "%s (%d/%d)",
+                      pane_categories[c], cat_selected[c], cat_total[c]);
+            mi.label = cat_labels[n_cat_items];
+            mi.indent = 2;
+            mi.group = 1;
+            cat_of_row[n_cat_items] = c;
+            n_cat_items++;
+        }
+
+        char footer[64];
+        snprintf (footer, sizeof(footer), "Total Selections (%d/%d)", total_selected, n_mitems);
+
+        SBox cat_box = box;            // fresh copy for this call
+        SBox cat_ok_b;
+        MenuInfo cat_menu = {cat_box, cat_ok_b, UF_CLOCKSOK, M_CANCELOK, 1, n_cat_items, cat_items,
+                              footer, RA8875_YELLOW, true};
+        bool cat_ok = runMenu (cat_menu);
+
+        if (!cat_ok) {
+            // Cancel at the picker -- abandon the whole operation
+            proceed = false;
+            break;
+        }
+
+        // which category did they pick, if any? Ok with nothing picked means finish.
+        int picked = -1;
+        for (int i = 0; i < n_cat_items; i++) {
+            if (cat_items[i].set) {
+                picked = cat_of_row[i];
+                break;
+            }
+        }
+
+        if (picked == -1) {
+            if (total_selected == 0) {
+                // don't allow finishing with nothing selected anywhere -- the same overall
+                // guarantee MENU_AL1OFN used to provide automatically, now enforced once
+                // here instead of per-category (see the MENU_TOGGLE comment above for why)
+                menuMsg (cat_box, RA8875_RED, "Select an item");
+                continue;
+            }
+            // finished browsing categories -- apply mitems[] as-is
+            proceed = true;
+            break;
+        }
+
+        // drill into the picked category: build its own short checklist from the matching
+        // subset of mitems[], preserving current .set state, run it, write any changes back
+        int cat = picked;
+        MenuItem *sub_items = NULL;
+        int *sub_to_master = NULL;     // sub-menu row -> index into mitems[]
+        int n_sub = 0;
+        for (int i = 0; i < n_mitems; i++) {
+            PlotChoice pc = labelToChoice (mitems[i].label);
+            if (pc != PLOT_CH_NONE && categoryOfChoice(pc) == cat) {
+                sub_items = (MenuItem *) realloc (sub_items, (n_sub+1)*sizeof(MenuItem));
+                sub_to_master = (int *) realloc (sub_to_master, (n_sub+1)*sizeof(int));
+                if (!sub_items || !sub_to_master)
+                    fatalError ("pane category alloc: %d", n_sub);
+                sub_items[n_sub] = mitems[i];      // copies current .set state too
+                sub_to_master[n_sub] = i;
+                n_sub++;
+            }
+        }
+
+        SBox sub_box = box;            // fresh copy for this call
+        SBox sub_ok_b;
+        // footer_live_count=true: runMenu() itself recomputes and redraws "<category> (N/M)"
+        // after every toggle, using pane_categories[cat] as the label prefix -- genuinely
+        // live now, not a snapshot of the count as of when this sub-menu opened
+        MenuInfo sub_menu = {sub_box, sub_ok_b, UF_CLOCKSOK, M_CANCELOK, 2, n_sub, sub_items,
+                              pane_categories[cat], RA8875_YELLOW, false, true};
+        bool sub_ok = runMenu (sub_menu);
+
+        if (sub_ok) {
+            for (int i = 0; i < n_sub; i++)
+                mitems[sub_to_master[i]].set = sub_items[i].set;
+        }
+        // else: Cancel within a category discards just that category's edits this pass;
+        // loop back to the picker with every other category's state untouched
+
+        free (sub_items);
+        free (sub_to_master);
+    }
 
     // return current choice by default
     PlotChoice return_ch = plot_ch[pp];
 
-    if (menu_ok) {
+    if (proceed) {
 
         // build the complete 64-bit rotation set. Choices after the fixed NONE sentinel are
         // represented in the high word, so Sat Alerts can rotate with any other pane choice.

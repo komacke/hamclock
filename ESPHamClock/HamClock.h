@@ -2049,6 +2049,31 @@ typedef struct {
     int n_cols;                 // number of columns in which to display items
     int n_items;                // number of items[]
     MenuItem *items;            // list -- user must manage memory
+    const char *footer_text;    // optional colored status line below the items, above Ok/
+                                 // Cancel -- NULL means no footer. Every existing call site
+                                 // brace-initializes with 7 values, so this (and the field
+                                 // below) is automatically NULL/0 for all of them: adding
+                                 // this changes nothing for callers that don't know about it.
+    uint16_t footer_color;      // ignored if footer_text is NULL; 0 falls back to MENU_FGC
+    bool instant_1ofn;          // when true, tapping a MENU_1OFN item (that ends up .set)
+                                 // exits the menu immediately as if Ok had been pressed,
+                                 // instead of requiring a separate Ok tap after selecting.
+                                 // False (default for every caller not listing this field,
+                                 // same aggregate-init reasoning as footer_text above) means
+                                 // completely unchanged behavior -- selecting still requires
+                                 // a separate Ok, as it always has.
+    bool footer_live_count;     // false (default): footer_text is printed exactly as given,
+                                 // once, at initial draw only -- today's behavior, unchanged.
+                                 // true: footer_text is treated as a label prefix, and
+                                 // runMenu() appends a live "(selected/total)" count over its
+                                 // own MENU_TOGGLE/MENU_AL1OFN/MENU_0OFN/MENU_01OFN/MENU_1OFN
+                                 // items, redrawn after every toggle -- for a menu whose
+                                 // footer describes ITS OWN items. Not appropriate for a
+                                 // footer describing a different, external list (see the
+                                 // pane-choice category picker in plotmgmnt.cpp for exactly
+                                 // that distinction -- its footer reports on a master array
+                                 // living outside the running menu entirely, so it keeps
+                                 // using a plain, caller-formatted string instead).
 } MenuInfo;
 
 extern bool runMenu (MenuInfo &menu);

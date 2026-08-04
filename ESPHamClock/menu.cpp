@@ -33,7 +33,15 @@
 
 // basic parameters
 // allow setting some/all these in Menu?
-#define MENU_TBM        2               // top and bottom margin
+#define MENU_TBM        5               // top and bottom margin -- was 2px, which read as
+                                        // cramped once longer item lists (eg pane choice, now
+                                        // 25 items) made menus tall enough for the tight margin
+                                        // to be visually obvious. Deliberately a small, uniform
+                                        // bump applied to every menu rather than special-cased
+                                        // to one -- adds ~6px total height (top+bottom) against
+                                        // boxes already well over 100px tall, and doesn't touch
+                                        // width at all, unlike the column-count approach that
+                                        // caused this menu to overlap neighboring panes.
 #define MENU_RM         2               // right margin
 #define MENU_RH         11              // row height, includes room for MENU_TEXT cursor
 #define MENU_IS         6               // indicator size
@@ -261,6 +269,73 @@ static void menuItemsAllOff (MenuInfo &menu, SBox *pick_boxes, int ii)
 
 
 
+/* draw (or redraw) the optional footer status line, if menu.footer_text is set. Recomputes
+ * its own layout position fresh each call (cheap: just a loop over menu.items[]) rather than
+ * needing n_tblrows/n_mt threaded in from runMenu()'s own computation of those, so this can
+ * be called after every toggle, not just once at initial draw.
+ *
+ * Two modes, selected by menu.footer_live_count:
+ *   false (default) -- print footer_text exactly as given. Original, unchanged behavior;
+ *     right for a footer describing something other than this menu's own items (eg the
+ *     pane-choice category picker in plotmgmnt.cpp, whose footer reports a running total
+ *     over a master array that lives outside this particular runMenu() call entirely).
+ *   true -- treat footer_text as a label prefix and append a live "(selected/total)" count
+ *     computed over this menu's own MENU_TOGGLE/MENU_AL1OFN/MENU_0OFN/MENU_01OFN/MENU_1OFN
+ *     items (MENU_LABEL/MENU_BLANK/MENU_IGNORE/MENU_TEXT don't have a meaningful .set concept
+ *     and don't count toward either number). Right for a footer describing this menu's own
+ *     checklist, eg the pane-choice per-category sub-menu.
+ */
+static void drawMenuFooter (MenuInfo &menu)
+{
+    if (!menu.footer_text)
+        return;
+
+    // recompute table-row layout fresh -- same logic runMenu() used to size the box,
+    // needed here too so the footer lands on the right row regardless of who's calling
+    int n_table = 0, n_mt = 0;
+    for (int i = 0; i < menu.n_items; i++) {
+        MenuFieldType t = menu.items[i].type;
+        if (t == MENU_IGNORE)
+            continue;
+        if (t == MENU_TEXT)
+            n_mt++;
+        else
+            n_table++;
+    }
+    int n_tblrows = (n_table + menu.n_cols - 1)/menu.n_cols;
+
+    char buf[64];
+    if (menu.footer_live_count) {
+        int selected = 0, total = 0;
+        for (int i = 0; i < menu.n_items; i++) {
+            MenuFieldType t = menu.items[i].type;
+            if (t == MENU_TOGGLE || t == MENU_AL1OFN || t == MENU_0OFN
+                        || t == MENU_01OFN || t == MENU_1OFN) {
+                total++;
+                if (menu.items[i].set)
+                    selected++;
+            }
+        }
+        snprintf (buf, sizeof(buf), "%s (%d/%d)", menu.footer_text, selected, total);
+    } else {
+        snprintf (buf, sizeof(buf), "%s", menu.footer_text);
+    }
+
+    uint16_t fy = menu.menu_b.y + MENU_TBM + (n_tblrows + n_mt)*MENU_RH;
+    // inset 1px each side -- drawSBox(menu.menu_b,...) draws a 1px outline right at these
+    // same x/x+w edges; without the inset this fill overwrites that outline at the footer's
+    // row specifically, erasing the box border there until something else happens to redraw it
+    SBox fbox = {(uint16_t)(menu.menu_b.x+1), fy, (uint16_t)(menu.menu_b.w-2), (uint16_t)MENU_RH};
+    fillSBox (fbox, MENU_BGC);         // erase whatever was there before -- the new count
+                                        // may be shorter than the old one, would otherwise
+                                        // leave stale trailing characters behind
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
+    tft.setTextColor (menu.footer_color ? menu.footer_color : MENU_FGC);
+    tft.setCursor (fbox.x + MENU_RM, fy + MENU_BDROP);
+    tft.print (buf);
+    tft.setTextColor (MENU_FGC);       // restore default for whatever draws next
+}
+
 /* engage an action at the specified pick index.
  * kb_focus indicates whether to highlight the new focus item for keyboard navigation.
  */
@@ -312,6 +387,9 @@ static void updateMenu (MenuInfo &menu, SBox *pick_boxes, int pick_i, bool kb_fo
         menuDrawItem (mi, pb, true, kb_focus);
         break;
     }
+
+    // live footer redraw, if this menu wants one -- cheap no-op otherwise (footer_text NULL)
+    drawMenuFooter (menu);
 }
 
 
@@ -619,8 +697,11 @@ bool runMenu (MenuInfo &menu)
     // number of rows in each table column
     int n_tblrows = (n_table + menu.n_cols - 1)/menu.n_cols;
 
-    // set menu height, +1 for each MENU_TEXT, +1 for ok/cancel
-    menu.menu_b.h = MENU_TBM + (n_tblrows + n_mt + 1)*MENU_RH + MENU_TBM + MENU_BG;
+    // one more row if there's a footer status line -- 0 for every caller that doesn't set one
+    int n_footer = menu.footer_text ? 1 : 0;
+
+    // set menu height, +1 for each MENU_TEXT, +1 for an optional footer, +1 for ok/cancel
+    menu.menu_b.h = MENU_TBM + (n_tblrows + n_mt + n_footer + 1)*MENU_RH + MENU_TBM + MENU_BG;
 
     // set ok button size, don't know position yet
     menu.ok_b.w = getTextWidth (ok_label) + MENU_BDX*2;
@@ -720,6 +801,11 @@ bool runMenu (MenuInfo &menu)
         }
     }
 
+    // optional footer status line -- see drawMenuFooter() for the two modes. Drawn here for
+    // the initial paint; updateMenu() calls the same function again after every toggle so a
+    // live-count footer stays current without needing to be part of the per-item redraw path.
+    drawMenuFooter (menu);
+
     // immediate draw if menu is over map
     if (boxesOverlap (menu.menu_b, map_b))
         tft.drawPR();
@@ -796,8 +882,23 @@ bool runMenu (MenuInfo &menu)
                     focus_idx = textFieldEdit (menu, pick_boxes, focus_idx, ui.kb_char);
                 else
                     focus_idx = kbNavigation (menu, pick_boxes, focus_idx, ui.kb_char);
-            } else
+            } else {
                 focus_idx = tapNavigation (menu, pick_boxes, focus_idx, ui.tap);
+
+                // opt-in: let a tap that selects a MENU_1OFN item act immediately, skipping
+                // the separate Ok confirmation most menus require. inBox() check rules out a
+                // tap that missed every item (tapNavigation() leaves focus_idx unchanged in
+                // that case) coincidentally leaving focus_idx pointed at an item that was
+                // already selected from an earlier tap -- without it, a stray tap on blank
+                // space inside the menu could wrongly trigger an exit.
+                if (menu.instant_1ofn && menu.items[focus_idx].type == MENU_1OFN
+                            && menu.items[focus_idx].set
+                            && inBox (ui.tap, pick_boxes[focus_idx])
+                            && menuStateOk (menu)) {
+                    ok = true;
+                    break;
+                }
+            }
 
             // refresh Ok button state
             menuRedrawOk (menu.ok_b, menuStateOk(menu) ? MENU_OK_OK : MENU_OK_DISABLE);
