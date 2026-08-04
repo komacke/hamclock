@@ -339,7 +339,7 @@ static PlotChoice askPaneChoice (PlotPane pp)
         // status line instead of a fake selectable row.
         // cat_labels[] holds the "Name (N/M)" strings runMenu() reads from -- must stay
         // alive through the runMenu() call below, hence declared here, not in a helper
-        char cat_labels[N_PANE_CATEGORIES][40];
+        char cat_labels[N_PANE_CATEGORIES][64];
         MenuItem cat_items[N_PANE_CATEGORIES];
         int cat_of_row[N_PANE_CATEGORIES];     // picker row -> category index
         int n_cat_items = 0;
@@ -358,13 +358,13 @@ static PlotChoice askPaneChoice (PlotPane pp)
             n_cat_items++;
         }
 
-        char footer[40];
+        char footer[64];
         snprintf (footer, sizeof(footer), "Total Selections (%d/%d)", total_selected, n_mitems);
 
         SBox cat_box = box;            // fresh copy for this call
         SBox cat_ok_b;
         MenuInfo cat_menu = {cat_box, cat_ok_b, UF_CLOCKSOK, M_CANCELOK, 1, n_cat_items, cat_items,
-                              footer, RA8875_YELLOW};
+                              footer, RA8875_YELLOW, true};
         bool cat_ok = runMenu (cat_menu);
 
         if (!cat_ok) {
@@ -387,7 +387,7 @@ static PlotChoice askPaneChoice (PlotPane pp)
                 // don't allow finishing with nothing selected anywhere -- the same overall
                 // guarantee MENU_AL1OFN used to provide automatically, now enforced once
                 // here instead of per-category (see the MENU_TOGGLE comment above for why)
-                menuMsg (cat_box, RA8875_RED, "Select at least one item first");
+                menuMsg (cat_box, RA8875_RED, "Select an item");
                 continue;
             }
             // finished browsing categories -- apply mitems[] as-is
@@ -414,21 +414,13 @@ static PlotChoice askPaneChoice (PlotPane pp)
             }
         }
 
-        // snapshot count for the footer below -- like the picker's own footer, this is
-        // as-of-open, not live while toggling within this same visit: only the tapped
-        // item and the Ok button get redrawn during interaction, not the whole box
-        int sub_selected = 0;
-        for (int i = 0; i < n_sub; i++)
-            if (sub_items[i].set)
-                sub_selected++;
-        char sub_footer[40];
-        snprintf (sub_footer, sizeof(sub_footer), "%s: %d/%d selected",
-                  pane_categories[cat], sub_selected, n_sub);
-
         SBox sub_box = box;            // fresh copy for this call
         SBox sub_ok_b;
+        // footer_live_count=true: runMenu() itself recomputes and redraws "<category> (N/M)"
+        // after every toggle, using pane_categories[cat] as the label prefix -- genuinely
+        // live now, not a snapshot of the count as of when this sub-menu opened
         MenuInfo sub_menu = {sub_box, sub_ok_b, UF_CLOCKSOK, M_CANCELOK, 2, n_sub, sub_items,
-                              sub_footer, RA8875_YELLOW};
+                              pane_categories[cat], RA8875_YELLOW, false, true};
         bool sub_ok = runMenu (sub_menu);
 
         if (sub_ok) {
