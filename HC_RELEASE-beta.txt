@@ -1,3 +1,4 @@
 Changes with latest release:
 - Fix vertical position of call sign
 - WEFAX on wx maps
+- panel categories
