@@ -2039,6 +2039,14 @@ typedef struct {
     uint8_t indent;             // pixels to indent
     const char *label;          // string -- user must manage memory
     MenuText *textf;            // text field -- type must be MENU_TEXT -- our label is ignored
+    bool submenu;                // true if picking this MENU_1OFN row navigates into another
+                                 // menu (eg a category picker row) rather than making a final
+                                 // choice -- draws with a distinct outline triangle indicator
+                                 // instead of the usual round radio dot, so a nested menu of
+                                 // menus is visually distinguishable from a plain single-pick
+                                 // list. Appended after label/textf so every existing positional
+                                 // aggregate init ({MENU_1OFN, set, group, indent, "label", 0})
+                                 // continues to compile unchanged and defaults this to false.
 } MenuItem;
 
 typedef struct {
@@ -2077,6 +2085,7 @@ typedef struct {
 } MenuInfo;
 
 extern bool runMenu (MenuInfo &menu);
+extern void menuDrawItem (const MenuItem &mi, const SBox &pb, bool draw_label, bool kb_focus);
 extern void menuMsg (const SBox &box, uint16_t color, const char *msg);
 extern void menuRedrawOk (SBox &ok_b, MenuOkState oks);
 
@@ -2376,7 +2385,15 @@ extern void forcePaneRotationPrev (PlotPane pp);
 extern bool plotChoiceIsAvailable (PlotChoice ch);
 extern void logPaneRotSet (PlotPane pp, PlotChoice ch);
 extern void logBRBRotSet(void);
-extern void showRotatingBorder (void);
+extern void showRotatingBorder (PlotPane skip_pp = PANE_NONE);   // skip_pp: leave this pane's
+                                                                  // border alone, eg because a
+                                                                  // picker for it is up right now
+extern PlotPane menu_open_for_pane;    // PANE_NONE, or the one pane whose own picker is up right
+                                        // now -- showRotatingBorder() always leaves this pane's
+                                        // border alone too, in addition to any skip_pp a caller
+                                        // passes explicitly, since most of showRotatingBorder()'s
+                                        // callers (eg updateClocks(), on every tick) have no idea
+                                        // a picker might be open and can't pass skip_pp themselves
 extern void initPlotPanes(void);
 extern void savePlotOps(void);
 extern int tickmarks (float min, float max, int numdiv, float ticks[]);
@@ -3479,7 +3496,11 @@ extern void initSys (void);
 extern void initWiFiRetry(void);
 extern void scheduleNewPlot (PlotChoice ch);
 extern void scheduleNewCoreMap (CoreMaps cm);
-extern void updateWiFi(void);
+extern void updateWiFi(PlotPane skip_pp = PANE_NONE);      // skip_pp: don't touch this pane
+                                                             // (rotation or content), eg because
+                                                             // a picker for it is on screen right
+                                                             // now and would have its own overlay
+                                                             // clobbered by a normal pane redraw
 extern bool checkBCTouch (const SCoord &s, const SBox &b);
 extern void setPlotVisible (PlotChoice pc);
 extern bool setPlotChoice (PlotPane new_pp, PlotChoice new_ch);

@@ -2211,7 +2211,7 @@ bool checkBCTouch (const SCoord &s, const SBox &b)
 /* check if it is time to update any info via wifi.
  * proceed even if no wifi to allow subsystems to update.
  */
-void updateWiFi(void)
+void updateWiFi(PlotPane skip_pp)
 {
 
     // time now
@@ -2223,6 +2223,10 @@ void updateWiFi(void)
         // too bad you can't iterate an enum
         PlotPane pp = (PlotPane)i;
 
+        // leave this one alone -- eg its own picker is up right now
+        if (pp == skip_pp)
+            continue;
+
         // handy
         const SBox &box = plot_b[pp];
         PlotChoice pc = plot_ch[pp];
@@ -2232,7 +2236,7 @@ void updateWiFi(void)
 
             pc = plot_ch[pp] = getNextRotationChoice(pp, plot_ch[pp]);
             next_rotation[pp] = nextRotation(pp);
-            showRotatingBorder ();
+            showRotatingBorder (skip_pp);
 
             // if a choice needs fresh_redraw when newly exposed set it here
             if (pc == PLOT_CH_DXCLUSTER) fresh_redraw[PLOT_CH_DXCLUSTER] = true;

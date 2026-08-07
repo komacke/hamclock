@@ -153,7 +153,7 @@ static void drawMenuTextMsg (const MenuItem &mi, const SBox &pb, const char *msg
 /* draw selector symbol and label for the given menu item in the given pick box.
  * kb_focus indicates this item has the keyboard focus.
  */
-static void menuDrawItem (const MenuItem &mi, const SBox &pb, bool draw_label, bool kb_focus)
+void menuDrawItem (const MenuItem &mi, const SBox &pb, bool draw_label, bool kb_focus)
 {
     // N.B. updateClocks can change font!
     selectFontStyle (LIGHT_FONT, FAST_FONT);
@@ -185,7 +185,20 @@ static void menuDrawItem (const MenuItem &mi, const SBox &pb, bool draw_label, b
     case MENU_0OFN:     // fallthru
     case MENU_01OFN:    // fallthru
     case MENU_1OFN:
-        if (mi.set)
+        if (mi.type == MENU_1OFN && mi.submenu) {
+            // outline down-pointing triangle (U+25BD look-alike) instead of the round radio
+            // dot: this row navigates into another menu rather than making a final choice,
+            // so it needs a visibly different indicator than a plain single-pick list item.
+            uint16_t tx0 = pb.x + mi.indent, ty0 = pb.y + (MENU_RH-MENU_IS)/2;
+            uint16_t tx1 = tx0 + MENU_IS,    ty1 = ty0;
+            uint16_t tx2 = tx0 + MENU_IS/2,  ty2 = ty0 + MENU_IS;
+            if (mi.set)
+                tft.fillTriangle (tx0, ty0, tx1, ty1, tx2, ty2, MENU_FGC);
+            else {
+                tft.fillTriangle (tx0, ty0, tx1, ty1, tx2, ty2, MENU_BGC);
+                tft.drawTriangle (tx0, ty0, tx1, ty1, tx2, ty2, MENU_FGC);
+            }
+        } else if (mi.set)
             tft.fillCircle (pb.x + mi.indent + MENU_IS/2, pb.y + MENU_RH/2, MENU_IS/2, MENU_FGC);
         else {
             tft.fillCircle (pb.x + mi.indent + MENU_IS/2, pb.y + MENU_RH/2, MENU_IS/2, MENU_BGC);
