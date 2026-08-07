@@ -829,6 +829,47 @@ bool Adafruit_RA8875::setBackingStore (uint8_t *&backing_store, int x0, int y0, 
         return (true);
 }
 
+/* like setBackingStore() but restores only a horizontal sub-strip of the originally captured
+ * rectangle -- rows [sub_y0, sub_y0+sub_h) measured from y0 -- and does NOT free backing_store,
+ * since the caller may still need the rest of it (eg to restore other strips later, or the
+ * whole rectangle at the very end via setBackingStore). x0,y0,w,h describe the ORIGINAL
+ * rectangle exactly as passed to getBackingStore(); sub_y0/sub_h describe the portion of it
+ * to restore right now. Meant for UI that grows and shrinks over live content (eg the map)
+ * during its own lifetime: as it shrinks, whatever it uncovers should show the real pixels
+ * that were there, not a plain fill, without waiting for the whole popup to close first.
+ * coords are in 800x480 app coords, not physical fb coords.
+ * return whether request is within bounds.
+ */
+bool Adafruit_RA8875::restoreBackingRegion (uint8_t *backing_store, int x0, int y0, int w, int h,
+                                             int sub_y0, int sub_h)
+{
+        x0 *= SCALESZ;
+        y0 *= SCALESZ;
+        w *= SCALESZ;
+        h *= SCALESZ;
+        sub_y0 *= SCALESZ;
+        sub_h *= SCALESZ;
+
+        if (x0 < 0 || y0 < 0 || x0+w > FB_XRES || y0+h > FB_YRES
+                        || sub_y0 < 0 || sub_h < 0 || sub_y0+sub_h > h) {
+            ::printf ("restoreBackingRegion is out of bounds %d x %d: %d %d %d %d / %d %d\n",
+                                        FB_XRES, FB_YRES, x0, y0, w, h, sub_y0, sub_h);
+            return (false);
+        }
+
+        const size_t row_bytes = w * sizeof(fbpix_t);
+
+        fbpix_t *fb_row = &fb_canvas[(y0+sub_y0)*FB_XRES + x0];
+        uint8_t *bs_walk = backing_store + (size_t)sub_y0*row_bytes;
+        for (int y = 0; y < sub_h; y++) {
+            memcpy (fb_row, bs_walk, row_bytes);
+            bs_walk += row_bytes;
+            fb_row += FB_XRES;
+        }
+
+        return (true);
+}
+
 /* return pixels as packed RGB bytes
  */
 bool Adafruit_RA8875::getRawPix(uint8_t *rgb24, int npix)

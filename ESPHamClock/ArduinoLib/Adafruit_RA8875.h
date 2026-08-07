@@ -206,6 +206,7 @@ class Adafruit_RA8875 {
         // user direct pixel access
         bool getBackingStore (uint8_t *&bs, int x0, int y0, int w, int h);
         bool setBackingStore (uint8_t *&bs, int x0, int y0, int w, int h);
+        bool restoreBackingRegion (uint8_t *bs, int x0, int y0, int w, int h, int sub_y0, int sub_h);
         bool getRawPix (uint8_t *rgb24, int npix);
         bool getPixelRaw (uint16_t x, uint16_t y, uint8_t *r, uint8_t *g, uint8_t *b);
 
