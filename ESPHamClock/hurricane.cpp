@@ -636,16 +636,17 @@ void drawStormsOnMap (void)
             LatLong ll1 (p1.lat, p1.lon);
 
             SCoord a, b;
-            ll2s (ll0, a, 1);
-            ll2s (ll1, b, 1);
-            if (!overMap(a) || !overMap(b))
-                continue;
-
             ll2sRaw (ll0, a, 1);
             ll2sRaw (ll1, b, 1);
             int tw = stormTrackWidth();
             int ow = tw + 2;                     // outline width, 1px black border each side
-            if (!rawPointClearOfMapEdge (a, ow/2+1) || !rawPointClearOfMapEdge (b, ow/2+1))
+            // segmentSpanOkRaw() covers everything the old ad-hoc overMap()+edge check did,
+            // plus the one it was missing: in azimuthal projection, consecutive track points
+            // can legitimately land in *different* hemisphere lobes (a storm crossing to the
+            // far side of the world from DE). Connecting those two points drew a straight
+            // line straight across the void between the two lobes -- segmentSpanOkRaw()
+            // rejects exactly that case, same as every other path/track drawn on this map.
+            if (!segmentSpanOkRaw (a, b, ow/2+1))
                 continue;
             uint16_t color = stormCategoryColor (p0.category, p0.wind_kt);
             tft.drawLineRaw (a.x, a.y, b.x, b.y, ow, RA8875_BLACK);  // black border first, wider
