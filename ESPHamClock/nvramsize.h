@@ -407,6 +407,9 @@ static const uint8_t nv_sizes[NV_N] = {
     1,                          // NV_WEFAX_PRODUCT
     1,                          // NV_WEFAX_ENABLE
 
+    // 261
+    1,                          // NV_STORM_SHOWPATH
+
 };
 
 #endif // _NVRAMSIZE_H
