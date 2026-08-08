@@ -404,6 +404,9 @@ typedef enum {
     NV_WEFAX_PRODUCT,               // index into wefax_products[] of last-selected product
     NV_WEFAX_ENABLE,                // whether the WEFAX feature is offered at all (Setup screen)
 
+    // 261
+    NV_STORM_SHOWPATH,               // whether Trop Wx shows storm paths on the map
+
 	NV_N
 
 } NV_Name;

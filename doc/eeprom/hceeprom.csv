@@ -232,3 +232,4 @@ Addr,Name,Len,Type,Description
 0xCF2,NV_WEFAX_REGION,1,i,index into wefax_regions[] of last-selected region
 0xCF4,NV_WEFAX_PRODUCT,1,i,index into wefax_products[] of last-selected product
 0xCF6,NV_WEFAX_ENABLE,1,i,whether the WEFAX feature is offered at all (Setup screen)
+0xCF8,NV_STORM_SHOWPATH,1,i,whether Trop Wx shows storm paths on the map

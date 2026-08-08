@@ -37,12 +37,20 @@
 #define STORM_IDLEN         12          // advisory or storm id length including EOS
 #define STORM_TITLE_Y0      PANETITLE_H  // pane title baseline
 #define STORM_ENTRY_H       22          // line spacing for the "no storms" message
-#define STORM_START_DY      40          // y offset (from box top) to first storm row
+#define STORM_START_DY      48          // y offset (from box top) to first storm row -- leaves room
+                                         // below the title for its descenders (e.g. the "p" in "Trop")
+                                         // plus the "Options" hint beneath it
 #define STORM_ROW_H         50          // total height of one storm row (name + 2 detail lines)
 #define STORM_NAME_DY       24          // baseline of large name line within a row (SMALL_FONT)
 #define STORM_CAT_DY        28          // top of category/wind line within a row (FAST_FONT)
 #define STORM_COORD_DY      40          // top of basin/coords line within a row (FAST_FONT)
 #define STORM_TITLE_RSV     28          // reserve at right so title clears the scroll-arrow control
+#define STORM_HINT_Y0        38          // top of the small "Options" hint under the title -- FAST_FONT
+                                          // draws downward from its cursor (unlike the title's font,
+                                          // which draws upward from a baseline and has descenders that
+                                          // dip below it), so this must clear the title's descenders
+                                          // above and leave room for its own glyph height before
+                                          // STORM_START_DY, or either edge gets clipped
 #define STORM_RESET_W       18          // size of the reset-view button on the centered storm's row
 static const char storm_page[] = "/storms/storms.txt";
 static const char storm_fn[]   = "storms.txt";
@@ -65,6 +73,7 @@ static const char stormids_fn[]   = "storm_ids.txt";
 #define STORM_COLOR_CAT4    RGB565(220,40,40)     // Cat 4 - red
 #define STORM_COLOR_CAT5    RGB565(200,0,200)     // Cat 5 - magenta
 #define STORM_COLOR_TITLE   RA8875_WHITE
+#define STORM_COLOR_HINT    RGB565(110,110,110)   // dim "Options" tap hint under the title
 
 // ---------------------------------------------------------------------------
 // Data structures
@@ -102,6 +111,10 @@ static int      storm_centered_idx = -1;        // data index of storm the map i
 static bool     storm_pz_saved = false;         // whether storm_saved_pz holds a pre-focus map view
 static PanZoom  storm_saved_pz;                 // map view to restore when the reset button is tapped
 static ScrollState storm_ss;
+
+// whether to draw storm tracks on the map; storms still always appear in the pane list
+// regardless of this setting. persisted in NV_STORM_SHOWPATH, default on.
+static uint8_t storm_showpath = 1;
 
 // ---------------------------------------------------------------------------
 // Colour lookup
@@ -289,6 +302,15 @@ static void drawStormsPane (const SBox &box)
         tx = avail_r > tw ? avail_r - tw : 2;                                      // shift left to clear
     tft.setCursor (box.x + tx, box.y + STORM_TITLE_Y0);
     tft.print (title);
+
+    // small hint under the title marking the tap-for-menu zone, since a blank area isn't an
+    // obvious touch target on its own (mirrors the title area's role as the pane's menu button)
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
+    tft.setTextColor (STORM_COLOR_HINT);
+    const char *hint = "Options";
+    uint16_t hw = getTextWidth (hint);
+    tft.setCursor (box.x + (box.w > hw ? (box.w - hw)/2 : 2), box.y + STORM_HINT_Y0);
+    tft.print (hint);
 
     // how many storm rows actually fit below the title; keep scroll state in sync so the
     // scroll arrows and getVisDataIndices() reflect the real visible count (not STORM_MAXSTORMS)
@@ -620,6 +642,11 @@ void drawStormsOnMap (void)
     // only draw if Storms pane is active
     PlotPane pp = findPaneForChoice (PLOT_CH_STORMS);
     if (pp == PANE_NONE)
+        return;
+
+    // Path off: storms still populate the pane list (drawStormsPane(), independent of this
+    // flag) but are not drawn on the map at all.
+    if (!storm_showpath)
         return;
 
     for (int i = 0; i < n_storms; i++) {
@@ -1064,15 +1091,37 @@ bool updateStorms (const SBox &box, bool fresh)
  */
 static void runStormsPaneMenu (const SBox &box)
 {
+    // N.B. single column so the popup stays narrow -- a 2-column table doubles the width of
+    // the widest label (see runMenu()'s "widest * n_cols" sizing), which was overflowing the
+    // 160px pane with labels like "Open NHC page".
+    //   Trop Wx
+    //   Path:
+    //     On
+    //     Off
+    //   Open NHC page
+    //   Open JTWC page
     enum {
         STM_TITLE,          // non-interactive label
+        STM_PATH,           // "Path:" label
+        STM_PON,            // path on
+        STM_POFF,           // path off
         STM_NHC,            // open NHC web page
+        STM_JTWC,           // open JTWC web page
         STM_N
     };
 
+    #define STM_PRI_INDENT 2
+    #define STM_SEC_INDENT 12
+
+    bool path_on = storm_showpath != 0;
+
     MenuItem mitems[STM_N];
-    mitems[STM_TITLE] = {MENU_LABEL,  false, 0, 2, "Trop Wx", 0};
-    mitems[STM_NHC]   = {MENU_TOGGLE, false, 1, 2, "Open NHC page", 0};
+    mitems[STM_TITLE] = {MENU_LABEL,  false, 0, STM_PRI_INDENT, "Trop Wx", 0};
+    mitems[STM_PATH]  = {MENU_LABEL,  false, 0, STM_PRI_INDENT, "Path:", 0};
+    mitems[STM_PON]   = {MENU_1OFN,   path_on,  1, STM_SEC_INDENT, "On", 0};
+    mitems[STM_POFF]  = {MENU_1OFN,   !path_on, 1, STM_SEC_INDENT, "Off", 0};
+    mitems[STM_NHC]   = {MENU_TOGGLE, false, 2, STM_PRI_INDENT, "Open NHC page", 0};
+    mitems[STM_JTWC]  = {MENU_TOGGLE, false, 3, STM_PRI_INDENT, "Open JTWC page", 0};
 
     uint16_t menu_x = BOX_IS_PANE_0(box) ? box.x + 3 : box.x + 10;
     SBox menu_b = {menu_x, (uint16_t)(box.y + STORM_START_DY), 0, 0};
@@ -1084,7 +1133,26 @@ static void runStormsPaneMenu (const SBox &box)
             openURL ("https://www.nhc.noaa.gov/");
             Serial.printf ("STORM: opened NHC web page\n");
         }
+        if (mitems[STM_JTWC].set) {
+            openURL ("https://www.metoc.navy.mil/jtwc/jtwc.html");
+            Serial.printf ("STORM: opened JTWC web page\n");
+        }
+
+        // update and persist path on/off, redraw map immediately if it changed
+        bool new_path_on = mitems[STM_PON].set;
+        if (new_path_on != path_on) {
+            storm_showpath = new_path_on ? 1 : 0;
+            NVWriteUInt8 (NV_STORM_SHOWPATH, storm_showpath);
+            Serial.printf ("STORM: path %s\n", storm_showpath ? "ON" : "OFF");
+
+            // engage change
+            initEarthMap ();
+            tft.drawPR();
+        }
     }
+
+    #undef STM_PRI_INDENT
+    #undef STM_SEC_INDENT
 }
 
 /* handle touch within the storms pane.
@@ -1175,8 +1243,14 @@ void initStorms (void)
         NVWriteUInt8 (NV_STORMS_ON, storms_on);
     }
 
+    if (!NVReadUInt8 (NV_STORM_SHOWPATH, &storm_showpath)) {
+        storm_showpath = 1;                                     // default on
+        NVWriteUInt8 (NV_STORM_SHOWPATH, storm_showpath);
+    }
+
     n_storms = 0;
     storm_ss.init (STORM_MAXSTORMS, 0, 0, ScrollState::DIR_TOPDOWN);
 
-    Serial.printf ("STORM: init, overlay %s\n", storms_on ? "ON" : "OFF");
+    Serial.printf ("STORM: init, overlay %s, path %s\n", storms_on ? "ON" : "OFF",
+                   storm_showpath ? "ON" : "OFF");
 }
