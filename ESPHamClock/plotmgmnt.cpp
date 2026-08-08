@@ -7,6 +7,7 @@
 // <functional>'s internal std::byte declaration if <functional> is parsed after that macro
 // exists. Including it first lets it fully expand under its header guard before that happens.
 #include <functional>
+#include <algorithm>
 #include "HamClock.h"
 
 
@@ -413,7 +414,33 @@ static const char *accordionAbbrev (const char *label)
     if (!strcmp (label, "Disturbance")) return "Dst";     // Dst = the geomagnetic Disturbance
                                                            // storm time index this plots, and
                                                            // the name hams/space-wx sites use
+    if (!strcmp (label, "DX_Cluster")) return "DXClstr";       // "DX Cluster" ran past the
+                                                                // column edge; even "DXCluster"
+                                                                // was too close for comfort
     return label;
+}
+
+/* a handful of categories have a deliberately chosen display order rather than the default
+ * alphabetical one -- eg so a commonly-used item lands in a more convenient spot. Absent from
+ * this table, an item just keeps its normal (alphabetical) position. Add entries here as
+ * requested; the two-column layout fills column 0 top-to-bottom, then column 1.
+ */
+static int accordionOrderKey (const char *label)
+{
+    static const struct { const char *label; int key; } order[] = {
+        // DX & Contest, reordered from the default alphabetical layout
+        { "On_The_Air",  0 },
+        { "DXPeditions", 1 },
+        { "VOACAP_DEDX", 2 },
+        { "Live_Spots",  3 },
+        { "Contests",    4 },
+        { "VHF_Cond",    5 },
+        { "HF_Bands",    6 },
+    };
+    for (unsigned i = 0; i < NARRAY(order); i++)
+        if (!strcmp (label, order[i].label))
+            return (order[i].key);
+    return (-1);        // no override -- sort below keeps it in its natural position
 }
 
 static bool askPaneCategoryAccordion (PlotPane pp, SBox box, MenuItem *mitems, int n_mitems)
@@ -463,15 +490,28 @@ static bool askPaneCategoryAccordion (PlotPane pp, SBox box, MenuItem *mitems, i
                                          // know which pane to leave alone
     for (;;) {
 
-        // children of whichever category is currently expanded, in mitems[] order
+        // children of whichever category is currently expanded, in mitems[] order, then
+        // reordered per accordionOrderKey() for any category that has a custom display order
         int exp_children[64];
         int n_exp = 0;
-        if (expanded_cat >= 0)
+        if (expanded_cat >= 0) {
             for (int i = 0; i < n_mitems; i++) {
                 PlotChoice pc = labelToChoice (mitems[i].label);
                 if (pc != PLOT_CH_NONE && categoryOfChoice(pc) == expanded_cat)
                     exp_children[n_exp++] = i;
             }
+            std::stable_sort (exp_children, exp_children + n_exp, [mitems](int a, int b) {
+                int ka = accordionOrderKey (mitems[a].label);
+                int kb = accordionOrderKey (mitems[b].label);
+                if (ka < 0 && kb < 0)
+                    return false;              // neither overridden -- stable_sort keeps order
+                if (ka < 0)
+                    return false;              // unoverridden items sort after overridden ones
+                if (kb < 0)
+                    return true;
+                return ka < kb;
+            });
+        }
 
         bool hide_siblings = false;
         int n_ccols = 1;
