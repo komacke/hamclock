@@ -951,6 +951,7 @@ static void checkTouch()
             scheduleNewPlot(PLOT_CH_MOON);
             scheduleNewPlot(PLOT_CH_SDO);
             scheduleNewPlot(PLOT_CH_BC);
+            scheduleNewPlot(PLOT_CH_ECLIPSE);
             drawDEInfo();
         }
     } else if (!SHOWING_PANE_0() && !dx_info_for_sat && inBox (s, dx_tz.box)) {
@@ -1143,6 +1144,7 @@ void newDE (LatLong &ll, const char grid[MAID_CHARLEN])
     scheduleNewPlot(PLOT_CH_MOON);
     scheduleNewPlot(PLOT_CH_SDO);
     scheduleNewPlot(PLOT_CH_BC);
+    scheduleNewPlot(PLOT_CH_ECLIPSE);
     scheduleNewPlot(PLOT_CH_PSK);
     scheduleNewPlot(PLOT_CH_DEWX);
     scheduleNewCoreMap(core_map);

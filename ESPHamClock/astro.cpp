@@ -1039,6 +1039,14 @@ bool getNextSolarEclipse (time_t t0, const LatLong &ll, int max_months, EclipseC
         getLunarCir (t0, ll, mc);
         time_t t = t0 - (time_t)(mc.phase / (2*M_PI) * SYNODIC_S);   // rough back up to near a new moon
 
+        // that linear estimate can be off by a couple days since phase doesn't advance
+        // perfectly linearly -- and because the bracket search below only ever steps
+        // forward from t, any overshoot past the true new moon would cause it to be
+        // skipped entirely (silently jumping to the following month instead). so pull
+        // back further, well beyond the worst-case estimate error, to guarantee t lands
+        // before the target new moon rather than after it.
+        t -= 5*86400;
+
         for (int month = 0; month < max_months; month++) {
 
             // bracket the new-moon crossing near t by stepping forward in ~6hr steps
@@ -1110,8 +1118,15 @@ bool getNextSolarEclipse (time_t t0, const LatLong &ll, int max_months, EclipseC
                 }
             }
 
-            // no eclipse this month -- advance to next synodic month and retry
-            t = t_newmoon + (time_t)SYNODIC_S;
+            // no eclipse this month -- advance toward next synodic month and retry. the
+            // real synodic month varies by roughly +/- half a day around the SYNODIC_S
+            // average (orbital eccentricity), and since the bracket search above only
+            // ever steps forward, jumping the full average risks overshooting past the
+            // true next new moon and silently skipping it -- exactly like the initial
+            // estimate above, just one month later. undershoot instead and let the
+            // bracket search's existing forward scan (up to 50 days) find the real
+            // crossing regardless of exactly how long this particular month is.
+            t = t_newmoon + (time_t)SYNODIC_S - 3*86400;
         }
 
         return (false);
