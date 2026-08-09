@@ -276,7 +276,11 @@ static PlotChoice labelToChoice (const char *label)
 #define ACC_BDX         2               // ok/cancel button text horizontal offset, matches MENU_BDX
 #define ACC_BDROP       2               // text vertical drop, matches menu.cpp MENU_BDROP
 #define ACC_BG          2               // bottom gap, matches menu.cpp MENU_BG
-#define ACC_CHILD_INDENT 10             // extra indent for a leaf item nested under its header
+#define ACC_CHILD_INDENT 4              // extra indent for a leaf item nested under its header
+                                         // -- was 10; every one of those pixels comes straight
+                                         // out of the column's text budget in a 2-col layout,
+                                         // so trimmed this down to reclaim a bit more room for
+                                         // labels before they run into the next column
 #define ACC_HEADER_INDENT 6             // left padding for a header row's triangle+label,
                                          // clear of the box's own left edge -- 2px alone (the
                                          // old plain MenuItem default) sat close enough to that
@@ -417,6 +421,13 @@ static const char *accordionAbbrev (const char *label)
     if (!strcmp (label, "DX_Cluster")) return "DXClstr";       // "DX Cluster" ran past the
                                                                 // column edge; even "DXCluster"
                                                                 // was too close for comfort
+    if (!strcmp (label, "NOAA_SpcWx")) return "NOAA_Wx";       // "NOAA SpcWx" ran past its
+                                                                // column into the next one
+    if (!strcmp (label, "On_The_Air")) return "ONTA";
+    if (!strcmp (label, "VOACAP_DEDX")) return "VOACAP";
+    if (!strcmp (label, "DXPeditions")) return "DXPeditns";    // 2 letters shorter, still reads
+    if (!strcmp (label, "Live_Spots")) return "LiveSpots";     // one word -- the trailing "s"
+                                                                // was getting cut off
     return label;
 }
 
@@ -528,9 +539,16 @@ static bool askPaneCategoryAccordion (PlotPane pp, SBox box, MenuItem *mitems, i
 
     int expanded_cat = -1;             // -1 == every category collapsed
     int last_h = 0;                    // box height actually drawn last frame, for erase-sizing
-    int focus_row = -1;                // -1 == no keyboard focus yet -- matches the rest of the
-                                        // app's convention of not showing a focus highlight
+    int focus_row = -1;                // resolved fresh every redraw from the identity below --
+                                        // never trusted across a redraw on its own, since row
+                                        // positions shift whenever a category expands/collapses
+    bool have_focus = false;           // false == no keyboard focus yet -- matches the rest of
+                                        // the app's convention of not showing a focus highlight
                                         // until the person actually presses an arrow key
+    bool focus_is_header = false;      // which kind of thing focus_key identifies
+    int focus_key = -1;                // category index if focus_is_header, else mitems[] index
+                                        // -- an identity that survives a category expanding or
+                                        // collapsing, unlike a raw row position would
     bool ok = false;
 
     menu_open_for_pane = pp;            // let showRotatingBorder()/accordionServiceOtherPanes()
@@ -614,6 +632,9 @@ static bool askPaneCategoryAccordion (PlotPane pp, SBox box, MenuItem *mitems, i
             // this frame -- and, immediately after the expanded one, as many of its children
             // as fit
             n_row_boxes = 0;
+            focus_row = -1;     // re-resolved below from focus_key/focus_is_header as rows are
+                                 // built -- stays -1 if the focused identity isn't visible this
+                                 // frame (eg its category just got collapsed by something else)
             int row = 0;
             int total_selected = 0;
             for (int i = 0; i < n_mitems; i++)
@@ -646,7 +667,10 @@ static bool askPaneCategoryAccordion (PlotPane pp, SBox box, MenuItem *mitems, i
 
                 SBox hb = {(uint16_t)(vis_box.x + ACC_LM), (uint16_t)(vis_box.y + ACC_TBM + row*ACC_RH),
                            (uint16_t)(vis_box.w - ACC_LM - ACC_RM), ACC_RH};
-                menuDrawItem (hmi, hb, true, n_row_boxes == focus_row);
+                bool hdr_has_focus = have_focus && focus_is_header && focus_key == c;
+                if (hdr_has_focus)
+                    focus_row = n_row_boxes;
+                menuDrawItem (hmi, hb, true, hdr_has_focus);
                 row_boxes[n_row_boxes] = hb;
                 row_is_header[n_row_boxes] = true;
                 row_data[n_row_boxes] = c;
@@ -667,7 +691,11 @@ static bool askPaneCategoryAccordion (PlotPane pp, SBox box, MenuItem *mitems, i
                         SBox cb = {(uint16_t)(vis_box.x + ACC_LM + col*col_w),
                                    (uint16_t)(vis_box.y + ACC_TBM + (row+row_in_col)*ACC_RH),
                                    (uint16_t)col_w, ACC_RH};
-                        menuDrawItem (cmi, cb, true, n_row_boxes == focus_row);
+                        bool child_has_focus = have_focus && !focus_is_header
+                                                    && focus_key == exp_children[j];
+                        if (child_has_focus)
+                            focus_row = n_row_boxes;
+                        menuDrawItem (cmi, cb, true, child_has_focus);
                         row_boxes[n_row_boxes] = cb;
                         row_is_header[n_row_boxes] = false;
                         row_data[n_row_boxes] = exp_children[j];
@@ -737,6 +765,15 @@ static bool askPaneCategoryAccordion (PlotPane pp, SBox box, MenuItem *mitems, i
         if (ui.kb_char == CHAR_LEFT || ui.kb_char == CHAR_RIGHT
                         || ui.kb_char == CHAR_UP || ui.kb_char == CHAR_DOWN) {
             accordionKbMove (row_boxes, n_row_boxes, focus_row, ui.kb_char);
+            if (focus_row >= 0 && focus_row < n_row_boxes) {
+                // remember *what* is focused, not just where, so it's still correctly
+                // identified after the row layout changes (eg SPACE expands the very row
+                // that's focused) rather than a now-stale position pointing at the wrong row,
+                // or past the end of a shrunk one, when the next frame redraws
+                have_focus = true;
+                focus_is_header = row_is_header[focus_row];
+                focus_key = row_data[focus_row];
+            }
             continue;
         }
         if (ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL) {
