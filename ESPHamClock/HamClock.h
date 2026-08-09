@@ -812,6 +812,7 @@ typedef struct {
     float kHz;                          // freq
     float snr;                          // only used by pskreporter.cpp
     time_t spotted;                     // UTC when spotted
+    char iota[8];                       // IOTA group ref found in comment, eg "EU-005"; else empty
 } DXSpot;
 
 
@@ -1396,7 +1397,8 @@ extern bool getClosestDXCluster (LatLong &ll, DXSpot *sp, LatLong *llp);
 extern bool getDXCPaneSpot (const SCoord &ms, DXSpot *dxs, LatLong *ll);
 extern bool connectDXCluster (void);
 extern const DXSpot *findDXCCall (const char *call);
-extern bool injectDXClusterSpot (const char *tx_call, const char *rx_call, const char *kHz, Message &ynot);
+extern bool injectDXClusterSpot (const char *tx_call, const char *rx_call, const char *kHz,
+const char *comment, Message &ynot);
 
 
 

@@ -130,6 +130,7 @@ OBJS = \
 	launches.o \
 	lightning.o \
 	infobox.o \
+	iota.o \
 	liveweb.o \
 	liveweb-html.o \
 	magdecl.o \

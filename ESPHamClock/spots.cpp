@@ -3,6 +3,9 @@
 
 #include "HamClock.h"
 
+#define IOTA_MARK_COLOR RGB565(150,250,255)     // matches ONTA_COLOR; box behind the "I" flags an IOTA ref
+#define IOTA_MARK_W     9                        // pixels reserved for the marker column, incl gap
+
 
 /* find list element, subject to possible filtering, that is closest to ll on the given end(s).
  * return whether found one within MAX_CSR_DIST.
@@ -196,11 +199,26 @@ void drawSpotOnList (const SBox &box, const DXSpot &spot, int row, uint16_t bg_c
     tft.setCursor (x, y);
     tft.print (line);
 
-    // add call
-    const int max_call = BOX_IS_PANE_0(box) ? MAX_SPOTCALL_LEN-3 : MAX_SPOTCALL_LEN-1;
+    // add call -- 2 chars narrower than before to make room for a fixed-width IOTA marker
+    // column, so the age field always starts in the same place whether or not a row has one
+    const int max_call = BOX_IS_PANE_0(box) ? MAX_SPOTCALL_LEN-5 : MAX_SPOTCALL_LEN-3;
     tft.setTextColor(RA8875_WHITE);
     snprintf (line, sizeof(line), " %-*.*s ", max_call, max_call, spot.tx_call);
     tft.print (line);
+
+    // reserve a small fixed-width column for an IOTA marker -- reserved on every row, drawn only
+    // when this spot's comment carried a recognized IOTA reference, so the age field lines up in
+    // the same column either way instead of drifting into it (as a plain floating dot used to).
+    // full name doesn't fit here -- tap the row (see checkDXClusterTouch) to see it in a tooltip.
+    uint16_t call_end_x = tft.getCursorX();
+    if (spot.iota[0]) {
+        tft.fillRect (call_end_x, y-LISTING_OS, IOTA_MARK_W, h, IOTA_MARK_COLOR);
+        tft.setTextColor (RA8875_BLACK);
+        tft.setCursor (call_end_x + 2, y);
+        tft.print ('I');
+        tft.setTextColor (RA8875_WHITE);
+    }
+    tft.setCursor (call_end_x + IOTA_MARK_W, y);
 
     // and finally age, width depending on pane
     time_t age = myNow() - spot.spotted;

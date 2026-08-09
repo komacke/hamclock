@@ -443,6 +443,50 @@ static int accordionOrderKey (const char *label)
     return (-1);        // no override -- sort below keeps it in its natural position
 }
 
+/* move focus_row to whichever of the n_row_boxes entries is closest in the given arrow
+ * direction, same nearest-neighbor-in-that-direction technique menu.cpp's kbNavigation() uses
+ * for every other menu -- just scoped to this frame's row set instead of a MenuInfo's full
+ * item list, since row_boxes here is already exactly "this frame's active, navigable items"
+ * with no MENU_ACTIVE-style filtering needed. No-op for any other key. If focus_row is
+ * currently unfocused (-1) or points past the end of a shrunk row set, any arrow key just
+ * focuses the first row instead of searching from a stale/nonexistent position.
+ */
+static void accordionKbMove (const SBox *row_boxes, int n_row_boxes, int &focus_row, char kb_char)
+{
+    if (n_row_boxes == 0)
+        return;
+
+    if (focus_row < 0 || focus_row >= n_row_boxes) {
+        focus_row = 0;
+        return;
+    }
+
+    const SBox &pm = row_boxes[focus_row];
+    int mind = 100000;
+    int candidate = -1;
+
+    for (int i = 0; i < n_row_boxes; i++) {
+        if (i == focus_row)
+            continue;
+        const SBox &pi = row_boxes[i];
+        int d = abs((int)pi.x - (int)pm.x) + abs((int)pi.y - (int)pm.y);
+        bool dir_ok = false;
+        switch (kb_char) {
+        case CHAR_LEFT:  dir_ok = pi.x < pm.x; break;
+        case CHAR_RIGHT: dir_ok = pi.x > pm.x; break;
+        case CHAR_UP:    dir_ok = pi.y < pm.y; break;
+        case CHAR_DOWN:  dir_ok = pi.y > pm.y; break;
+        default: return;                       // not an arrow key -- leave focus alone
+        }
+        if (dir_ok && d < mind) {
+            candidate = i;
+            mind = d;
+        }
+    }
+    if (candidate >= 0)
+        focus_row = candidate;
+}
+
 static bool askPaneCategoryAccordion (PlotPane pp, SBox box, MenuItem *mitems, int n_mitems)
 {
     // one header per non-empty category, in display order; cat_total[] doesn't change once
@@ -484,6 +528,9 @@ static bool askPaneCategoryAccordion (PlotPane pp, SBox box, MenuItem *mitems, i
 
     int expanded_cat = -1;             // -1 == every category collapsed
     int last_h = 0;                    // box height actually drawn last frame, for erase-sizing
+    int focus_row = -1;                // -1 == no keyboard focus yet -- matches the rest of the
+                                        // app's convention of not showing a focus highlight
+                                        // until the person actually presses an arrow key
     bool ok = false;
 
     menu_open_for_pane = pp;            // let showRotatingBorder()/accordionServiceOtherPanes()
@@ -599,7 +646,7 @@ static bool askPaneCategoryAccordion (PlotPane pp, SBox box, MenuItem *mitems, i
 
                 SBox hb = {(uint16_t)(vis_box.x + ACC_LM), (uint16_t)(vis_box.y + ACC_TBM + row*ACC_RH),
                            (uint16_t)(vis_box.w - ACC_LM - ACC_RM), ACC_RH};
-                menuDrawItem (hmi, hb, true, false);
+                menuDrawItem (hmi, hb, true, n_row_boxes == focus_row);
                 row_boxes[n_row_boxes] = hb;
                 row_is_header[n_row_boxes] = true;
                 row_data[n_row_boxes] = c;
@@ -620,7 +667,7 @@ static bool askPaneCategoryAccordion (PlotPane pp, SBox box, MenuItem *mitems, i
                         SBox cb = {(uint16_t)(vis_box.x + ACC_LM + col*col_w),
                                    (uint16_t)(vis_box.y + ACC_TBM + (row+row_in_col)*ACC_RH),
                                    (uint16_t)col_w, ACC_RH};
-                        menuDrawItem (cmi, cb, true, false);
+                        menuDrawItem (cmi, cb, true, n_row_boxes == focus_row);
                         row_boxes[n_row_boxes] = cb;
                         row_is_header[n_row_boxes] = false;
                         row_data[n_row_boxes] = exp_children[j];
@@ -687,8 +734,31 @@ static bool askPaneCategoryAccordion (PlotPane pp, SBox box, MenuItem *mitems, i
             ok = false;
             break;
         }
+        if (ui.kb_char == CHAR_LEFT || ui.kb_char == CHAR_RIGHT
+                        || ui.kb_char == CHAR_UP || ui.kb_char == CHAR_DOWN) {
+            accordionKbMove (row_boxes, n_row_boxes, focus_row, ui.kb_char);
+            continue;
+        }
+        if (ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL) {
+            if (enable_ok) {
+                ok = true;
+                break;
+            }
+            menuMsg (cur_box, RA8875_RED, "Select an item");
+            continue;
+        }
+        if (ui.kb_char == CHAR_SPACE && focus_row >= 0 && focus_row < n_row_boxes) {
+            if (row_is_header[focus_row]) {
+                int tapped_cat = row_data[focus_row];
+                expanded_cat = (tapped_cat == expanded_cat) ? -1 : tapped_cat;
+            } else {
+                int mi_idx = row_data[focus_row];
+                mitems[mi_idx].set = !mitems[mi_idx].set;
+            }
+            continue;
+        }
         if (ui.kb_char != CHAR_NONE)
-            continue;                          // ignore other keys, this picker is tap-only
+            continue;                          // ignore any other key
 
         if (inBox (ui.tap, ok_b)) {
             if (enable_ok) {

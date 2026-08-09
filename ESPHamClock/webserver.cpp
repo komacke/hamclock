@@ -2041,20 +2041,22 @@ static bool setWiFiSpot (WiFiClient &client, char line[], size_t line_len)
     wa.name[wa.nargs++] = "tx_call";
     wa.name[wa.nargs++] = "rx_call";
     wa.name[wa.nargs++] = "kHz";
+    wa.name[wa.nargs++] = "comment";            // optional; only used to test IOTA ref matching
 
     // parse
     if (!parseWebCommand (wa, line, line_len))
         return (false);
 
-    // all required
+    // first 3 required, comment is optional
     if (!wa.found[0] || !wa.found[1] || !wa.found[2]) {
-        snprintf (line, line_len, "%s", "tx_call=x&rx_call=x&kHz=x");
+        snprintf (line, line_len, "%s", "tx_call=x&rx_call=x&kHz=x[&comment=x]");
         return (false);
     }
 
     // inject
     Message ynot;
-    if (!injectDXClusterSpot (wa.value[0], wa.value[1], wa.value[2], ynot)) {
+    if (!injectDXClusterSpot (wa.value[0], wa.value[1], wa.value[2],
+                                wa.found[3] ? wa.value[3] : NULL, ynot)) {
         quietStrncpy (line, ynot.get(), line_len);
         return (false);
     }
@@ -4772,7 +4774,7 @@ static const CmdTble command_table[] = {
 
     // the following entries are never shown with --help -- update N_UNDOC_CMD if change
     { "set_demo?",          setWiFiDemo,           "on|off|n=N" },
-    { "set_spot?",          setWiFiSpot,           "tx_call=x&rx_call=x&kHz=x" },
+    { "set_spot?",          setWiFiSpot,           "tx_call=x&rx_call=x&kHz=x[&comment=x]" },
 };
 
 #define N_CMDTABLE      NARRAY(command_table)           // real n entries in command table

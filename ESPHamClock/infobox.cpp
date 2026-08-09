@@ -2,6 +2,7 @@
  */
 
 #include "HamClock.h"
+#include "iota.h"
 
 #define IB_LINEDY       9                       // line height, pixels
 #define IB_NLINES       12                      // allow this many lines in box
@@ -23,6 +24,26 @@ static void drawIB_Age (time_t t, uint16_t tx, int dy, uint16_t &ty)
     char str[10];
     tft.setCursor (tx, ty += dy);
     tft.printf ("Age  %s", formatAge (age_s, str, sizeof(str), 4));
+}
+
+/* drawMouseLoc() helper to show a spot's IOTA reference, if it has one.
+ * update ty by dy for each row used -- draws (and costs) nothing if iota_ref is empty.
+ */
+static void drawIB_IOTA (const char *iota_ref, uint16_t tx, int dy, uint16_t &ty)
+{
+    if (!iota_ref || !iota_ref[0])
+        return;
+
+    // "IOTA" tag, centered like the "NCS" tag under a Net Control callsign
+    static const char iota_tag[] = "IOTA";
+    uint16_t tw = getTextWidth (iota_tag);
+    tft.setCursor (tx + (view_btn_b.w-tw)/2, ty += dy);
+    tft.print (iota_tag);
+
+    // the reference itself, eg "EU-005", centered the same way
+    tw = getTextWidth (iota_ref);
+    tft.setCursor (tx + (view_btn_b.w-tw)/2, ty += dy);
+    tft.print (iota_ref);
 }
 
 /* drawMouseLoc() helper to show DE distance and bearing to given location.
@@ -401,6 +422,9 @@ static void drawIB_DX (const SBox &minfo_b, const DXSpot &dx_s, const LatLong &d
 
     // show freq
     drawIB_Freq (dx_s.kHz*1000, tx+IB_INDENT, IB_LINEDY, ty);
+
+    // show IOTA reference, if this spot has one -- costs no space if not
+    drawIB_IOTA (dx_s.iota, tx+IB_INDENT, IB_LINEDY, ty);
 
     // show spot age
     drawIB_Age (dx_s.spotted, tx+IB_INDENT, IB_LINEDY, ty);

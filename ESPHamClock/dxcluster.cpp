@@ -9,6 +9,7 @@
  */
 
 #include "HamClock.h"
+#include "iota.h"
 
 
 // layout 
@@ -1007,6 +1008,10 @@ bool updateDXCluster (const SBox &box, bool fresh)
         showDXCHost (box, RA8875_GREEN);
     }
 
+    // refresh the IOTA ref->name lookup too -- cheap no-op most calls since
+    // openCachedFile() enforces its own IOTA_CACHE_INTERVAL internally
+    retrieveIOTACache();
+
     if (dxc_ss.atNewest()) {
         // rebuild displayed spots list when master list changes or oldest spot ages out
         bool map_spots_changed = dxc_spots_changed;
@@ -1134,8 +1139,21 @@ bool checkDXClusterTouch (const SCoord &s, const SBox &box)
     int vis_row = (s.y - (box.y + LISTING_Y0)) / LISTING_DY;
     int spot_row;
     if (dxc_ss.findDataIndex (vis_row, spot_row)
-                        && dxwl_spots[spot_row].tx_call[0] != '\0' && isDXClusterConnected())
-        engageDXCRow (dxwl_spots[spot_row]);
+                        && dxwl_spots[spot_row].tx_call[0] != '\0' && isDXClusterConnected()) {
+        DXSpot &sp = dxwl_spots[spot_row];
+        if (sp.iota[0]) {
+            // show the resolved name (or just the bare ref if cache hasn't loaded
+            // it yet) instead of the normal engage action -- tap again to engage
+            const char *name = lookupIOTAName (sp.iota);
+            char tip[64];
+            if (name)
+                snprintf (tip, sizeof(tip), "IOTA %s: %s", sp.iota, name);
+            else
+                snprintf (tip, sizeof(tip), "IOTA %s", sp.iota);
+            tooltip (s, tip);
+        } else
+            engageDXCRow (sp);
+    }
 
     // ours 
     return (true);
@@ -1321,14 +1339,20 @@ const DXSpot *findDXCCall (const char *call)
 }
 
 /* inject a fake DXSpot, typically from RESTful command.
+ * comment is optional (may be NULL) -- only used to test IOTA reference matching, same as a real
+ * cluster spot's comment text would be.
  * return true else short reason why not.
  */
-bool injectDXClusterSpot (const char *tx_call, const char *rx_call, const char *kHz, Message &ynot)
+bool injectDXClusterSpot (const char *tx_call, const char *rx_call, const char *kHz,
+const char *comment, Message &ynot)
 {
     DXSpot fake = {};
 
     quietStrncpy (fake.tx_call, tx_call, sizeof(fake.tx_call));
     quietStrncpy (fake.rx_call, rx_call, sizeof(fake.rx_call));
+
+    if (comment)
+        findIOTARef (comment, fake.iota, sizeof(fake.iota));
 
     char *endptr;
     fake.kHz = strtod (kHz, &endptr);
