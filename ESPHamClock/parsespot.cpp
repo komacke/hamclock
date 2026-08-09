@@ -3,6 +3,7 @@
 
 
 #include "HamClock.h"
+#include "iota.h"
 
 
 
@@ -47,6 +48,10 @@ bool crackClusterSpot (char line[], DXSpot &spot)
 
     // spot does not include mode so try to set based on freq
     quietStrncpy (spot.mode, findHamMode (spot.kHz), sizeof(spot.mode));
+
+    // comment is whatever text sits between the callsign and the time field at
+    // line[70]; scan it for a recognizable IOTA group reference
+    findIOTARef (line, spot.iota, sizeof(spot.iota));
 
     // accommodate future from roundoff
     if (spot.spotted > now) {
