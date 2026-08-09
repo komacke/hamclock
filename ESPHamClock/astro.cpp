@@ -26,6 +26,25 @@ typedef struct {
     float lat_d, lng_d;
 } LatLong;
 
+typedef enum {
+    ECL_NONE,
+    ECL_PARTIAL,
+    ECL_ANNULAR,
+    ECL_TOTAL,
+} EclipseType;
+
+typedef struct {
+    bool visible;
+    EclipseType type;
+    time_t t_max;
+    time_t t_c1, t_c4;
+    float magnitude;
+    float obscuration;
+    float sun_el;
+    float sun_r, moon_r;
+    float sep;
+} EclipseCir;
+
 #define deg2rad(x)       ((x)*M_PI/180)
 #define rad2deg(x)       ((x)*180/M_PI)
 
@@ -881,6 +900,225 @@ void getLunarRS (const time_t t0, const LatLong &ll, time_t *riset, time_t *sett
 
 
 
+/*******************************************************************************************
+ *
+ *    Solar eclipse local circumstances
+ *
+ *    approach: work purely from topocentric angular separation of Sun and Moon disks as
+ *    seen from the given location -- no Besselian elements, consistent with the rest of
+ *    this file's low-precision philosophy (arc-minute class accuracy).
+ *
+ *******************************************************************************************/
+
+/* angular radius of sun, rads, given its distance rsn in AU
+ */
+static double sunAngRadius (double rsn)
+{
+    return (deg2rad(0.266563/rsn));                     // 959.63" at 1 AU
+}
+
+/* angular radius of moon, rads, given its horizontal parallax ehp, rads
+ */
+static double moonAngRadius (double ehp)
+{
+    return (asin (0.2725076*sin(ehp)));                  // mean moon/earth radius ratio
+}
+
+/* topocentric angular separation, rads, between sun and moon centers at time t as seen
+ * from ll, along with each disk's current angular radius and the sun's true elevation.
+ */
+static double sunMoonSep (time_t t, const LatLong &ll, double *sun_r, double *moon_r, double *sun_el)
+{
+        AstroCir sc, mc;
+        getSolarCir (t, ll, sc);
+        getLunarCir (t, ll, mc);
+
+        // angular separation from two az/el via spherical law of cosines
+        double cos_sep = sin(sc.el)*sin(mc.el) + cos(sc.el)*cos(mc.el)*cos(sc.az-mc.az);
+        if (cos_sep > 1) cos_sep = 1;
+        if (cos_sep < -1) cos_sep = -1;
+        double sep = acos (cos_sep);
+
+        double mjd = unix2mjd (t);
+        double lsn, rsn, lam, bet, ehp;
+        sunpos (mjd, &lsn, &rsn);
+        moon (mjd, &lam, &bet, &ehp);
+
+        *sun_r = sunAngRadius (rsn);
+        *moon_r = moonAngRadius (ehp);
+        *sun_el = sc.el;
+        return (sep);
+}
+
+/* refine the time of minimum sun/moon separation near t0 using golden-section search
+ * over +/- window_s seconds. returns the time of minimum.
+ */
+static time_t refineEclipseMax (time_t t0, const LatLong &ll, int window_s)
+{
+        const double gr = 0.6180339887;
+        double a = -window_s, b = window_s;
+        double c = b - gr*(b-a);
+        double d = a + gr*(b-a);
+        double sr, mr, se;
+
+        #define SEP_AT(x)  sunMoonSep (t0 + (time_t)(x), ll, &sr, &mr, &se)
+
+        for (int i = 0; i < 40 && (b-a) > 1; i++) {
+            if (SEP_AT(c) < SEP_AT(d))
+                b = d;
+            else
+                a = c;
+            c = b - gr*(b-a);
+            d = a + gr*(b-a);
+        }
+        #undef SEP_AT
+
+        return (t0 + (time_t)((a+b)/2));
+}
+
+/* search for first contact before t_max (dir<0) or last contact after (dir>0), i.e. the
+ * time at which separation crosses sun_r+moon_r, by bisection. returns 0 if not found
+ * within max_search_s, or if there is no eclipse at t_max at all.
+ */
+static time_t findContact (time_t t_max, const LatLong &ll, int dir, int max_search_s)
+{
+        double sr, mr, se;
+        double sep_max = sunMoonSep (t_max, ll, &sr, &mr, &se);
+        double limit = sr + mr;
+        if (sep_max >= limit)
+            return (0);                                  // no eclipse at all
+
+        // step outward until separation exceeds limit
+        time_t t_in = t_max;
+        time_t t_out = t_max;
+        int step = 60;                                    // start with 1 minute steps
+        while (step < max_search_s) {
+            t_out = t_max + dir*step;
+            double sep = sunMoonSep (t_out, ll, &sr, &mr, &se);
+            limit = sr + mr;
+            if (sep >= limit)
+                break;
+            t_in = t_out;
+            step *= 2;
+        }
+        if (step >= max_search_s)
+            return (0);                                   // ran out of room, give up
+
+        // bisect between t_in (still eclipsed) and t_out (not)
+        for (int i = 0; i < 30; i++) {
+            time_t t_mid = (t_in + t_out)/2;
+            double sep = sunMoonSep (t_mid, ll, &sr, &mr, &se);
+            limit = sr + mr;
+            if (sep < limit)
+                t_in = t_mid;
+            else
+                t_out = t_mid;
+            if (labs(t_out - t_in) < 5)
+                break;
+        }
+        return (t_in);
+}
+
+#define SYNODIC_S   (29.530588*86400)               // synodic month, secs
+
+/* find the next solar eclipse visible (sun above horizon) or otherwise occurring while
+ * the sun is up somewhere relevant to ll's local circumstances, at or after t0.
+ * searches new-moon to new-moon (synodic month) until one is found or max_months exhausted.
+ * returns true if found, filling in ec; else false.
+ */
+bool getNextSolarEclipse (time_t t0, const LatLong &ll, int max_months, EclipseCir &ec,
+                            bool require_visible)
+{
+        memset (&ec, 0, sizeof(ec));
+
+        // new moon occurs when lunar phase (elongation from sun) passes through 0.
+        // getLunarCir()'s cir.phase is a signed angle -pi..pi that is ~0 at new moon
+        // and crosses from - to + there (see elongation()), so hunt for that crossing.
+
+        AstroCir mc;
+        getLunarCir (t0, ll, mc);
+        time_t t = t0 - (time_t)(mc.phase / (2*M_PI) * SYNODIC_S);   // rough back up to near a new moon
+
+        for (int month = 0; month < max_months; month++) {
+
+            // bracket the new-moon crossing near t by stepping forward in ~6hr steps
+            time_t tp = t;
+            AstroCir cp; getLunarCir (tp, ll, cp);
+            time_t tn = tp;
+            AstroCir cn = cp;
+            bool found_zero = false;
+            for (int i = 0; i < 200; i++) {                 // up to 50 days of margin
+                tn = tp + 21600;
+                getLunarCir (tn, ll, cn);
+                if (cp.phase <= 0 && cn.phase > 0 && tn > t0 - 86400) {
+                    found_zero = true;
+                    break;
+                }
+                tp = tn;
+                cp = cn;
+            }
+            if (!found_zero)
+                break;
+
+            // bisect to the exact new moon instant
+            time_t lo = tp, hi = tn;
+            for (int i = 0; i < 30; i++) {
+                time_t mid = (lo+hi)/2;
+                AstroCir cm; getLunarCir (mid, ll, cm);
+                if (cm.phase <= 0) lo = mid; else hi = mid;
+            }
+            time_t t_newmoon = (lo+hi)/2;
+
+            if (t_newmoon >= t0) {
+                // refine true minimum separation near this new moon (parallax can shift
+                // the local eclipse maximum up to roughly an hour from the geocentric instant)
+                time_t t_max = refineEclipseMax (t_newmoon, ll, 3*3600);
+
+                double sr, mr, se;
+                double sep = sunMoonSep (t_max, ll, &sr, &mr, &se);
+
+                if (sep < sr+mr && (!require_visible || se > 0)) {
+                    // eclipse! (and visible from here, if that was required) classify and
+                    // fill in details
+                    ec.visible = (se > 0);
+                    ec.t_max = t_max;
+                    ec.magnitude = (float)((sr+mr-sep)/(2*sr));
+                    ec.sun_el = (float)se;
+                    ec.sun_r = (float)sr;
+                    ec.moon_r = (float)mr;
+                    ec.sep = (float)sep;
+
+                    if (sep <= fabs(sr-mr)) {
+                        ec.type = (mr >= sr) ? ECL_TOTAL : ECL_ANNULAR;
+                        ec.obscuration = (mr >= sr) ? 1.0F : (float)((mr*mr)/(sr*sr));
+                    } else {
+                        ec.type = ECL_PARTIAL;
+                        // approximate lens-area obscuration fraction using the standard
+                        // two-circle intersection formula, normalized by sun's disk area
+                        double d = sep, R = sr, r = mr;
+                        double part1 = R*R*acos((d*d+R*R-r*r)/(2*d*R));
+                        double part2 = r*r*acos((d*d+r*r-R*R)/(2*d*r));
+                        double part3 = 0.5*sqrt((-d+r+R)*(d+r-R)*(d-r+R)*(d+r+R));
+                        double area = part1 + part2 - part3;
+                        ec.obscuration = (float)(area / (M_PI*R*R));
+                    }
+
+                    ec.t_c1 = findContact (t_max, ll, -1, 4*3600);
+                    ec.t_c4 = findContact (t_max, ll, +1, 4*3600);
+
+                    return (true);
+                }
+            }
+
+            // no eclipse this month -- advance to next synodic month and retry
+            t = t_newmoon + (time_t)SYNODIC_S;
+        }
+
+        return (false);
+}
+
+
+
 
 
 #if defined (_UNIT_TEST)
@@ -983,6 +1221,37 @@ int main (int ac, char *av[])
             printf ("  Set:  %s", ctime (&st));
         } else {
             printf ("  No R/S %ld %ld\n", rt, st);
+        }
+
+        // eclipse search, requiring visibility from this qth
+        EclipseCir ec;
+        printf ("\nSearching for next VISIBLE solar eclipse from %g %g starting %s",
+                    ll.lat_d, ll.lng_d, ctime(&t0));
+        if (getNextSolarEclipse (t0, ll, 36, ec, true)) {
+            static const char *tnames[] = {"none","partial","annular","total"};
+            printf ("  Type:        %s\n", tnames[ec.type]);
+            printf ("  Max time:    %s", ctime (&ec.t_max));
+            printf ("  Sun el@max:  %.1f deg  (%s)\n", rad2deg(ec.sun_el), ec.visible ? "above horizon" : "BELOW horizon");
+            printf ("  Magnitude:   %.3f\n", ec.magnitude);
+            printf ("  Obscuration: %.1f%%\n", ec.obscuration*100);
+            if (ec.t_c1) printf ("  C1 (start):  %s", ctime (&ec.t_c1)); else printf ("  C1: not found\n");
+            if (ec.t_c4) printf ("  C4 (end):    %s", ctime (&ec.t_c4)); else printf ("  C4: not found\n");
+        } else {
+            printf ("  No VISIBLE solar eclipse found in search window\n");
+        }
+
+        // also show the raw geometric next eclipse regardless of visibility, for comparison
+        printf ("\nSearching for next solar eclipse (any visibility) from %g %g starting %s",
+                    ll.lat_d, ll.lng_d, ctime(&t0));
+        if (getNextSolarEclipse (t0, ll, 36, ec, false)) {
+            static const char *tnames[] = {"none","partial","annular","total"};
+            printf ("  Type:        %s\n", tnames[ec.type]);
+            printf ("  Max time:    %s", ctime (&ec.t_max));
+            printf ("  Sun el@max:  %.1f deg  (%s)\n", rad2deg(ec.sun_el), ec.visible ? "above horizon" : "BELOW horizon");
+            printf ("  Magnitude:   %.3f\n", ec.magnitude);
+            printf ("  Obscuration: %.1f%%\n", ec.obscuration*100);
+        } else {
+            printf ("  No solar eclipse found in search window\n");
         }
 
         return (0);

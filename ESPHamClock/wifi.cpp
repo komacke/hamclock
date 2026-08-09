@@ -70,6 +70,7 @@ static const char locip_page[] = "/fetchIPGeoloc.pl";
 
 // moon display
 #define MOON_INTERVAL   50                      // annotation update interval, secs
+#define ECLIPSE_INTERVAL 3600                   // eclipse search is slow-changing, secs
 
 
 // list of default NTP servers unless user has set their own
@@ -2315,6 +2316,13 @@ void updateWiFi(PlotPane skip_pp)
             if (t0 >= next_update[pp]) {
                 updateMoonPane (box);           // all local -- can't fail ;-)
                 next_update[pp] = nextPaneUpdate (pc, MOON_INTERVAL);
+            }
+            break;
+
+        case PLOT_CH_ECLIPSE:
+            if (t0 >= next_update[pp]) {
+                updateEclipsePane (box);        // all local -- can't fail ;-)
+                next_update[pp] = nextPaneUpdate (pc, ECLIPSE_INTERVAL);
             }
             break;
 

@@ -428,7 +428,8 @@ typedef enum {
 
 #define PLOTNAMES_HIGH \
     X(PLOT_CH_SATACT,       "Sat_Alerts")        \
-    X(PLOT_CH_MESHTASTIC,   "Mesh_Mon")
+    X(PLOT_CH_MESHTASTIC,   "Mesh_Mon")          \
+    X(PLOT_CH_ECLIPSE,      "Eclipse")
 
 #define PLOTNAMES PLOTNAMES_LOW PLOTNAMES_HIGH
 
@@ -1019,6 +1020,30 @@ extern AstroCir lunar_cir, solar_cir;
 extern void now_lst (double mjd, double lng, double *lst);
 extern void getLunarCir (time_t t0, const LatLong &ll, AstroCir &cir);
 extern void getSolarCir (time_t t0, const LatLong &ll, AstroCir &cir);
+
+// solar eclipse local circumstances, see astro.cpp
+
+typedef enum {
+    ECL_NONE,
+    ECL_PARTIAL,
+    ECL_ANNULAR,
+    ECL_TOTAL,
+} EclipseType;
+
+typedef struct {
+    bool visible;             // whether sun is above horizon at t_max
+    EclipseType type;         // ECL_NONE if search failed to find one
+    time_t t_max;             // time of local maximum eclipse (min separation)
+    time_t t_c1, t_c4;        // local first/last contact, 0 if not found
+    float magnitude;          // fraction of solar diameter covered, 0 if none
+    float obscuration;        // fraction of solar disk AREA covered, 0..1
+    float sun_el;             // sun elevation at t_max, rads
+    float sun_r, moon_r;      // angular radii of each disk at t_max, rads -- for exact-scale display
+    float sep;                // angular separation of centers at t_max, rads
+} EclipseCir;
+
+extern bool getNextSolarEclipse (time_t t0, const LatLong &ll, int max_months, EclipseCir &ec,
+                                    bool require_visible = true);
 extern void getSolarRS (const time_t t0, const LatLong &ll, time_t *riset, time_t *sett);
 extern void getLunarRS (const time_t t0, const LatLong &ll, time_t *riset, time_t *sett);
 
@@ -2126,6 +2151,17 @@ extern bool waitForUser (UserInput &ui);
 extern void updateMoonPane (const SBox &box);
 extern const uint16_t moon_image[HC_MOON_W*HC_MOON_H] PROGMEM;
 extern bool checkMoonTouch (const SCoord &s, const SBox &box);
+
+
+/*******************************************************************************************
+ *
+ * eclipsepane.cpp
+ *
+ */
+
+extern void updateEclipsePane (const SBox &box);
+extern bool checkEclipseTouch (const SCoord &s, const SBox &box);
+extern void checkEclipsePopupTimeout (void);
 
 
 

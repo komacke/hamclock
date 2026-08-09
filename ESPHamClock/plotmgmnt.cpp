@@ -127,6 +127,7 @@ bool plotChoiceIsAvailable (PlotChoice pc)
     case PLOT_CH_FLUX:          // fallthru
     case PLOT_CH_KP:            // fallthru
     case PLOT_CH_MOON:          // fallthru
+    case PLOT_CH_ECLIPSE:       // fallthru
     case PLOT_CH_NOAASPW:       // fallthru
     case PLOT_CH_SSN:           // fallthru
     case PLOT_CH_XRAY:          // fallthru
@@ -233,7 +234,7 @@ static int categoryOfChoice (PlotChoice pc)
     case PLOT_CH_DEWX: case PLOT_CH_DXWX: case PLOT_CH_STORMS:
         return 2;   // Weather
 
-    case PLOT_CH_MOON: case PLOT_CH_SDO: case PLOT_CH_SATACT:
+    case PLOT_CH_MOON: case PLOT_CH_SDO: case PLOT_CH_SATACT: case PLOT_CH_ECLIPSE:
         return 3;   // Sky & Space
 
     case PLOT_CH_GIMBAL: case PLOT_CH_TEMPERATURE: case PLOT_CH_PRESSURE:
@@ -1146,6 +1147,11 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
         break;
     case PLOT_CH_MOON:
         if (checkMoonTouch (s, box))
+            return (true);
+        in_top = true;
+        break;
+    case PLOT_CH_ECLIPSE:
+        if (checkEclipseTouch (s, box))
             return (true);
         in_top = true;
         break;
