@@ -120,6 +120,7 @@ OBJS = \
 	hurricane.o \
 	earthmap.o \
 	earthsat.o \
+	eclipsepane.o \
 	emetool.o \
 	favicon.o \
 	fsfree.o \

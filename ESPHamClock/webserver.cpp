@@ -799,6 +799,53 @@ static bool getWiFiDXSpots (WiFiClient &client, char line[], size_t line_len)
 
 }
 
+/* report next solar eclipse local circumstances for DE
+ */
+static bool getWiFiEclipse (WiFiClient &client, char line[], size_t line_len)
+{
+    (void)(line_len);
+
+    EclipseCir ec;
+    if (!getNextSolarEclipse (nowWO(), de_ll, 36, ec)) {
+        strcpy (line, "No eclipse found in search window");
+        return (false);
+    }
+
+    // send html header
+    startPlainText (client);
+
+    static const char *tnames[] = {"none", "partial", "annular", "total"};
+    char buf[200];
+    snprintf (buf, sizeof(buf), "Type          %s\n", tnames[ec.type]);
+    client.print (buf);
+    snprintf (buf, sizeof(buf), "Max_UTC       %4d-%02d-%02dT%02d:%02d:%02dZ\n",
+                year(ec.t_max), month(ec.t_max), day(ec.t_max),
+                hour(ec.t_max), minute(ec.t_max), second(ec.t_max));
+    client.print (buf);
+    if (ec.t_c1) {
+        snprintf (buf, sizeof(buf), "C1_UTC        %4d-%02d-%02dT%02d:%02d:%02dZ\n",
+                    year(ec.t_c1), month(ec.t_c1), day(ec.t_c1),
+                    hour(ec.t_c1), minute(ec.t_c1), second(ec.t_c1));
+        client.print (buf);
+    }
+    if (ec.t_c4) {
+        snprintf (buf, sizeof(buf), "C4_UTC        %4d-%02d-%02dT%02d:%02d:%02dZ\n",
+                    year(ec.t_c4), month(ec.t_c4), day(ec.t_c4),
+                    hour(ec.t_c4), minute(ec.t_c4), second(ec.t_c4));
+        client.print (buf);
+    }
+    snprintf (buf, sizeof(buf), "Magnitude     %.3f\n", ec.magnitude);
+    client.print (buf);
+    snprintf (buf, sizeof(buf), "Obscuration   %.1f%%\n", ec.obscuration*100);
+    client.print (buf);
+    snprintf (buf, sizeof(buf), "Sun_el_deg    %.1f\n", ec.sun_el*180/M_PIF);
+    client.print (buf);
+    snprintf (buf, sizeof(buf), "Sun_up        %s\n", ec.visible ? "yes" : "no");
+    client.print (buf);
+
+    return (true);
+}
+
 /* report current set of all the given On The Air program activators
  */
 static bool getWiFiOnTheAir (WiFiClient &client, char line[], size_t line_len)
@@ -4721,6 +4768,7 @@ static const CmdTble command_table[] = {
     { "get_dx.txt ",        getWiFiDXInfo,         "get DX info" },
     { "get_dxpeds.txt ",    getWiFiDXPeds,         "get current list of DXpeditions" },
     { "get_dxspots.txt ",   getWiFiDXSpots,        "get DX spots" },
+    { "get_eclipse.txt ",   getWiFiEclipse,        "get next solar eclipse local circumstances" },
     { "get_gpio?",          getWiFiGPIO,           "pin=MCP&latched=[true,false]" }, // params!
     { "get_livespots.txt ", getWiFiLiveSpots,      "get live spots list" },
     { "get_livestats.txt ", getWiFiLiveStats,      "get live spots statistics" },
