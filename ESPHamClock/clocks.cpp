@@ -1510,6 +1510,7 @@ void changeTime (time_t t)
     scheduleNewPlot(PLOT_CH_MOON);
     scheduleNewPlot(PLOT_CH_SDO);
     scheduleNewPlot(PLOT_CH_BC);
+    scheduleNewPlot(PLOT_CH_ECLIPSE);
 }
 
 /* show menu of timezone offsets +- a few hours from nominal plus option for auto.
