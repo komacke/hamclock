@@ -1,5 +1,8 @@
 Changes with latest release:
-- Fix vertical position of call sign
-- WEFAX on wx maps
-- panel categories
+- new WEFAX on wx maps
+- new future eclipses
+- new panel categories
+- new IOTA in DXCluster
 - storm trajectory on all projections
+- Fix vertical position of call sign
+- fix disappearing icons
