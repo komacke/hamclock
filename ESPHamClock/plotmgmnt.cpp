@@ -376,17 +376,28 @@ static void fitAccordionLayout (int n_cats, int n_children, int budget_h,
 // a tap, so without this, a stray background redraw would sit there until the next tap.
 static std::function<void()> acc_redraw_fn = nullptr;
 
-/* UserInput.fp callback for askPaneCategoryAccordion()'s wait loop: services every OTHER
- * pane's normal rotation/updates (network fetches, redraws, the lot) at a throttled rate while
- * the picker sits waiting for a tap, so opening one pane's picker doesn't stall every other
- * pane's rotation for as long as it's left open. Also services the map overlays (DX Cluster
- * spots and the like) and their underlying data collection, since those are normally driven
- * from the main loop() rather than updateWiFi() and would otherwise sit frozen the whole time
- * a picker is open. Always returns false so waitForUser() just keeps waiting for the next tap
- * -- this is a side-effecting tick, not a wait-ending condition.
+/* UserInput.fp callback for askPaneCategoryAccordion()'s wait loop: keeps the main clock
+ * ticking at its normal cadence (see below) and services every OTHER pane's normal
+ * rotation/updates (network fetches, redraws, the lot) at a throttled rate while the picker
+ * sits waiting for a tap, so opening one pane's picker doesn't stall every other pane's
+ * rotation -- or the clock -- for as long as it's left open. Also services the map overlays
+ * (DX Cluster spots and the like) and their underlying data collection, since those are
+ * normally driven from the main loop() rather than updateWiFi() and would otherwise sit frozen
+ * the whole time a picker is open. Always returns false so waitForUser() just keeps waiting for
+ * the next tap -- this is a side-effecting tick, not a wait-ending condition.
  */
 static bool accordionServiceOtherPanes (void)
 {
+    // tick the clock at its normal fast cadence every time we're called, independent of the
+    // once-a-second throttle below -- updateClocks(false) is cheap (no-ops unless the displayed
+    // second actually changed), so there's no reason it should have to wait behind however long
+    // the heavier pane-refresh work below takes. Without this, the clock only advanced via
+    // waitForUser()'s own post-callback call, which can't run until this function returns -- and
+    // if several other panes happen to be due for a refresh at once, updateWiFi() below services
+    // all of them in one synchronous pass, easily several seconds, freezing the clock for that
+    // whole time.
+    updateClocks (false);
+
     static uint32_t last_ms;
     uint32_t now_ms = millis();
     if (now_ms - last_ms < 1000)               // once a second is plenty; this work can be heavy

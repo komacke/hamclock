@@ -2004,7 +2004,7 @@ void drawDEFormatMenu()
 
     // run menu
     SBox ok_b;
-    MenuInfo menu = {menu_b, ok_b, UF_NOCLOCKS, M_CANCELOK, 1, NARRAY(mitems), mitems};
+    MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 1, NARRAY(mitems), mitems};
     if (!runMenu (menu))
         return;
 
