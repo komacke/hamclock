@@ -25,9 +25,10 @@
 
 // ---- tunables ------------------------------------------------------------
 
-#define LIGHTNING_INTERVAL      60      // fetch interval, seconds
-#define LIGHTNING_RETRY_SECS    60      // retry after failed fetch
-#define LIGHTNING_MAX_STRIKES   5000    // worldwide coverage  - ~3 min of global activity
+#define LIGHTNING_INTERVAL          60      // fetch interval, seconds
+#define LIGHTNING_RETRY_SECS        60      // retry after failed fetch
+#define LIGHTNING_MAX_STATS_STRIKES 9999    // max strikes counted for NCDXF stats panel
+#define LIGHTNING_MAX_MAP_STRIKES   5000    // max strikes rendered on map
 
 // Bolt readability: scale glyph by SCALESZ so apparent size is constant
 // across build resolutions; de-clutter cell merges overlapping strikes.
@@ -49,10 +50,18 @@ typedef struct {
     int   age_s;    // seconds old at time of last fetch
 } LightningStrike;
 
+typedef struct {
+    int total;      // total strikes counted (up to LIGHTNING_MAX_STATS_STRIKES)
+    int fresh;      // < 120s
+    int recent;     // 120s - 300s
+    int old;        // >= 300s
+} LightningStats;
+
 // ---- module state --------------------------------------------------------
 
-static LightningStrike  strikes[LIGHTNING_MAX_STRIKES];
-static int              n_strikes;
+static LightningStrike  strikes[LIGHTNING_MAX_MAP_STRIKES];
+static int              n_strikes;              // map strike count (<= LIGHTNING_MAX_MAP_STRIKES)
+static LightningStats   ltg_stats;              // strike counts by age band (up to LIGHTNING_MAX_STATS_STRIKES)
 static time_t           next_fetch;
 static time_t           limit_msg_until;
 
@@ -112,32 +121,6 @@ static void drawBolt (int16_t cx, int16_t cy, uint16_t color)
     tft.drawPixelRaw (cx, cy, RA8875_WHITE);
 }
 
-// ---- response parsing ----------------------------------------------------
-//
-// OHB returns plain text, one strike per line:   lat,lon,age_seconds
-
-static int parseStrikes (const char *buf, int buf_len)
-{
-    int count = 0;
-    const char *p   = buf;
-    const char *end = buf + buf_len;
-
-    while (p < end && count < LIGHTNING_MAX_STRIKES) {
-        float lat, lon;
-        int   age_s;
-        if (sscanf (p, "%f,%f,%d", &lat, &lon, &age_s) == 3 && age_s >= 0) {
-            strikes[count].lat   = lat;
-            strikes[count].lng   = lon;
-            strikes[count].age_s = age_s;
-            count++;
-        }
-        const char *nl = (const char *) memchr (p, '\n', end - p);
-        if (!nl) break;
-        p = nl + 1;
-    }
-    return count;
-}
-
 // ---- fetch ---------------------------------------------------------------
 
 static bool fetchLightning (void)
@@ -153,6 +136,7 @@ static bool fetchLightning (void)
 
     if (!client.connect (backend_host, backend_port)) {
         Serial.printf ("LTG: connect %s:%d failed\n", backend_host, backend_port);
+        memset (&ltg_stats, 0, sizeof(ltg_stats));
         n_strikes = 0;   // reset on failure so panel shows clean zero
         return false;
     }
@@ -178,32 +162,33 @@ static bool fetchLightning (void)
         goto out;
     }
 
-    {
-        // 128KB handles ~5000 strikes at ~20 bytes each with headroom
-        const int BUFSZ = 131072;
-        char *buf = (char *) malloc (BUFSZ);
-        if (!buf) {
-            Serial.printf ("LTG: malloc %d failed\n", BUFSZ);
-            goto out;
-        }
+    memset (&ltg_stats, 0, sizeof(ltg_stats));
+    n_strikes = 0;
 
-        int  pos = 0;
+    {
         char line[128];
         while (getTCPLine (client, line, sizeof(line), NULL)) {
-            int len = strlen (line);
-            if (pos + len + 1 < BUFSZ) {
-                memcpy (buf + pos, line, len);
-                buf[pos + len] = '\n';
-                pos += len + 1;
+            float lat, lon;
+            int   age_s;
+            if (sscanf (line, "%f,%f,%d", &lat, &lon, &age_s) == 3 && age_s >= 0) {
+                if (ltg_stats.total < LIGHTNING_MAX_STATS_STRIKES) {
+                    ltg_stats.total++;
+                    if      (age_s < 120) ltg_stats.fresh++;
+                    else if (age_s < 300) ltg_stats.recent++;
+                    else                  ltg_stats.old++;
+                }
+                if (n_strikes < LIGHTNING_MAX_MAP_STRIKES) {
+                    strikes[n_strikes].lat   = lat;
+                    strikes[n_strikes].lng   = lon;
+                    strikes[n_strikes].age_s = age_s;
+                    n_strikes++;
+                }
             }
         }
-        buf[pos] = '\0';
 
-        n_strikes = parseStrikes (buf, pos);
-        free (buf);
-
-        Serial.printf ("LTG: %d strikes %s\n", n_strikes,
-                       ltg_worldwide ? "worldwide" : "in radius");
+        Serial.printf ("LTG: %d total stats strikes (%d fresh, %d recent, %d old), %d map strikes %s\n",
+                       ltg_stats.total, ltg_stats.fresh, ltg_stats.recent, ltg_stats.old,
+                       n_strikes, ltg_worldwide ? "worldwide" : "in radius");
 
         // refresh NCDXF panel immediately if it's showing lightning stats
         if (brb_mode == BRB_SHOW_LIGHTNING)
@@ -214,8 +199,10 @@ static bool fetchLightning (void)
 
 out:
     client.stop();
-    if (!ok)
+    if (!ok) {
+        memset (&ltg_stats, 0, sizeof(ltg_stats));
         n_strikes = 0;   // always reset on failure so panel shows clean zero
+    }
     return ok;
 }
 
@@ -308,14 +295,6 @@ void drawNCDXFLightningStats (void)
     // Erase panel
     fillSBox (NCDXF_b, RA8875_BLACK);
 
-    // Count by age band
-    int fresh = 0, recent = 0, old = 0;
-    for (int i = 0; i < n_strikes; i++) {
-        if      (strikes[i].age_s < 120) fresh++;
-        else if (strikes[i].age_s < 300) recent++;
-        else                             old++;
-    }
-
     // Clamp counts to 0..9999 so %u always fits in NCDXF_B_MAXLEN (max 4 digits + NUL).
     // The clamp also satisfies GCC's value-range analysis to avoid -Wformat-truncation.
     #define LTG_CLAMP(n) ((unsigned)((n) < 0 ? 0 : (n) > 9999 ? 9999 : (n)))
@@ -338,19 +317,19 @@ void drawNCDXFLightningStats (void)
         else
             snprintf (titles[0], NCDXF_B_MAXLEN, "%umi", (uint16_t)roundf(ltg_radius_km / KM_PER_MI));
     }
-    snprintf (values[0], NCDXF_B_MAXLEN, "%u", LTG_CLAMP(n_strikes));
+    snprintf (values[0], NCDXF_B_MAXLEN, "%u", LTG_CLAMP(ltg_stats.total));
     colors[0] = RA8875_WHITE;
 
     snprintf (titles[1], NCDXF_B_MAXLEN, "%s", "< 2 min");
-    snprintf (values[1], NCDXF_B_MAXLEN, "%u", LTG_CLAMP(fresh));
+    snprintf (values[1], NCDXF_B_MAXLEN, "%u", LTG_CLAMP(ltg_stats.fresh));
     colors[1] = RGB565(255, 220, 0);
 
     snprintf (titles[2], NCDXF_B_MAXLEN, "%s", "2-5 min");
-    snprintf (values[2], NCDXF_B_MAXLEN, "%u", LTG_CLAMP(recent));
+    snprintf (values[2], NCDXF_B_MAXLEN, "%u", LTG_CLAMP(ltg_stats.recent));
     colors[2] = RGB565(255, 140, 0);
 
     snprintf (titles[3], NCDXF_B_MAXLEN, "%s", "5-10min");
-    snprintf (values[3], NCDXF_B_MAXLEN, "%u", LTG_CLAMP(old));
+    snprintf (values[3], NCDXF_B_MAXLEN, "%u", LTG_CLAMP(ltg_stats.old));
     colors[3] = RGB565(220, 40, 40);
 
     #undef LTG_CLAMP
@@ -366,8 +345,9 @@ void drawNCDXFLightningStats (void)
  */
 void resetLightning (void)
 {
-    bool had_strikes = n_strikes > 0;
+    bool had_strikes = n_strikes > 0 || ltg_stats.total > 0;
     n_strikes  = 0;
+    memset (&ltg_stats, 0, sizeof(ltg_stats));
     next_fetch = 0;
     if (had_strikes || lightning_on)
         scheduleMapRedraw();
@@ -395,6 +375,7 @@ void initLightning (void)
     }
 
     n_strikes  = 0;
+    memset (&ltg_stats, 0, sizeof(ltg_stats));
     next_fetch = 0;
     limit_msg_until = 0;
     Serial.printf ("LTG: init, overlay %s mode %s radius %dkm\n",
