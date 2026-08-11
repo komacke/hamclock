@@ -85,6 +85,10 @@ static bool time_is_stuck;                      // set if see time not changing 
 // TimeLib's now() stays at real UTC, but user can adjust time offset
 static int utc_offset;                          // nowWO() offset from UTC, secs
 
+// whether the main clocks-pane HMS/date shows DE-local time instead of UTC.
+// N.B. independent of utc_offset -- this only affects what's displayed, not what's stored/synced.
+static bool main_clock_local;
+
 // display 
 #define UTC_W           14                      // UTC button width in upper right corner of clock_b
 #define UTC_H           (HMS_H-1)               // UTC button height in upper right corner of clock_b
@@ -104,10 +108,17 @@ static void drawUTCButton()
     char msg[4];
 
     if (utc_offset == 0 && !time_running_bw && !time_is_stuck) {
-        // at UTC for sure
-        tft.fillRect (clock_b.x+clock_b.w-UTC_W, clock_b.y, UTC_W, UTC_H, HMS_C);
-        tft.setTextColor(RA8875_BLACK);
-        strcpy (msg, "UTC");
+        if (main_clock_local) {
+            // synced, but showing DE-local time instead of UTC
+            tft.fillRect (clock_b.x+clock_b.w-UTC_W, clock_b.y, UTC_W, UTC_H, RA8875_CYAN);
+            tft.setTextColor(RA8875_BLACK);
+            strcpy (msg, "LCL");
+        } else {
+            // at UTC for sure
+            tft.fillRect (clock_b.x+clock_b.w-UTC_W, clock_b.y, UTC_W, UTC_H, HMS_C);
+            tft.setTextColor(RA8875_BLACK);
+            strcpy (msg, "UTC");
+        }
     } else {
         // unknown or time is other than UTC
         bool toggle = (millis()%2000) > 1000;
@@ -946,6 +957,15 @@ void initTime()
         NVWriteInt32 (NV_UTC_OFFSET, utc_offset);
     }
 
+    // get whether main clock shows local time instead of UTC
+    uint8_t mcl;
+    if (NVReadUInt8 (NV_MAINCLOCK_LOCAL, &mcl))
+        main_clock_local = (mcl != 0);
+    else {
+        main_clock_local = false;
+        NVWriteUInt8 (NV_MAINCLOCK_LOCAL, 0);
+    }
+
     // get desired aux time format
     uint8_t at;
     if (!NVReadUInt8(NV_AUX_TIME, &at)) {
@@ -1087,8 +1107,13 @@ void updateClocks(bool all)
     // update status items under callsign (uptime, rotating message, version)
     updateCallsignStatus (all);
 
-    // get user's UTC time now, get out fast if still same second
-    time_t t_wo = nowWO();
+    // get user's UTC time now, get out fast if still same second.
+    // t_utc stays pure UTC (+ any manual utc_offset) for other code below (DE/DX panes) that
+    // applies its own timezone offset; t_wo is what actually gets displayed on the main clock,
+    // shifted to DE-local time here if that's what's selected. nowWO() itself is untouched since
+    // lots of other code (rise/set, satellites, etc) depends on it staying UTC-based.
+    time_t t_utc = nowWO();
+    time_t t_wo = main_clock_local ? t_utc + getTZ (de_tz) : t_utc;
     if ((t_wo%60) == prev_sc && !all)
         return;
 
@@ -1220,7 +1245,7 @@ void updateClocks(bool all)
             break;
         case DETIME_ANALOG:     // fallthru
         case DETIME_ANALOG_DTTM:
-            drawAnalogClock (t_wo + getTZ (de_tz));
+            drawAnalogClock (t_utc + getTZ (de_tz));
             break;
         case DETIME_INFO:
             drawDECalTime(false);
@@ -1228,7 +1253,7 @@ void updateClocks(bool all)
             break;
         case DETIME_DIGITAL_12: // fallthru
         case DETIME_DIGITAL_24: // fallthru
-            drawDigitalClock (t_wo + getTZ (de_tz));
+            drawDigitalClock (t_utc + getTZ (de_tz));
             break;
         default:
             fatalError ("unknown de fmt %d", de_time_fmt);
@@ -1371,11 +1396,15 @@ bool checkClockTouch (SCoord &s)
 
         if (dx >= clock_b.w-UTC_W && dy <= UTC_H) {
 
-            // tapped UTC "button": return to UTC if not already
+            // tapped UTC "button": return to UTC if not already, else toggle main clock
+            // between showing UTC and DE-local time (this tap used to be a no-op in that case)
 
             if (utc_offset != 0 || !clockTimeOk()) {
                 utc_offset = 0;
                 startSyncProvider(true);
+            } else {
+                main_clock_local = !main_clock_local;
+                NVWriteUInt8 (NV_MAINCLOCK_LOCAL, main_clock_local ? 1 : 0);
             }
 
         } else if (dx < safe_dx) {

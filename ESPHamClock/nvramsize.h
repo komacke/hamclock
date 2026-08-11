@@ -410,6 +410,9 @@ static const uint8_t nv_sizes[NV_N] = {
     // 261
     1,                          // NV_STORM_SHOWPATH
 
+    // 262
+    1,                          // NV_MAINCLOCK_LOCAL
+
 };
 
 #endif // _NVRAMSIZE_H

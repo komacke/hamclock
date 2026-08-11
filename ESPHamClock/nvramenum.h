@@ -407,6 +407,9 @@ typedef enum {
     // 261
     NV_STORM_SHOWPATH,               // whether Trop Wx shows storm paths on the map
 
+    // 262
+    NV_MAINCLOCK_LOCAL,               // whether the main clocks-pane HMS/date shows DE-local time instead of UTC
+
 	NV_N
 
 } NV_Name;
