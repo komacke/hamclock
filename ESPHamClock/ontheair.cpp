@@ -19,6 +19,26 @@ static const char onta_file[] = "onta.txt";             // local cache file
 #define MAX_ONTAORGS    10                              // max organizations
 #define ONTA_COLOR      RGB565(150,250,255)             // title and spot text color
 
+// second source, same onta.txt line schema, generated server-side by gen_iota.pl from the
+// Spothole API's sig=IOTA filter (see gen_iota.pl for why IOTA needs its own feed: it has no
+// dedicated per-org spotting API of its own like POTA/SOTA/WWFF, only spots whose comments
+// happened to mention an IOTA reference). Purely additive -- kept as a separate file so
+// onta.txt itself and its other consumers are completely undisturbed. Same {file,page,interval}
+// shape as onta_page/onta_file above, just read into the very same onta_spots array.
+static const char onta_iota_page[] = "/ONTA/iota_spots.txt";
+static const char onta_iota_file[] = "iota_spots.txt";
+
+// each entry is one onta.txt-schema source to merge into onta_spots
+typedef struct {
+    const char *file;
+    const char *page;
+} ONTASource;
+static const ONTASource onta_sources[] = {
+    { onta_file, onta_page },
+    { onta_iota_file, onta_iota_page },
+};
+#define N_ONTASOURCES NARRAY(onta_sources)
+
 // park/summit reference -> 2-letter state/province, purely additive side file. this
 // data is essentially static (park locations don't move), so it's cached far longer
 // than the spots feed itself and a missing/stale/absent file is never fatal -- the
@@ -384,6 +404,62 @@ static void formatONTASpot (const DXSpot &spot, const SBox &box, char *line, siz
     }
 }
 
+/* fill f[] (of size NV_ONTAORG_LEN) with the currently effective org filter label:
+ * the merged filter string, the single org currently being cycled through, or "All".
+ * shared by drawONTAPane (subtitle) and drawONTAVisSpots (empty-results message) so
+ * the two never drift out of sync.
+ */
+static void ontaOrgLabel (char *f)
+{
+    if (onta_merge)
+        quietStrncpy (f, onta_orgfilter, NV_ONTAORG_LEN);               // show original including +
+    else if (onta_norgs > 0)
+        quietStrncpy (f, onta_orgs[next_ontaorg], NV_ONTAORG_LEN);      // show current
+    else
+        quietStrncpy (f, "All", NV_ONTAORG_LEN);                        // show "All"
+}
+
+/* print a short message centered in the *listing* portion of an ONTA-style pane, ie below
+ * the title/subtitle. deliberately does NOT call prepPlotBox() like plotMessage() does --
+ * that would erase the title/subtitle and draw an unwanted inner border. the listing area
+ * is assumed to already be freshly cleared to black by the caller.
+ */
+static void drawONTAEmptyMsg (const SBox &box, const char *message)
+{
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
+    tft.setTextColor (RA8875_WHITE);
+
+    char *msg_cpy = strdup (message);
+    size_t msg_len = strlen (message);
+    uint16_t msg_printed = 0;
+    uint16_t y = box.y + LISTING_Y0 + 2*LISTING_DY;
+
+    for (int n_lines = 0; n_lines < 4 && msg_printed < msg_len; n_lines++) {
+
+        // chop at max width -- maxStringW overwrites all beyond with 0's
+        size_t l_before = strlen (msg_cpy);
+        (void) maxStringW (msg_cpy, box.w-4);
+        size_t l_after = strlen (msg_cpy);
+
+        // unless finished, look for a closer blank so we don't break mid-word
+        if (l_after < l_before) {
+            char *blank = strrchr (msg_cpy, ' ');
+            if (blank)
+                blank[1] = '\0';
+        }
+
+        uint16_t msgw = getTextWidth (msg_cpy);
+        tft.setCursor (box.x + (box.w-msgw)/2, y);
+        tft.print (msg_cpy);
+
+        msg_printed += strlen (msg_cpy);
+        strcpy (msg_cpy, message+msg_printed+(message[msg_printed] == ' ' ? 1 : 0));
+        y += 2*LISTING_DY;
+    }
+
+    free (msg_cpy);
+}
+
 /* redraw all visible ontawl_spots in the given pane box.
  * N.B. this just draws the ontawl_spots, use drawONTAPane to start from scratch.
  */
@@ -446,6 +522,17 @@ static void drawONTAVisSpots (const SBox &box)
                 }
             }
         }
+    } else {
+        // nothing to show -- if a specific org is selected (not the "All" pool, which
+        // realistically always has something), say so rather than leave the pane blank.
+        // POTA is unlikely to ever hit this, but SOTA/WWFF/IOTA can go quiet for a while.
+        char f[NV_ONTAORG_LEN];
+        ontaOrgLabel (f);
+        if (strcmp (f, "All")) {
+            char msg[NV_ONTAORG_LEN+50];
+            snprintf (msg, sizeof(msg), "No '%s' org spots found - watch here for more", f);
+            drawONTAEmptyMsg (box, msg);
+        }
     }
 
     // scroll controls red if any more red spots in their directions
@@ -480,12 +567,7 @@ static void drawONTAPane (const SBox &box)
 
     // show current org or All
     char f[NV_ONTAORG_LEN];
-    if (onta_merge)
-        quietStrncpy (f, onta_orgfilter, NV_ONTAORG_LEN);               // show original including +
-    else if (onta_norgs > 0)
-        quietStrncpy (f, onta_orgs[next_ontaorg], NV_ONTAORG_LEN);      // show current
-    else
-        quietStrncpy (f, "All", NV_ONTAORG_LEN);                        // show "All"
+    ontaOrgLabel (f);
     selectFontStyle (LIGHT_FONT, FAST_FONT);
     uint16_t f_l = maxStringW (f, box.w-2);
     tft.setTextColor(RA8875_WHITE);
@@ -1077,18 +1159,13 @@ static void retrieveONTAParks (void)
     Serial.printf ("ONTA: read %d park states\n", (int)onta_park_states.size());
 }
 
-/* download all spots into onta_spots, regardless of watch etc.
- * return whether io ok, even if no data.
+/* download one onta.txt-schema source and append its spots onto the (already allocated,
+ * possibly non-empty) onta_spots/n_ontaspots pair. return whether io ok, even if no data --
+ * same "ok" semantics retrieveONTA() used to have for its single source.
  */
-static bool retrieveONTA (void)
+static bool retrieveONTASource (const ONTASource &src)
 {
-    // reset
-    free (onta_spots);
-    onta_spots = NULL;
-    n_ontaspots = 0;
-
-    // go
-    FILE *fp = openCachedFile (onta_file, onta_page, ONTA_INTERVAL, 0);
+    FILE *fp = openCachedFile (src.file, src.page, ONTA_INTERVAL, 0);
     bool ok = false;
 
     if (fp) {
@@ -1172,17 +1249,40 @@ static bool retrieveONTA (void)
 
         // io ok, even if none found
         ok = true;
+        fclose (fp);
     }
 
     // done
-    Serial.printf ("ONTA: read %d spots\n", n_ontaspots);
-    fclose (fp);
+    Serial.printf ("ONTA: %s: read %d spots so far\n", src.file, n_ontaspots);
+
+    // result
+    return (ok);
+}
+
+/* download all spots from every onta.txt-schema source (onta.txt itself, plus IOTA's
+ * separate iota_spots.txt) into the one onta_spots array.
+ * return whether io ok, even if no data -- true so long as at least one source loaded ok,
+ * so eg a transient hiccup fetching iota_spots.txt doesn't blank out real POTA/SOTA/WWFF data.
+ */
+static bool retrieveONTA (void)
+{
+    // reset
+    free (onta_spots);
+    onta_spots = NULL;
+    n_ontaspots = 0;
+
+    bool any_ok = false;
+    for (size_t i = 0; i < N_ONTASOURCES; i++)
+        if (retrieveONTASource (onta_sources[i]))
+            any_ok = true;
+
+    Serial.printf ("ONTA: read %d total spots from %d source(s)\n", n_ontaspots, (int)N_ONTASOURCES);
 
     // refresh the park->state lookup too -- independent of the outcome above
     retrieveONTAParks();
 
     // result
-    return (ok);
+    return (any_ok);
 }
 
 /* called occsionally to draw ONTA pane in box.
