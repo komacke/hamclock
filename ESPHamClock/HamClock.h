@@ -1417,6 +1417,7 @@ extern bool checkDXClusterTouch (const SCoord &s, const SBox &box);
 extern bool getDXClusterSpots (DXSpot **spp, uint8_t *nspotsp);
 extern void drawDXClusterSpotsOnMap (void);
 extern bool isDXClusterConnected(void);
+extern bool dxcHideIOTA(void);
 extern void sendDXClusterDELLGrid(void);
 extern bool getClosestDXCluster (LatLong &ll, DXSpot *sp, LatLong *llp);
 extern bool getDXCPaneSpot (const SCoord &ms, DXSpot *dxs, LatLong *ll);
@@ -3275,7 +3276,7 @@ extern void drawSpotPathOnMap (const DXSpot &spot);
 extern void ditherLL (LatLong &ll);
 extern void drawSpotDot (int16_t raw_x, int16_t raw_y, uint16_t radius, LabelOnMapEnd txrx, uint16_t color);
 extern void drawVisibleSpots (WatchListId wl_id, const DXSpot *spots, const ScrollState &ss, const SBox &box,
-    int16_t app_color);
+    int16_t app_color, const SBox *ctrl_box = NULL);
 
 
 typedef int (*PQSF)(const void *, const void *);        // pointer to qsort-style compare function
