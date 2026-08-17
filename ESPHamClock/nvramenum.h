@@ -410,6 +410,11 @@ typedef enum {
     // 262
     NV_MAINCLOCK_LOCAL,               // whether the main clocks-pane HMS/date shows DE-local time instead of UTC
 
+    // 263
+    NV_DXC_HIDEIOTA,                 // whether to hide the IOTA marker column in the DX Cluster pane
+    NV_DXC_MODES,                    // DX Cluster mode filter bitmask (see DXCMB_* in dxcluster.cpp)
+    NV_DXC_BANDS,                    // DX Cluster band filter bitmask, 1 bit per HamBandSetting
+
 	NV_N
 
 } NV_Name;

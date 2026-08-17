@@ -210,8 +210,10 @@ void drawSpotOnList (const SBox &box, const DXSpot &spot, int row, uint16_t bg_c
     // when this spot's comment carried a recognized IOTA reference, so the age field lines up in
     // the same column either way instead of drifting into it (as a plain floating dot used to).
     // full name doesn't fit here -- tap the row (see checkDXClusterTouch) to see it in a tooltip.
+    // user can hide the marker entirely (Age/IOTA/Modes/Bands menu) while keeping the column
+    // reserved, so age still lines up whether or not markers are being shown.
     uint16_t call_end_x = tft.getCursorX();
-    if (spot.iota[0]) {
+    if (spot.iota[0] && !dxcHideIOTA()) {
         tft.fillRect (call_end_x, y-LISTING_OS, IOTA_MARK_W, h, IOTA_MARK_COLOR);
         tft.setTextColor (RA8875_BLACK);
         tft.setCursor (call_end_x + 2, y);
@@ -237,11 +239,17 @@ void ditherLL (LatLong &ll)
 }
 
 
-/* draw the visible spots and scroll controls
+/* draw the visible spots and scroll controls.
+ * ctrl_box, if given, positions the scroll up/down controls independently of box -- needed
+ * by DX Cluster's optional filter-indicator row, which shifts box down to make the spot rows
+ * line up under it while the scroll arrows (and their touch targets in checkDXClusterTouch)
+ * must stay put in the title bar. defaults to box itself, which is everyone else's case.
  */
 void drawVisibleSpots (WatchListId wl_id, const DXSpot *spots, const ScrollState &ss, const SBox &box,
-int16_t app_color)
+int16_t app_color, const SBox *ctrl_box)
 {
+    const SBox &cb = ctrl_box ? *ctrl_box : box;
+
     // show vis spots and note if any would be red above and below
     bool any_older = false;
     bool any_newer = false;
@@ -280,8 +288,8 @@ int16_t app_color)
                 ((scrollTopToBottom() && any_newer) || (!scrollTopToBottom() && any_older)))
         up_color = RA8875_RED;
 
-    ss.drawScrollUpControl (box, up_color, app_color);
-    ss.drawScrollDownControl (box, dw_color, app_color);
+    ss.drawScrollUpControl (cb, up_color, app_color);
+    ss.drawScrollDownControl (cb, dw_color, app_color);
 }
 
 /* qsort-style function to compare two DXSpot by freq

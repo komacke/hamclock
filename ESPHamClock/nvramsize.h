@@ -413,6 +413,11 @@ static const uint8_t nv_sizes[NV_N] = {
     // 262
     1,                          // NV_MAINCLOCK_LOCAL
 
+    // 263
+    1,                          // NV_DXC_HIDEIOTA
+    1,                          // NV_DXC_MODES
+    4,                          // NV_DXC_BANDS
+
 };
 
 #endif // _NVRAMSIZE_H
