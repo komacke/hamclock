@@ -413,6 +413,13 @@ static const uint8_t nv_sizes[NV_N] = {
     // 262
     1,                          // NV_MAINCLOCK_LOCAL
 
+    // 263
+    1,                          // NV_APRSON
+    NV_APRSHOST_LEN,            // NV_APRSHOST
+    2,                          // NV_APRSPORT
+    2,                          // NV_APRSRADIUS
+    2,                          // NV_APRSCATFILTER
+
 };
 
 #endif // _NVRAMSIZE_H

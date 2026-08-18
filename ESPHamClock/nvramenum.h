@@ -410,6 +410,13 @@ typedef enum {
     // 262
     NV_MAINCLOCK_LOCAL,               // whether the main clocks-pane HMS/date shows DE-local time instead of UTC
 
+    // 263
+    NV_APRSON,                        // whether APRS cluster pane is enabled (Setup)
+    NV_APRSHOST,                      // APRS-IS server host name or IP
+    NV_APRSPORT,                      // APRS-IS server port number
+    NV_APRSRADIUS,                    // nearby-station search radius, statute miles (canonical unit)
+    NV_APRSCATFILTER,                 // bitmask of APRSCategory values currently shown in the pane
+
 	NV_N
 
 } NV_Name;

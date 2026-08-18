@@ -51,6 +51,12 @@ static char dx_login[NV_DXLOGIN_LEN];
 static char hamsat_key[NV_HAMSATKEY_LEN];
 static char mesh_watchlist[NV_MESHWATCHLIST_LEN];    // comma-separated Meshtastic node IDs
 static char dx_host[NV_DXHOST_LEN];
+static char aprs_host[NV_APRSHOST_LEN];
+static uint16_t aprs_port;
+static uint16_t aprs_radius_mi;                 // canonical storage unit is statute miles
+#define APRS_RADIUS_DEFAULT     10               // default search radius, miles
+#define APRS_RADIUS_MIN         1
+#define APRS_RADIUS_MAX         500
 static char rot_host[NV_ROTHOST_LEN];
 static char rig_host[NV_RIGHOST_LEN];
 static char flrig_host[NV_FLRIGHOST_LEN];
@@ -390,6 +396,9 @@ typedef enum {
     ADIFFN_SPR,
     ADIFWL_SPR,
     ONTAWL_SPR,
+    APRSPORT_SPR,
+    APRSHOST_SPR,
+    APRSRADIUS_SPR,
 
     // page "4"
     HAMSATKEY_SPR,
@@ -499,6 +508,13 @@ static StringPrompt string_pr[N_SPR] = {
     {2, {215, R2Y(6),  0, PR_H}, {215, R2Y(6), 580, PR_H}, NULL, onta_wlist, NV_ONTAWLIST_LEN, 0, 0,
                 "Enter OnTheAir watch list description; may only be empty if Off"},
 
+    {2, {160, R2Y(7), 60, PR_H}, {220, R2Y(7),  90, PR_H}, "port:", NULL, 0, 0, 0,
+                "Enter APRS-IS server connection port number, typically 14580"},              // shadowed
+    {2, {310, R2Y(7), 50, PR_H}, {360, R2Y(7), 260, PR_H}, "host:", aprs_host, NV_APRSHOST_LEN, 0, 0,
+                "Enter APRS-IS server IP address or DNS host name, eg rotate.aprs2.net"},
+    {2, {630, R2Y(7), 70, PR_H}, {700, R2Y(7),  90, PR_H}, "radius:", NULL, 0, 0, 0,
+                "Enter search radius for nearby APRS stations, in your Setup distance units"},// shadowed
+
 
     // "page 4" -- index 3
 
@@ -600,6 +616,7 @@ typedef enum {
     ADIFWLISTB_BPR,
     ONTAWLISTA_BPR,
     ONTAWLISTB_BPR,
+    APRSON_BPR,
 
     // page "4"
     GPIOOK_BPR,
@@ -808,6 +825,9 @@ static BoolPrompt bool_pr[N_BPR] = {
     {2, {10,  R2Y(6), 150, PR_H},  {160, R2Y(6),  55, PR_H}, false, NULL,
                                                     wla_name[WLA_FLAG], wla_name[WLA_ONLY], ONTAWLISTA_BPR,0},
                                                 // 4x entangled: FF -> TF -> FT -> TT -> ...
+
+    {2, {10,  R2Y(7),  90, PR_H},  {100, R2Y(7),  60, PR_H}, false, "APRS?", "No", "Yes", NOMATE,
+                "Whether to connect to an APRS-IS server to show nearby stations"},
 
 
     // "page 4" -- index 3
@@ -1534,6 +1554,12 @@ static void initShadowedParams()
                                 "%u", rot_port);
     snprintf (string_pr[FLRIGPORT_SPR].v_str = (char*)malloc(8), string_pr[FLRIGPORT_SPR].v_len = 8,
                                 "%u", flrig_port);
+    snprintf (string_pr[APRSPORT_SPR].v_str = (char*)malloc(8), string_pr[APRSPORT_SPR].v_len = 8,
+                                "%u", aprs_port);
+    snprintf (string_pr[APRSRADIUS_SPR].v_str = (char*)malloc(8), string_pr[APRSRADIUS_SPR].v_len = 8,
+                                "%u", showDistKm()
+                                    ? (unsigned)roundf(aprs_radius_mi * KM_PER_MI)
+                                    : (unsigned)aprs_radius_mi);
     snprintf (string_pr[BME76DT_SPR].v_str = (char*)malloc(8), string_pr[BME76DT_SPR].v_len = 8,
                                 "%.2f", temp_corr[BME_76]);
     snprintf (string_pr[BME76DP_SPR].v_str = (char*)malloc(8), string_pr[BME76DP_SPR].v_len = 8,
@@ -1569,6 +1595,8 @@ static void freeShadowedParams()
 
     free (string_pr[ROTPORT_SPR].v_str);
     free (string_pr[FLRIGPORT_SPR].v_str);
+    free (string_pr[APRSPORT_SPR].v_str);
+    free (string_pr[APRSRADIUS_SPR].v_str);
     free (string_pr[BME76DT_SPR].v_str);
     free (string_pr[BME76DP_SPR].v_str);
     free (string_pr[BME77DT_SPR].v_str);
@@ -3747,6 +3775,27 @@ static bool validateStringPrompts (bool show_errors)
         }
     }
 
+    // check APRS cluster info if used
+    if (bool_pr[APRSON_BPR].state) {
+        if (!hostOK (aprs_host, NV_APRSHOST_LEN))
+            badsids[n_badsids++] = APRSHOST_SPR;
+        if (!portOK (string_pr[APRSPORT_SPR].v_str, 1, &aprs_port))
+            badsids[n_badsids++] = APRSPORT_SPR;
+        unsigned radius_entered;
+        if (sscanf (string_pr[APRSRADIUS_SPR].v_str, "%u", &radius_entered) != 1 || radius_entered < 1) {
+            badsids[n_badsids++] = APRSRADIUS_SPR;
+        } else {
+            // stored canonically in miles regardless of display units
+            unsigned radius_mi = showDistKm()
+                                ? (unsigned)roundf (radius_entered / KM_PER_MI) : radius_entered;
+            if (radius_mi < APRS_RADIUS_MIN)
+                radius_mi = APRS_RADIUS_MIN;
+            else if (radius_mi > APRS_RADIUS_MAX)
+                radius_mi = APRS_RADIUS_MAX;
+            aprs_radius_mi = (uint16_t) radius_mi;
+        }
+    }
+
     // ONTA watch list must compile successfully if being used
     if (getWatchListState (WLID_ONTA, NULL) != WLA_OFF) {
         strTrimAll (onta_wlist);
@@ -4284,6 +4333,29 @@ static void initSetup()
         setClusterLogin();
         NVWriteString(NV_DXLOGIN, dx_login);
     }
+    // init APRS cluster info
+
+    uint8_t aprs_on;
+    if (!NVReadUInt8 (NV_APRSON, &aprs_on)) {
+        aprs_on = 0;
+        NVWriteUInt8 (NV_APRSON, aprs_on);
+    }
+    bool_pr[APRSON_BPR].state = (aprs_on != 0);
+
+    if (!NVReadString(NV_APRSHOST, aprs_host)) {
+        memset (aprs_host, 0, sizeof(aprs_host));
+        NVWriteString(NV_APRSHOST, aprs_host);
+    }
+    if (!NVReadUInt16(NV_APRSPORT, &aprs_port)) {
+        aprs_port = 14580;                                      // standard APRS-IS full-feed port
+        NVWriteUInt16(NV_APRSPORT, aprs_port);
+    }
+    if (!NVReadUInt16(NV_APRSRADIUS, &aprs_radius_mi) ||
+                aprs_radius_mi < APRS_RADIUS_MIN || aprs_radius_mi > APRS_RADIUS_MAX) {
+        aprs_radius_mi = APRS_RADIUS_DEFAULT;
+        NVWriteUInt16(NV_APRSRADIUS, aprs_radius_mi);
+    }
+
     if (!NVReadString(NV_HAMSATKEY, hamsat_key)) {
         memset (hamsat_key, 0, sizeof(hamsat_key));
         NVWriteString(NV_HAMSATKEY, hamsat_key);
@@ -5461,6 +5533,11 @@ static void saveParams2NV()
     NVWriteString (NV_ONTAWLIST, onta_wlist);
     NVWriteUInt8 (NV_ONTAWLISTMASK, bool_pr[ONTAWLISTA_BPR].state | (bool_pr[ONTAWLISTB_BPR].state << 1));
 
+    NVWriteUInt8 (NV_APRSON, bool_pr[APRSON_BPR].state);
+    NVWriteString (NV_APRSHOST, aprs_host);
+    NVWriteUInt16 (NV_APRSPORT, aprs_port);
+    NVWriteUInt16 (NV_APRSRADIUS, aprs_radius_mi);
+
     // N.B. these are NOT contiguous so can not loop through N_DXCLCMDS
     NVWriteString (NV_DXCMD0, dxcl_cmds[0]);
     NVWriteString (NV_DXCMD1, dxcl_cmds[1]);
@@ -5789,6 +5866,37 @@ int getDXClusterPort()
 bool useDXCluster()
 {
     return (bool_pr[CLUSTER_BPR].state);
+}
+
+/* return pointer to static storage containing the APRS-IS server host
+ * N.B. only sensible if useAPRSCluster() is true
+ */
+const char *getAPRSClusterHost()
+{
+    return (aprs_host);
+}
+
+/* return APRS-IS server port
+ * N.B. only sensible if useAPRSCluster() is true
+ */
+int getAPRSClusterPort()
+{
+    return (aprs_port);
+}
+
+/* return nearby-station search radius in statute miles, regardless of display units
+ */
+int getAPRSClusterRadiusMiles()
+{
+    return (aprs_radius_mi);
+}
+
+/* return whether we should be allowing the APRS cluster pane, ie the user has turned it on
+ * in Setup and given it a host to connect to.
+ */
+bool useAPRSCluster()
+{
+    return (bool_pr[APRSON_BPR].state && aprs_host[0] != '\0');
 }
 
 /* return whether week starts on Monday, else Sunday
