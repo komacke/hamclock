@@ -1488,25 +1488,37 @@ void sendUserAgent (WiFiClient &client)
 
 }
 
-/* issue an HTTP Get for an arbitary page
+/* issue an HTTP Get for an arbitary page, with optional If-Modified-Since
  */
-static void httpGET (WiFiClient &client, const char *server, const char *page)
+static void httpGET (WiFiClient &client, const char *server, const char *page, time_t if_modified_since = 0)
 {
     client.print ("GET "); client.print (page); client.print (" HTTP/1.0\r\n");
     client.print ("Host: "); client.println (server);
     sendUserAgent (client);
+    if (if_modified_since > 0) {
+        char ims[100];
+        struct tm gmt;
+        gmtime_r (&if_modified_since, &gmt);
+        strftime (ims, sizeof(ims), "If-Modified-Since: %a, %d %b %Y %H:%M:%S GMT\r\n", &gmt);
+        client.print (ims);
+    }
     client.print ("Connection: close\r\n\r\n");
 }
 
 /* issue an HTTP Get to a /ham/HamClock page named in ram
  */
-void httpHCGET (WiFiClient &client, const char *server, const char *hc_page)
+void httpHCGET (WiFiClient &client, const char *server, const char *hc_page, time_t if_modified_since)
 {
     static const char hc[] = "/ham/HamClock";
     StackMalloc full_mem(strlen(hc_page) + sizeof(hc));         // sizeof includes the EOS
     char *full_hc_page = (char *) full_mem.getMem();
     snprintf (full_hc_page, full_mem.getSize(), "%s%s", hc, hc_page);
-    httpGET (client, server, full_hc_page);
+    httpGET (client, server, full_hc_page, if_modified_since);
+}
+
+void httpHCGET (WiFiClient &client, const char *server, const char *hc_page)
+{
+    httpHCGET (client, server, hc_page, 0);
 }
 
 /* issue an HTTPS Get to a /ham/HamClock page named in ram by using a curl command
@@ -1529,8 +1541,9 @@ bool connecthttpsHCGET (WiFiClient &client, const char *server, const char *hc_p
  * this is often used so subsequent stop() on client doesn't slam door in client's face with RST.
  * Along the way, if find a header field with the given name (unless NULL) return value in the given string.
  * if header is not found, we still return true but value[0] will be '\0'.
+ * if http_status is not NULL, return the numeric HTTP status code (e.g. 200, 304, 404).
  */
-bool httpSkipHeader (WiFiClient &client, const char *header, char *value, int value_len)
+bool httpSkipHeader (WiFiClient &client, int *http_status, const char *header, char *value, int value_len)
 {
     char line[200];
 
@@ -1538,13 +1551,25 @@ bool httpSkipHeader (WiFiClient &client, const char *header, char *value, int va
     int hdr_len = header ? strlen(header) : 0;
     if (value)
         value[0] = '\0';
+    if (http_status)
+        *http_status = 0;
     char *hdr;
+    bool first_line = true;
 
     // read until find a blank line
     do {
         if (!getTCPLine (client, line, sizeof(line), NULL))
             return (false);
         // Serial.println (line);
+
+        if (first_line) {
+            first_line = false;
+            int code = 0;
+            if (sscanf (line, "HTTP/%*s %d", &code) == 1) {
+                if (http_status)
+                    *http_status = code;
+            }
+        }
 
         if (header && value && (hdr = strstr (line, header)) != NULL)
             snprintf (value, value_len, "%s", hdr + hdr_len);
@@ -1554,12 +1579,22 @@ bool httpSkipHeader (WiFiClient &client, const char *header, char *value, int va
     return (true);
 }
 
+bool httpSkipHeader (WiFiClient &client, const char *header, char *value, int value_len)
+{
+    return (httpSkipHeader (client, NULL, header, value, value_len));
+}
+
+bool httpSkipHeader (WiFiClient &client, int *http_status)
+{
+    return (httpSkipHeader (client, http_status, "Remote_Addr: ", remote_addr, sizeof(remote_addr)));
+}
+
 /* same but when we don't care about any header field;
  * so we pick up Remote_Addr for postDiags()
  */
 bool httpSkipHeader (WiFiClient &client)
 {
-    return (httpSkipHeader (client, "Remote_Addr: ", remote_addr, sizeof(remote_addr)));
+    return (httpSkipHeader (client, NULL, "Remote_Addr: ", remote_addr, sizeof(remote_addr)));
 }
 
 /* Open a movie URL. First check if the backend returns 404 for hc_page.

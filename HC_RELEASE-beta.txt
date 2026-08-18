@@ -2,6 +2,7 @@ Changes with latest release:
 - new WEFAX on wx maps
 - new future eclipses
 - new panel categories
+- new IOTA in OTA
 - new IOTA in DXCluster
 - toggle UTC to local time
 - lightning limit of 9999

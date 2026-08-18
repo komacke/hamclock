@@ -4,6 +4,7 @@
 eeprom
 hc.settings
 tmp/
+.agent/
 
 # C stuff
 *.o

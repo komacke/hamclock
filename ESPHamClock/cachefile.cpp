@@ -1,5 +1,4 @@
-/* manage cached text files.
- */
+#include <utime.h>
 
 #include "HamClock.h"
 
@@ -84,12 +83,28 @@ FILE *openCachedFile (const char *fn, const char *url, int max_age, int min_size
 
         updateClocks(false);
 
-        // query web page
-        httpHCGET (cache_client, backend_host, url);
+        // check if local file exists and is of sufficient size to provide timestamp for conditional GET
+        struct stat sbuf;
+        time_t file_mtime = 0;
+        if (stat (fn_path, &sbuf) == 0 && sbuf.st_size >= min_size)
+            file_mtime = sbuf.st_mtime;
 
-        // skip header
-        if (!httpSkipHeader (cache_client)) {
+        // query web page with optional If-Modified-Since
+        httpHCGET (cache_client, backend_host, url, file_mtime);
+
+        // skip header and retrieve HTTP status
+        int http_status = 0;
+        if (!httpSkipHeader (cache_client, &http_status)) {
             Serial.printf ("Cache: %s head short\n", url);
+            goto out;
+        }
+
+        // if server returned 304 Not Modified, local file is still fresh
+        if (http_status == 304) {
+            if (utime (fn_path, NULL) < 0)
+                Serial.printf ("Cache: utime(%s): %s\n", fn_path, strerror(errno));
+            if (debugLevel (DEBUG_CACHE, 1))
+                Serial.printf ("Cache: %s not modified (304)\n", fn);
             goto out;
         }
 
