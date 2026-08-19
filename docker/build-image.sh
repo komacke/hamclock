@@ -162,6 +162,11 @@ build_image() {
     poke_version_cpp
 
     if [ $MULTI_PLATFORM == true ]; then
+        # only use latest on stable versions
+        if [[ $TAG =~ ^[0-9]+\.[0-9]{2}$ ]]; then
+            TAG_LATEST="-t $IMAGE_BASE:latest"
+        fi
+
         docker buildx build \
             $NOCACHE_ARG \
             --pull \
@@ -170,7 +175,7 @@ build_image() {
             --build-arg HC_GID=$HC_GID \
             $SET_HC_SIZE \
             -t $IMAGE \
-            -t $IMAGE_BASE:latest \
+            $TAG_LATEST \
             -f docker/Dockerfile \
             --platform linux/amd64,linux/arm64 \
             --push \
