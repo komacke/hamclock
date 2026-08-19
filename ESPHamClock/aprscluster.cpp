@@ -1284,30 +1284,36 @@ static void runAPRSFilterMenu (const SBox &box)
  * on the the left and clips if a callsign is unusually long, same tradeoff every other narrow
  * HamClock list pane makes).
  */
-#define APRS_SYM_W       40             // reserved width of the SYM column
+// column widths were re-tuned when AGE was added: the pane is only ~160px wide and adding a
+// whole new column with no other changes squeezed CALL down to near-nothing, so SYM shrank
+// (icons are only 12px; the wide fallback text column was rarely used at full width anyway)
+// and the inter-column gap shrank slightly too, to make room. DIR was dropped entirely (still
+// available via the row's detail tooltip) to give CALL more room still. SYM was tightened
+// again afterward since the icons only need ~12px and were leaving unused space.
+#define APRS_SYM_W       20             // reserved width of the SYM column
 #define APRS_DIST_W      30             // reserved width of the DIST/KM/MI column
-#define APRS_DIR_W       22             // reserved width of the DIR column
-#define APRS_COL_GAP      6             // minimum gap left between adjacent columns
+#define APRS_AGE_W       22             // reserved width of the AGE column
+#define APRS_COL_GAP      4             // minimum gap left between adjacent columns
 
-/* draw the CALL / DIR / DISTANCE / SYMBOL column header just above the scrollable list
+/* draw the CALL / DISTANCE / SYMBOL / AGE column header just above the scrollable list
  */
 static void drawAPRSColHeader (const SBox &box)
 {
-    uint16_t sym_x  = box.x + box.w - APRS_SYM_W;
+    uint16_t age_x  = box.x + box.w - APRS_AGE_W;
+    uint16_t sym_x  = age_x - APRS_COL_GAP - APRS_SYM_W;
     uint16_t dist_x = sym_x - APRS_COL_GAP - APRS_DIST_W;
-    uint16_t dir_x  = dist_x - APRS_COL_GAP - APRS_DIR_W;
-    uint16_t call_w = dir_x > box.x+3+APRS_COL_GAP ? dir_x - APRS_COL_GAP - (box.x+3) : 0;
+    uint16_t call_w = dist_x > box.x+3+APRS_COL_GAP ? dist_x - APRS_COL_GAP - (box.x+3) : 0;
 
     selectFontStyle (LIGHT_FONT, FAST_FONT);
     tft.setTextColor (RA8875_WHITE);
     uint16_t y = box.y + APRS_LIST_Y0;
     printClipped (box.x + 3, y, "CALL", call_w);
-    tft.setCursor (dir_x, y);
-    tft.print ("DIR");
     tft.setCursor (dist_x, y);
     tft.print (showDistKm() ? "KM" : "MI");
     tft.setCursor (sym_x, y);
     tft.print ("SYM");
+    tft.setCursor (age_x, y);
+    tft.print ("AGE");
 }
 
 /* look up the sprite pixel data for the given symbol table+code, else NULL. all sprites are
@@ -1368,11 +1374,11 @@ static void drawAllVisAPRSSpots (const SBox &box)
 
     drawAPRSColHeader (box);
 
-    uint16_t sym_x  = box.x + box.w - APRS_SYM_W;
+    uint16_t age_x  = box.x + box.w - APRS_AGE_W;
+    uint16_t sym_x  = age_x - APRS_COL_GAP - APRS_SYM_W;
     uint16_t dist_x = sym_x - APRS_COL_GAP - APRS_DIST_W;
-    uint16_t dir_x  = dist_x - APRS_COL_GAP - APRS_DIR_W;
-    uint16_t call_w = dir_x > box.x+3+APRS_COL_GAP ? dir_x - APRS_COL_GAP - (box.x+3) : 0;
-    uint16_t sym_w  = box.x+box.w > sym_x ? box.x+box.w - sym_x - 1 : 0;
+    uint16_t call_w = dist_x > box.x+3+APRS_COL_GAP ? dist_x - APRS_COL_GAP - (box.x+3) : 0;
+    uint16_t sym_w  = age_x > sym_x+APRS_COL_GAP ? age_x - APRS_COL_GAP - sym_x - 1 : 0;
 
     selectFontStyle (LIGHT_FONT, FAST_FONT);
     int min_i, max_i;
@@ -1384,15 +1390,6 @@ static void drawAllVisAPRSSpots (const SBox &box)
             tft.setTextColor (aprsColor());
             printClipped (box.x + 3, y, sp.call, call_w);
 
-            char dir_str[4] = "-";
-            if (sp.has_pos) {
-                float bear = sp.bear_deg;                       // starts out TRUE
-                desiredBearing (de_ll, bear);                   // converts in place if user wants mag
-                snprintf (dir_str, sizeof(dir_str), "%s", compassAbbr (bear));
-            }
-            tft.setCursor (dir_x, y);
-            tft.print (dir_str);
-
             char dist_str[10] = "--";
             if (sp.has_pos) {
                 float d = showDistKm() ? sp.dist_mi * KM_PER_MI : sp.dist_mi;
@@ -1403,6 +1400,14 @@ static void drawAllVisAPRSSpots (const SBox &box)
 
             if (!sp.has_pos || !drawAPRSSymbolIcon (sym_x, y, sp.sym_table, sp.sym_code))
                 printClipped (sym_x, y, sp.has_pos ? sp.symbol : "-", sym_w);
+
+            // age since last heard: counts up in seconds (1s, 2s, ... 59s) then switches to
+            // whole minutes, then hours/days/etc -- same convention as formatAge() uses for
+            // DX Cluster and every other spot list in HamClock.
+            char age_str[8];
+            time_t age = myNow() - sp.heard;
+            tft.setCursor (age_x, y);
+            tft.print (formatAge (age, age_str, sizeof(age_str), 3));
         }
     }
 
@@ -1572,12 +1577,14 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
         return (false);
     }
 
-    // a tap on the column header row itself: KM/MI toggles sort order, SYM shows a legend
+    // a tap on the column header row itself: KM/MI toggles sort order, SYM shows a legend,
+    // AGE explains the countdown-style age display
     if (useAPRSCluster()) {
         uint16_t hdr_y0 = box.y + APRS_LIST_Y0;
         uint16_t hdr_y1 = hdr_y0 + APRS_HDR_DY;
         if (s.y >= hdr_y0 && s.y < hdr_y1) {
-            uint16_t sym_x  = box.x + box.w - APRS_SYM_W;
+            uint16_t age_x  = box.x + box.w - APRS_AGE_W;
+            uint16_t sym_x  = age_x - APRS_COL_GAP - APRS_SYM_W;
             uint16_t dist_x = sym_x - APRS_COL_GAP - APRS_DIST_W;
 
             if (s.x >= dist_x && s.x < sym_x) {
@@ -1591,13 +1598,19 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
                 return (true);
             }
 
-            if (s.x >= sym_x) {
+            if (s.x >= sym_x && s.x < age_x) {
                 // most symbols now render as actual icons (see aprsicons.h) rather than text, so a
                 // giant name dump isn't as useful here as it used to be -- explain what's covered
                 // and what still falls back to "-" instead
                 tooltip (s, "Most APRS symbols show as small icons. \"-\" means either the "
                             "alternate symbol table (not decoded) or one of a handful of unused/"
                             "reserved primary-table codes.");
+                return (true);
+            }
+
+            if (s.x >= age_x) {
+                tooltip (s, "Time since last heard: counts up in seconds, then switches to "
+                            "whole minutes, hours, days, etc.");
                 return (true);
             }
         }
@@ -1614,13 +1627,13 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
         if (vis_row >= 0 && aprs_ss.findDataIndex (vis_row, spot_row)) {
             const APRSSpot &sp = aprs_disp[spot_row];
 
-            uint16_t sym_x  = box.x + box.w - APRS_SYM_W;
+            uint16_t age_x  = box.x + box.w - APRS_AGE_W;
+            uint16_t sym_x  = age_x - APRS_COL_GAP - APRS_SYM_W;
             uint16_t dist_x = sym_x - APRS_COL_GAP - APRS_DIST_W;
-            uint16_t dir_x  = dist_x - APRS_COL_GAP - APRS_DIR_W;
-            uint16_t call_w = dir_x > box.x+3+APRS_COL_GAP ? dir_x - APRS_COL_GAP - (box.x+3) : 0;
+            uint16_t call_w = dist_x > box.x+3+APRS_COL_GAP ? dist_x - APRS_COL_GAP - (box.x+3) : 0;
 
             selectFontStyle (LIGHT_FONT, FAST_FONT);
-            if (s.x < dir_x && getTextWidth (sp.call) > call_w) {
+            if (s.x < dist_x && getTextWidth (sp.call) > call_w) {
                 tooltip (s, sp.call);
                 return (true);
             }
