@@ -108,6 +108,10 @@ static char i2c_fn[NV_I2CFN_LEN];
 #define CURSOR_DROP     2                       // pixels to drop cursor
 #define NVMS_MKMSK      0x3                     // NV_LBLSTYLE mark mask -- legacy prior to 4.10
 #define R2Y(r)          ((r)*(PR_H+1))          // macro given row index from 0 return screen y
+// Page 3 (rotctld/rigctld/flrig/ADIF/APRS) uses all 8 rows (0-7), and R2Y(7) alone runs the
+// row into the keyboard below. There's no free row to shift into, so this page uses a
+// slightly tighter, gapless row pitch instead -- just enough to clear the keyboard.
+#define R2Y3(r)         ((r)*PR_H)              // tight row spacing, Page 3 only
 #define ERRDWELL_MS     2000                    // err message dwell time, ms
 #define BTNDWELL_MS     200                     // button feedback dwell time, ms
 
@@ -482,37 +486,37 @@ static StringPrompt string_pr[N_SPR] = {
 
     // "page 3" -- index 2
 
-    {2, {160, R2Y(0), 60, PR_H}, {220, R2Y(0),  90, PR_H}, "port:", NULL, 0, 0, 0,
+    {2, {160, R2Y3(0), 60, PR_H}, {220, R2Y3(0),  90, PR_H}, "port:", NULL, 0, 0, 0,
                 "Enter the network port number for connecting to rotctld"},                       // shadowed
-    {2, {310, R2Y(0), 60, PR_H}, {360, R2Y(0), 300, PR_H}, "host:", rot_host, NV_ROTHOST_LEN, 0, 0,
+    {2, {310, R2Y3(0), 60, PR_H}, {360, R2Y3(0), 300, PR_H}, "host:", rot_host, NV_ROTHOST_LEN, 0, 0,
                 "Enter the IP address or DNS host name for connecting to rotctld"},
-    {2, {160, R2Y(1), 60, PR_H}, {220, R2Y(1),  90, PR_H}, "port:", NULL, 0, 0, 0,
+    {2, {160, R2Y3(1), 60, PR_H}, {220, R2Y3(1),  90, PR_H}, "port:", NULL, 0, 0, 0,
                 "Enter the network port number for connecting to rigctld"},                       // shadowed
-    {2, {310, R2Y(1), 60, PR_H}, {360, R2Y(1), 300, PR_H}, "host:", rig_host, NV_RIGHOST_LEN, 0, 0,
+    {2, {310, R2Y3(1), 60, PR_H}, {360, R2Y3(1), 300, PR_H}, "host:", rig_host, NV_RIGHOST_LEN, 0, 0,
                 "Enter the IP address or DNS host name for connecting to rigctld"},
-    {2, {160, R2Y(2), 60, PR_H}, {220, R2Y(2),  90, PR_H}, "port:", NULL, 0, 0, 0,
+    {2, {160, R2Y3(2), 60, PR_H}, {220, R2Y3(2),  90, PR_H}, "port:", NULL, 0, 0, 0,
                 "Enter the network port number for connecting to flrig"},                         // shadowed
-    {2, {310, R2Y(2), 60, PR_H}, {360, R2Y(2), 300, PR_H}, "host:", flrig_host, NV_FLRIGHOST_LEN, 0, 0,
+    {2, {310, R2Y3(2), 60, PR_H}, {360, R2Y3(2), 300, PR_H}, "host:", flrig_host, NV_FLRIGHOST_LEN, 0, 0,
                 "Enter the IP address or DNS host name for connecting to flrig"},
 
-    {2, {310, R2Y(3), 130, PR_H}, {452, R2Y(3), 208, PR_H}, "PiAware host:", piaware_host, NV_PIAWAREHOST_LEN, 0, 0,
+    {2, {310, R2Y3(3), 130, PR_H}, {452, R2Y3(3), 208, PR_H}, "PiAware host:", piaware_host, NV_PIAWAREHOST_LEN, 0, 0,
                 "Enter the IP address or DNS host name of a local PiAware ADS-B receiver to use for the "
                 "ADS-B airplane icon instead of adsb.lol; leave blank to use adsb.lol"},
 
-    {2, {100, R2Y(4), 60, PR_H}, {160, R2Y(4), 580, PR_H}, "file:", adif_fn, NV_ADIFFN_LEN, 0, 0,
+    {2, {100, R2Y3(4), 60, PR_H}, {160, R2Y3(4), 580, PR_H}, "file:", adif_fn, NV_ADIFFN_LEN, 0, 0,
                 "Enter the path name to the ADIF file; "
                 "you may use environment variables or ~ to refer to your home directory"},
 
-    {2, {215, R2Y(5),  0, PR_H}, {215, R2Y(5), 580, PR_H}, NULL, adif_wlist, NV_ADIFWLIST_LEN, 0, 0,
+    {2, {215, R2Y3(5),  0, PR_H}, {215, R2Y3(5), 580, PR_H}, NULL, adif_wlist, NV_ADIFWLIST_LEN, 0, 0,
                 "Enter ADIF file watch list description; may only be empty if Off"},
-    {2, {215, R2Y(6),  0, PR_H}, {215, R2Y(6), 580, PR_H}, NULL, onta_wlist, NV_ONTAWLIST_LEN, 0, 0,
+    {2, {215, R2Y3(6),  0, PR_H}, {215, R2Y3(6), 580, PR_H}, NULL, onta_wlist, NV_ONTAWLIST_LEN, 0, 0,
                 "Enter OnTheAir watch list description; may only be empty if Off"},
 
-    {2, {160, R2Y(7), 60, PR_H}, {220, R2Y(7),  90, PR_H}, "port:", NULL, 0, 0, 0,
+    {2, {160, R2Y3(7), 60, PR_H}, {220, R2Y3(7),  90, PR_H}, "port:", NULL, 0, 0, 0,
                 "Enter APRS-IS server connection port number, typically 14580"},              // shadowed
-    {2, {310, R2Y(7), 50, PR_H}, {360, R2Y(7), 260, PR_H}, "host:", aprs_host, NV_APRSHOST_LEN, 0, 0,
+    {2, {310, R2Y3(7), 50, PR_H}, {360, R2Y3(7), 260, PR_H}, "host:", aprs_host, NV_APRSHOST_LEN, 0, 0,
                 "Enter APRS-IS server IP address or DNS host name, eg rotate.aprs2.net"},
-    {2, {630, R2Y(7), 70, PR_H}, {700, R2Y(7),  90, PR_H}, "radius:", NULL, 0, 0, 0,
+    {2, {630, R2Y3(7), 70, PR_H}, {700, R2Y3(7),  90, PR_H}, "radius:", NULL, 0, 0, 0,
                 "Enter search radius for nearby APRS stations, in your Setup distance units"},// shadowed
 
 
@@ -796,37 +800,37 @@ static BoolPrompt bool_pr[N_BPR] = {
     // "page 3" -- index 2
 
 
-    {2, {10,  R2Y(0),  90, PR_H},  {100, R2Y(0),  60, PR_H}, false, "rotctld?", "No", "Yes", NOMATE,
+    {2, {10,  R2Y3(0),  90, PR_H},  {100, R2Y3(0),  60, PR_H}, false, "rotctld?", "No", "Yes", NOMATE,
                 "Whether to control a rotator using rotctld"},
-    {2, {10,  R2Y(1),  90, PR_H},  {100, R2Y(1),  60, PR_H}, false, "rigctld?", "No", "Yes", NOMATE,
+    {2, {10,  R2Y3(1),  90, PR_H},  {100, R2Y3(1),  60, PR_H}, false, "rigctld?", "No", "Yes", NOMATE,
                 "Whether to control a radio using rigctld"},
-    {2, {10,  R2Y(2),  90, PR_H},  {100, R2Y(2),  60, PR_H}, false, "flrig?",   "No", "Yes", NOMATE,
+    {2, {10,  R2Y3(2),  90, PR_H},  {100, R2Y3(2),  60, PR_H}, false, "flrig?",   "No", "Yes", NOMATE,
                 "Whether to control a radio using flrig"},
 
-    {2, {10,  R2Y(3),  90, PR_H},  {100, R2Y(3), 150, PR_H}, false, "Radio:", "Monitor PTT","Control",NOMATE,
+    {2, {10,  R2Y3(3),  90, PR_H},  {100, R2Y3(3), 150, PR_H}, false, "Radio:", "Monitor PTT","Control",NOMATE,
                 "Whether to allow HamClock to control a radio or just passively monitor PTT"},
 
 
-    {2, {10,  R2Y(4),  90, PR_H},  {100, R2Y(4), 300, PR_H}, false, "ADIF?", "No", NULL, NOMATE,
+    {2, {10,  R2Y3(4),  90, PR_H},  {100, R2Y3(4), 300, PR_H}, false, "ADIF?", "No", NULL, NOMATE,
                 "Whether to open and monitor an ADIF log file"},
 
 
 
-    {2, {10,  R2Y(5), 150, PR_H},  {160, R2Y(5),  55, PR_H}, false, "ADIF watch:",
+    {2, {10,  R2Y3(5), 150, PR_H},  {160, R2Y3(5),  55, PR_H}, false, "ADIF watch:",
                                                     wla_name[WLA_OFF], wla_name[WLA_NOT], ADIFWLISTB_BPR,
                 "Define the style and filter for an ADIF file watch list"},
-    {2, {10,  R2Y(5), 150, PR_H},  {160, R2Y(5),  55, PR_H}, false, NULL,
+    {2, {10,  R2Y3(5), 150, PR_H},  {160, R2Y3(5),  55, PR_H}, false, NULL,
                                                     wla_name[WLA_FLAG], wla_name[WLA_ONLY], ADIFWLISTA_BPR,0},
                                                 // 4x entangled: FF -> TF -> FT -> TT -> ...
 
-    {2, {10,  R2Y(6), 150, PR_H},  {160, R2Y(6),  55, PR_H}, false, "ONTA watch:",
+    {2, {10,  R2Y3(6), 150, PR_H},  {160, R2Y3(6),  55, PR_H}, false, "ONTA watch:",
                                                     wla_name[WLA_OFF], wla_name[WLA_NOT], ONTAWLISTB_BPR,
                 "Define the style and filter for OnTheAir watch list"},
-    {2, {10,  R2Y(6), 150, PR_H},  {160, R2Y(6),  55, PR_H}, false, NULL,
+    {2, {10,  R2Y3(6), 150, PR_H},  {160, R2Y3(6),  55, PR_H}, false, NULL,
                                                     wla_name[WLA_FLAG], wla_name[WLA_ONLY], ONTAWLISTA_BPR,0},
                                                 // 4x entangled: FF -> TF -> FT -> TT -> ...
 
-    {2, {10,  R2Y(7),  90, PR_H},  {100, R2Y(7),  60, PR_H}, false, "APRS?", "No", "Yes", NOMATE,
+    {2, {10,  R2Y3(7),  90, PR_H},  {100, R2Y3(7),  60, PR_H}, false, "APRS?", "No", "Yes", NOMATE,
                 "Whether to connect to an APRS-IS server to show nearby stations"},
 
 
@@ -4343,7 +4347,8 @@ static void initSetup()
     bool_pr[APRSON_BPR].state = (aprs_on != 0);
 
     if (!NVReadString(NV_APRSHOST, aprs_host)) {
-        memset (aprs_host, 0, sizeof(aprs_host));
+        strncpy (aprs_host, "rotate.aprs2.net", sizeof(aprs_host)-1);
+        aprs_host[sizeof(aprs_host)-1] = '\0';
         NVWriteString(NV_APRSHOST, aprs_host);
     }
     if (!NVReadUInt16(NV_APRSPORT, &aprs_port)) {
