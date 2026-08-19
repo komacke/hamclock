@@ -237,3 +237,8 @@ Addr,Name,Len,Type,Description
 0xCFC,NV_DXC_HIDEIOTA,1,i,whether to hide the IOTA marker column in the DX Cluster pane
 0xCFE,NV_DXC_MODES,1,i,DX Cluster mode filter bitmask (see DXCMB_* in dxcluster.cpp)
 0xD00,NV_DXC_BANDS,4,i,"DX Cluster band filter bitmask, 1 bit per HamBandSetting"
+0xD05,NV_APRSON,1,i,whether APRS cluster pane is enabled (Setup)
+0xD07,NV_APRSHOST,26,s,APRS-IS server host name or IP
+0xD22,NV_APRSPORT,2,i,APRS-IS server port number
+0xD25,NV_APRSRADIUS,2,i,"nearby-station search radius, statute miles (canonical unit)"
+0xD28,NV_APRSCATFILTER,2,i,bitmask of APRSCategory values currently shown in the pane
