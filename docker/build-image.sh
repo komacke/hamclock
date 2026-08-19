@@ -163,7 +163,7 @@ build_image() {
 
     if [ $MULTI_PLATFORM == true ]; then
         # only use latest on stable versions
-        if [[ $TAG =~ ^[0-9]+\.[0-9]{2}$ ]]; then
+        if [[ $TAG =~ ^v[0-9]{1,2}\.[0-9]{2}\.[0-9]{1,2}$ ]]; then
             TAG_LATEST="-t $IMAGE_BASE:latest"
         fi
 
