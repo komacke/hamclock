@@ -1,2 +1,2 @@
 Changes with latest release:
-- no changes yet from 4.30
+- new APRS monitoring
