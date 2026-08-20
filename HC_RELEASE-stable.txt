@@ -1,8 +1,11 @@
 Changes with latest release:
-- country lines on maps
-- US state lines on zoomed maps
-- Canadian province lines on maps
-- clean stray pixels in status
-- snappier refresh of sat tracks
-- fix magnetic bearing display issue
-- fix various cyclon display issues
+- new WEFAX on wx maps
+- new future eclipses
+- new panel categories
+- new IOTA in OTA
+- new IOTA in DXCluster
+- toggle UTC to local time
+- lightning limit of 9999
+- storm trajectory on all projections
+- Fix vertical position of call sign
+- fix disappearing icons
