@@ -9,8 +9,8 @@ ON_TAG=false
 # Don't set anything past here
 TAG=$(git describe --exact-match --tags 2>/dev/null)
 if [ $? -ne 0 ]; then
-    echo "NOTE: Not currently on a tag. Using 'latest'."
-    TAG=latest
+    echo "NOTE: Not currently on a tag. Using 'edge'."
+    TAG=edge
     GIT_VERSION=$(git rev-parse --short HEAD)
     ON_TAG=false
 else
@@ -32,7 +32,7 @@ $THIS:
 
     Builds the latest docker image based on the current git branch. It will figure out
     if on a git tag and will use that for the docker image tag. Otherwise falls back
-    to 'latest'.
+    to 'edge'.
 
     -m: multi-platform image buld for: linux/amd64 linux/arm64 linux/arm/v7
         - argument is ignored when run with -c
@@ -97,7 +97,7 @@ do_all() {
 }
 
 warn_image_tag() {
-    if [ $TAG != latest ]; then
+    if [ $TAG != edge ]; then
         if [ $MULTI_PLATFORM == true ]; then
             docker manifest inspect $IMAGE >/dev/null
             if [ $? -eq 0 ]; then
@@ -162,6 +162,11 @@ build_image() {
     poke_version_cpp
 
     if [ $MULTI_PLATFORM == true ]; then
+        # only use latest on stable versions
+        if [[ $TAG =~ ^v[0-9]{1,2}\.[0-9]{2}\.[0-9]{1,2}$ ]]; then
+            TAG_LATEST="-t $IMAGE_BASE:latest"
+        fi
+
         docker buildx build \
             $NOCACHE_ARG \
             --pull \
@@ -170,6 +175,7 @@ build_image() {
             --build-arg HC_GID=$HC_GID \
             $SET_HC_SIZE \
             -t $IMAGE \
+            $TAG_LATEST \
             -f docker/Dockerfile \
             --platform linux/amd64,linux/arm64 \
             --push \
