@@ -414,8 +414,13 @@ typedef enum {
     NV_DXC_HIDEIOTA,                 // whether to hide the IOTA marker column in the DX Cluster pane
     NV_DXC_MODES,                    // DX Cluster mode filter bitmask (see DXCMB_* in dxcluster.cpp)
     NV_DXC_BANDS,                    // DX Cluster band filter bitmask, 1 bit per HamBandSetting
+    NV_APRSON,                        // whether APRS cluster pane is enabled (Setup)
+    NV_APRSHOST,                      // APRS-IS server host name or IP
+    NV_APRSPORT,                      // APRS-IS server port number
+    NV_APRSRADIUS,                    // nearby-station search radius, statute miles (canonical unit)
+    NV_APRSCATFILTER,                 // bitmask of APRSCategory values currently shown in the pane
 
-	NV_N
+    NV_N
 
 } NV_Name;
 

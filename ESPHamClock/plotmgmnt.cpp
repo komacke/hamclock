@@ -148,6 +148,7 @@ bool plotChoiceIsAvailable (PlotChoice pc)
     case PLOT_CH_VHFCOND:       // fallthru
     case PLOT_CH_SATACT:        // fallthru
     case PLOT_CH_MESHTASTIC:    // fallthru
+    case PLOT_CH_APRSCLUSTER:   // fallthru
         return (true);
 
     case PLOT_CH_NONE:         // fallthru
@@ -406,6 +407,7 @@ static bool accordionServiceOtherPanes (void)
 
     updateWiFi (menu_open_for_pane);
     checkDXCluster();
+    checkAPRSCluster();
     drawAllSymbols();
 
     // publish whatever that work just drew (map overlays etc), then reclaim our own box in
@@ -1122,6 +1124,11 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
     switch (plot_ch[pp]) {
     case PLOT_CH_DXCLUSTER:
         if (checkDXClusterTouch (s, box))
+            return (true);
+        in_top = true;
+        break;
+    case PLOT_CH_APRSCLUSTER:
+        if (checkAPRSClusterTouch (s, box))
             return (true);
         in_top = true;
         break;

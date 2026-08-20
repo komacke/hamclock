@@ -2320,6 +2320,16 @@ void updateWiFi(PlotPane skip_pp)
             }
             break;
 
+        case PLOT_CH_APRSCLUSTER:
+            if (t0 >= next_update[pp]) {
+                if (updateAPRSCluster (box, fresh_redraw[pc])) {
+                    next_update[pp] = myNow() + 2;              // very fast, live feed
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry (PLOT_CH_APRSCLUSTER);
+            }
+            break;
+
         case PLOT_CH_DXWX:
             if (t0 >= next_update[pp]) {
                 if (updateDXWX(box))

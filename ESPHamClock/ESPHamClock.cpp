@@ -698,6 +698,7 @@ void loop()
     drawFireworks();                    // only new years midnight
     updateSatPass ();                   // just for the satellite LED
     checkDXCluster ();                  // collect new spots if running
+    checkAPRSCluster ();                // collect new APRS traffic if running
     checkEclipsePopupTimeout ();        // auto-dismiss the eclipse pane's detail popup, if up
 
     // update stopwatch exclusively, if active
@@ -1149,6 +1150,7 @@ void newDE (LatLong &ll, const char grid[MAID_CHARLEN])
     scheduleNewPlot(PLOT_CH_DEWX);
     scheduleNewCoreMap(core_map);
     sendDXClusterDELLGrid();
+    sendAPRSClusterNewDE();
     if (setNewSatCircumstance())
         drawSatPass();
 
@@ -1988,8 +1990,12 @@ void drawDEFormatMenu()
         PlotPane pp = findPaneForChoice (pc);
         bool available = plotChoiceIsAvailable(pc) && (pp == PANE_NONE || pp == PANE_0);
         MenuFieldType type = available ? MENU_AL1OFN : MENU_IGNORE;
+        // this list is a tight, auto-width-to-longest-label column shared with short names like
+        // "SSN" and "Kp" -- "Nearby APRS" is fine everywhere else (eg the normal pane picker) but
+        // is disproportionately long here, so abbreviate just for this one menu
+        const char *pc_label = (pc == PLOT_CH_APRSCLUSTER) ? "APRS" : plot_names[pc];
         mitems[N_DEFMT_CORE+n_menu_ch] = {
-            type, !!(plot_rotset[PANE_0] & PLOTBIT(pc)), 3, Mi, plot_names[pc], 0
+            type, !!(plot_rotset[PANE_0] & PLOTBIT(pc)), 3, Mi, pc_label, 0
         };
         n_menu_ch++;
     }

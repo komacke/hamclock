@@ -46,5 +46,6 @@
 #define NV_HAMSATKEY_LEN        64
 #define NV_SATGROUP_LEN         240
 #define NV_MESHWATCHLIST_LEN    120
+#define NV_APRSHOST_LEN          26
 
 #endif // _NVRAMLEN_H

@@ -113,6 +113,7 @@ OBJS = \
 	debug.o \
 	drawextra.o \
 	dxcluster.o \
+	aprscluster.o \
 	dxpeds.o \
 	dxpeds_hide.o \
 	hamqsl.o \
