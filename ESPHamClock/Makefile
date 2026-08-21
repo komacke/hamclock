@@ -90,6 +90,7 @@ OBJS = \
 	adif.o \
 	adif_parser.o \
 	activenets.o \
+	balloons.o \
     antenna_lookup.o \
 	antennas.o \
 	antennas-html.o \

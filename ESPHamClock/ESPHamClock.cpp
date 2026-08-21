@@ -1790,6 +1790,7 @@ void drawAllSymbols()
     drawMeshtasticOnMap();
     drawPlanetsOnMap();
     drawLaunchesOnMap();
+    drawBalloonsOnMap();
     drawActiveNetsOnMap();
     drawDEMarker(false);
     drawDXMarker(false);
