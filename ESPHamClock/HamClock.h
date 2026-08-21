@@ -429,7 +429,8 @@ typedef enum {
 #define PLOTNAMES_HIGH \
     X(PLOT_CH_SATACT,       "Sat_Alerts")        \
     X(PLOT_CH_MESHTASTIC,   "Mesh_Mon")          \
-    X(PLOT_CH_ECLIPSE,      "Eclipse")
+    X(PLOT_CH_ECLIPSE,      "Eclipse")           \
+    X(PLOT_CH_BALLOONS,     "Balloons")
 
 #define PLOTNAMES PLOTNAMES_LOW PLOTNAMES_HIGH
 
@@ -1348,6 +1349,7 @@ extern bool getClosestMeshtasticNode (LatLong &from_ll, LatLong *mark_ll, MeshIn
 extern bool getMeshtasticPaneInfo (const SCoord &ms, LatLong *mark_ll, MeshInfo *info);
 
 #define LAUNCHES_INTERVAL (2)
+#define BALLOONS_INTERVAL (15)
 
 
 
@@ -1541,6 +1543,7 @@ extern uint8_t show_lp;                 // show prop long path, else short path
 #define ERAD_M          3959.0F         // earth radius, miles
 #define MI_PER_KM       0.621371F
 #define KM_PER_MI       1.609344F
+#define FT_PER_M        3.28084F
 
 #define DE_R 6                          // radius of DE marker   (erases better if even)
 #define DEAP_R 6                        // radius of DE antipodal marker (erases better if even)
@@ -2399,7 +2402,8 @@ extern PlotMask plot_rotset[PANE_N];       // each pane's PlotChoice rotation ch
 #define PANE_0_CH_MASK          (PLOTBIT(PLOT_CH_DXCLUSTER) | PLOTBIT(PLOT_CH_CONTESTS) | \
                                  PLOTBIT(PLOT_CH_ADIF) | PLOTBIT(PLOT_CH_ONTA) | \
                                  PLOTBIT(PLOT_CH_DXPEDS) | PLOTBIT(PLOT_CH_ACTIVENETS) | \
-                                 PLOTBIT(PLOT_CH_LAUNCHES) | PLOTBIT(PLOT_CH_SATACT))
+                                 PLOTBIT(PLOT_CH_LAUNCHES) | PLOTBIT(PLOT_CH_SATACT) | \
+                                 PLOTBIT(PLOT_CH_BALLOONS))
 
 // compute number of bits set in PANE_0_CH_MASK at compile time :-)
 // https://stackoverflow.com/questions/109023/count-the-number-of-set-bits-in-a-32-bit-integer
@@ -2660,6 +2664,34 @@ extern const char *getLaunchHoverLabel (const LatLong &ll);
 extern bool getLaunchPaneHover (const SCoord &ms, LatLong *ll, char *label, size_t label_len);
 extern bool getLaunchMapMenuInfo (const LatLong &ll, char *l1, size_t l1n, char *l2, size_t l2n,
         char *l3, size_t l3n, const char **wiki_url);
+
+/*
+ * balloons.cpp
+ */
+
+// balloon map plotting + hover info -- same pattern as ActiveNetInfo/MeshInfo above
+typedef struct {
+    char name[32];                      // flight/payload display name
+    bool is_hab;                        // true=HAB, false=PicoBalloon
+    bool has_alt;
+    float alt_m;
+    bool has_freq;
+    float freq_hz;
+    bool has_batt;
+    float batt_v;
+    bool has_temp;
+    float temp_c;
+    char age[24];                       // precomputed "3h12m"-style elapsed-since-heard text
+    LatLong ll;
+} BalloonHoverInfo;
+
+extern bool updateBalloons     (const SBox &box, bool fresh);
+extern bool checkBalloonsTouch (const SCoord &s, const SBox &box);
+extern void drawBalloonsOnMap  (void);
+extern bool getClosestBalloon    (const LatLong &ll, LatLong *mark_ll, BalloonHoverInfo *info);
+extern bool getBalloonPaneInfo   (const SCoord &ms, LatLong *mark_ll, BalloonHoverInfo *info);
+extern bool getBalloonMapMenuInfo (const LatLong &ll, char *l1, size_t l1n, char *l2, size_t l2n,
+        char *l3, size_t l3n, const char **url);
 
 
 

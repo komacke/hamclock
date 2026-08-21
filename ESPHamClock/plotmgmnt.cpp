@@ -148,6 +148,7 @@ bool plotChoiceIsAvailable (PlotChoice pc)
     case PLOT_CH_VHFCOND:       // fallthru
     case PLOT_CH_SATACT:        // fallthru
     case PLOT_CH_MESHTASTIC:    // fallthru
+    case PLOT_CH_BALLOONS:      // fallthru
         return (true);
 
     case PLOT_CH_NONE:         // fallthru
@@ -1224,6 +1225,12 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
 
     case PLOT_CH_LAUNCHES:
         if (checkLaunchesTouch (s, box))
+            return (true);
+        in_top = true;
+        break;
+
+    case PLOT_CH_BALLOONS:
+        if (checkBalloonsTouch (s, box))
             return (true);
         in_top = true;
         break;

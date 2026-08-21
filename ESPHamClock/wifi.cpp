@@ -2283,6 +2283,7 @@ void updateWiFi(PlotPane skip_pp)
             if (pc == PLOT_CH_DXPEDS)    fresh_redraw[PLOT_CH_DXPEDS] = true;
             if (pc == PLOT_CH_STORMS)    fresh_redraw[PLOT_CH_STORMS] = true;
             if (pc == PLOT_CH_LAUNCHES)  fresh_redraw[PLOT_CH_LAUNCHES] = true;
+            if (pc == PLOT_CH_BALLOONS)  fresh_redraw[PLOT_CH_BALLOONS] = true;
 
             // go now
             next_update[pp] = 0;
@@ -2572,6 +2573,16 @@ void updateWiFi(PlotPane skip_pp)
             }
             break;
 
+        case PLOT_CH_BALLOONS:
+            if (t0 >= next_update[pp]) {
+                if (updateBalloons(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, BALLOONS_INTERVAL);
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
         case PLOT_CH_DST:
             if (t0 >= next_update[pp]) {
                 if (updateDST(box))
@@ -2819,6 +2830,7 @@ void forcePaneRotationPrev (PlotPane pp)
     if (pc == PLOT_CH_DXPEDS)     fresh_redraw[PLOT_CH_DXPEDS] = true;
     if (pc == PLOT_CH_STORMS)     fresh_redraw[PLOT_CH_STORMS] = true;
     if (pc == PLOT_CH_LAUNCHES)   fresh_redraw[PLOT_CH_LAUNCHES] = true;
+    if (pc == PLOT_CH_BALLOONS)   fresh_redraw[PLOT_CH_BALLOONS] = true;
 
     // go now
     next_update[pp] = 0;
