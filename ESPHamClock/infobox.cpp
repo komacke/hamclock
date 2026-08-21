@@ -540,6 +540,66 @@ static void drawIB_Mesh (const SBox &minfo_b, const MeshInfo &mi)
     drawSBox (minfo_b, RGB565(180,140,255));
 }
 
+/* draw info for a balloon (HAB or PicoBalloon), same layout convention as drawIB_Net()/
+ * drawIB_Mesh() above. Frequency/battery/temperature are only drawn when known (many
+ * un-instrumented pico flights carry none of the three).
+ */
+static void drawIB_Balloon (const SBox &minfo_b, const BalloonHoverInfo &bi)
+{
+    uint16_t tx = minfo_b.x;
+    uint16_t ty = minfo_b.y + 2;
+    uint16_t tw;
+    tft.setTextColor (RA8875_WHITE);
+
+    // name on the first row
+    char buf[IB_MAXCHARS+1];
+    snprintf (buf, sizeof(buf), "%.*s", IB_MAXCHARS, bi.name[0] ? bi.name : "(balloon)");
+    tw = getTextWidth (buf);
+    tft.setCursor (tx + (view_btn_b.w-tw)/2, ty);
+    tft.printf (buf);
+
+    // type tag directly under the name
+    const char *tag = bi.is_hab ? "HAB" : "PICO";
+    tw = getTextWidth (tag);
+    tft.setCursor (tx + (view_btn_b.w-tw)/2, ty += IB_LINEDY);
+    tft.printf (tag);
+
+    // altitude
+    ty += IB_LINEDY;
+    tft.setCursor (tx+IB_INDENT, ty);
+    if (bi.has_alt)
+        tft.printf ("Alt %.0f", bi.alt_m);
+    else
+        tft.printf ("Alt ?");
+
+    // how long ago this position was last heard
+    tft.setCursor (tx+IB_INDENT, ty += IB_LINEDY);
+    tft.printf ("Age %5.5s", bi.age);
+
+    // frequency, if known
+    if (bi.has_freq)
+        drawIB_Freq ((long)bi.freq_hz, tx+IB_INDENT, IB_LINEDY, ty);
+
+    // battery and/or temperature, if known -- combined onto one row to fit the narrow box
+    if (bi.has_batt || bi.has_temp) {
+        tft.setCursor (tx+IB_INDENT, ty += IB_LINEDY);
+        if (bi.has_batt && bi.has_temp)
+            tft.printf ("%.1fV %.0fC", bi.batt_v, bi.temp_c);
+        else if (bi.has_batt)
+            tft.printf ("Batt %.1fV", bi.batt_v);
+        else
+            tft.printf ("Temp %.0fC", bi.temp_c);
+    }
+
+    // local time, distance/bearing and weather at the balloon's current position
+    drawIB_LMT (bi.ll, tx+IB_INDENT, IB_LINEDY, ty);
+    drawIB_DB  (bi.ll, tx+IB_INDENT, IB_LINEDY, ty);
+    drawIB_WX  (bi.ll, tx+IB_INDENT, IB_LINEDY, minfo_b.y+minfo_b.h-IB_LINEDY, ty);
+
+    // border in the type colour -- matches the pane's own HAB/PICO colour coding
+    drawSBox (minfo_b, bi.is_hab ? RGB565(90,190,255) : RGB565(255,175,60));
+}
+
 /* draw info box for an arbitrary cursor location, not a spot
  */
 static void drawIB_Loc (const SBox &minfo_b, const LatLong &ll, const SCoord &ms)
@@ -646,33 +706,43 @@ void drawInfoBox()
     char launch_pane_label[80];
     bool over_launch_pane = over_app && !over_map && !over_dxped && !over_pane && !over_storm_pane
                                 && getLaunchPaneHover (ms, &dxc_ll, launch_pane_label, sizeof(launch_pane_label));
+    BalloonHoverInfo baln_info;
+    LatLong baln_ll;
+    bool over_baln_map = over_map && !over_psk && !over_dxped && !over_spot
+                                && getClosestBalloon (ll, &baln_ll, &baln_info);
+    bool over_baln_pane = over_app && !over_map && !over_dxped && !over_pane && !over_storm_pane
+                                && !over_launch_pane
+                                && getBalloonPaneInfo (ms, &baln_ll, &baln_info);
+    bool over_baln = over_baln_map || over_baln_pane;
     ActiveNetInfo net_info;
     LatLong net_ll;
-    bool over_net_map  = over_map && !over_psk && !over_dxped && !over_spot
+    bool over_net_map  = over_map && !over_psk && !over_dxped && !over_spot && !over_baln_map
                                 && getClosestActiveNet (ll, &net_ll, &net_info);
 
     char hamsat_pane_label[40];
     bool over_hamsat_pane = over_app && !over_map && !over_dxped && !over_pane
-                                && !over_storm_pane && !over_launch_pane
+                                && !over_storm_pane && !over_launch_pane && !over_baln_pane
                                 && getHamsatPaneHover (ms, &dxc_ll, hamsat_pane_label, sizeof(hamsat_pane_label));
 
     bool over_net_pane = over_app && !over_map && !over_dxped && !over_pane
-                                && !over_storm_pane && !over_launch_pane && !over_hamsat_pane
+                                && !over_storm_pane && !over_launch_pane && !over_baln_pane
+                                && !over_hamsat_pane
                                 && getActiveNetsPaneInfo (ms, &net_ll, &net_info);
     bool over_net = over_net_map || over_net_pane;
     MeshInfo mesh_info;
     LatLong mesh_ll;
-    bool over_mesh_map  = over_map && !over_psk && !over_dxped && !over_spot && !over_net
+    bool over_mesh_map  = over_map && !over_psk && !over_dxped && !over_spot && !over_baln_map && !over_net
                                 && getClosestMeshtasticNode (ll, &mesh_ll, &mesh_info);
     bool over_mesh_pane = over_app && !over_map && !over_dxped && !over_pane
-                                && !over_storm_pane && !over_launch_pane && !over_net
+                                && !over_storm_pane && !over_launch_pane && !over_baln_pane && !over_net
                                 && getMeshtasticPaneInfo (ms, &mesh_ll, &mesh_info);
     bool over_mesh = over_mesh_map || over_mesh_pane;
     bool over_sdo = over_app && !over_map && (pp = findPaneChoiceNow(PLOT_CH_SDO)) != PANE_NONE
                         && inBox (ms, plot_b[pp]);
     bool over_moon = over_app && !over_map && (pp = findPaneChoiceNow(PLOT_CH_MOON)) != PANE_NONE
                         && inBox (ms, plot_b[pp]);
-    bool draw_info = over_map || over_psk || over_spot || over_pane || over_dxped || over_net || over_mesh;
+    bool draw_info = over_map || over_psk || over_spot || over_pane || over_dxped || over_net || over_mesh
+                        || over_baln;
 
     // erase any previous city then reset was_city as flag for next time
     if (was_city) {
@@ -708,6 +778,8 @@ void drawInfoBox()
         drawIB_MapMarker (net_ll, minfo_b, over_net_pane);   // pane-hover always rings; map-hover skips if under box
     else if (over_mesh)
         drawIB_MapMarker (mesh_ll, minfo_b, over_mesh_pane);
+    else if (over_baln)
+        drawIB_MapMarker (baln_ll, minfo_b, over_baln_pane);
 
     // hovering a storm name in the Storms pane: just ring it on the map and name it in the bar,
     // no info dropdown (there is no map location under the cursor to describe)
@@ -732,6 +804,10 @@ void drawInfoBox()
         tft.print (launch_pane_label);
         was_city = true;
     }
+
+    // Balloons pane hover (both map-icon and pane-row) uses the structured detail box
+    // further down (drawIB_Balloon), matching Net/Mesh -- not the ring+one-line-bar
+    // style Storms/Launches use above -- so nothing to do here.
 
     // hovering an alert row in the Sat Alerts pane: ring the station's grid location on the
     // map and name it in the bar, same idea as Storms/Launches above
@@ -793,6 +869,9 @@ void drawInfoBox()
 
     else if (over_mesh)
         drawIB_Mesh (minfo_b, mesh_info);
+
+    else if (over_baln)
+        drawIB_Balloon (minfo_b, baln_info);
 
     else if (over_spot || over_pane)
         drawIB_DX (minfo_b, dx_s, dxc_ll);
