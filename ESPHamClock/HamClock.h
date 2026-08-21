@@ -2440,11 +2440,8 @@ extern PlotMask plot_rotset[PANE_N];       // each pane's PlotChoice rotation ch
                                  PLOTBIT(PLOT_CH_ADIF) | PLOTBIT(PLOT_CH_ONTA) | \
                                  PLOTBIT(PLOT_CH_DXPEDS) | PLOTBIT(PLOT_CH_ACTIVENETS) | \
                                  PLOTBIT(PLOT_CH_LAUNCHES) | PLOTBIT(PLOT_CH_SATACT) | \
-<<<<<<< HEAD
+                                 PLOTBIT(PLOT_CH_APRSCLUSTER) | \
                                  PLOTBIT(PLOT_CH_BALLOONS))
-=======
-                                 PLOTBIT(PLOT_CH_APRSCLUSTER))
->>>>>>> 63acd646ddfea8ad9f5858399db09680c7e62415
 
 // compute number of bits set in PANE_0_CH_MASK at compile time :-)
 // https://stackoverflow.com/questions/109023/count-the-number-of-set-bits-in-a-32-bit-integer
