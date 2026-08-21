@@ -7,9 +7,16 @@ HC_GID=1199
 ON_TAG=false
 
 # Don't set anything past here
+
+# Define color variables
+RED=$(tput bold; tput setaf 1)
+YELLOW=$(tput setaf 3)
+GREEN=$(tput setaf 2)
+NC=$(tput sgr0) # Reset color
+
 TAG=$(git describe --exact-match --tags 2>/dev/null)
 if [ $? -ne 0 ]; then
-    echo "NOTE: Not currently on a tag. Using 'edge'."
+    echo "${RED}NOTE${NC}: Not currently on a tag. Using 'edge'."
     TAG=edge
     GIT_VERSION=$(git rev-parse --short HEAD)
     ON_TAG=false
@@ -102,13 +109,13 @@ warn_image_tag() {
             docker manifest inspect $IMAGE >/dev/null
             if [ $? -eq 0 ]; then
                 echo
-                echo "WARNING: the multiplatform docker image for '$IMAGE' already exists in Docker Hub. Please"
+                echo "${RED}WARNING${NC}: the multiplatform docker image for '$IMAGE' already exists in Docker Hub. Please"
                 echo "         remove it if you want to rebuild."
                 exit 2
             fi
         elif docker image list --format '{{.Repository}}:{{.Tag}}' | grep -qs $IMAGE; then
             echo
-            echo "WARNING: the docker image for '$IMAGE' already exists. Please remove it if you want to rebuild."
+            echo "${RED}WARNING${NC}: the docker image for '$IMAGE' already exists. Please remove it if you want to rebuild."
             exit 2
         fi
     fi
@@ -122,12 +129,12 @@ warn_local_edits() {
     if [ $LOCAL_EDITS -ne 0 ]; then
         if [ $MULTI_PLATFORM == true ]; then
             echo
-            echo "ERROR: There are local edits. stash or reset them before pushing"
+            echo "${RED}ERROR${NC}: There are local edits. stash or reset them before pushing"
             echo "       images to Docker Hub."
             exit 3
         else
             echo
-            echo "WARNING: there are local edits. If you didn't intend that, stash"
+            echo "${RED}WARNING${NC}: there are local edits. If you didn't intend that, stash"
             echo "         them and build again."
         fi
     fi
