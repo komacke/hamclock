@@ -1,6 +1,6 @@
 #!/bin/bash
 
-HC_MANAGER_VERSION=latest
+HC_MANAGER_VERSION=edge
 GITHUB_REPO="openhamclock/hamclock"
 
 IMAGE_BASE=komacke/hamclock
@@ -886,7 +886,7 @@ determine_tag() {
         return
     fi
 
-    # upgrade shouldn't use the current tag unless it's 'latest'. 
+    # upgrade shouldn't use the current tag unless it's 'edge'. 
     # GIT_TAG would be empty and we'll get DEFAULT_TAG
 
     # second precedence

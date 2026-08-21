@@ -19,6 +19,21 @@
 #define CLRBOX_W        20                      // " width
 #define CLRBOX_H        11                      // " height
 
+// filter indicator/control -- stacked below the "New spots" symbol, same left column as CLR.
+// unlike CLR (always shown), this whole row only exists in the layout when a mode or band
+// filter is actually active -- see dxc_flt_active and initDXGUI -- so the common unfiltered
+// case looks exactly as it always has, with no reserved blank space.
+#define FLTBOX_DX       CLRBOX_DX               // filter control box left offset -- same
+                                                 // column as CLR, stacked below
+#define FLTBOX_DY       (18+9+2)                // below the New Spots symbol (NEWSYM_DY=18,
+                                                 // H=9 in scrollstate.cpp, not exported), 2px gap
+#define FLTBOX_W        CLRBOX_W                // "  width -- same as CLR so they line up
+#define FLTBOX_H        CLRBOX_H                // "  height
+#define DXC_HDR_EXTRA   13                      // extra header height reserved -- one row --
+                                                 // when the filter indicator is shown, pushing
+                                                 // the subtitle and spot list down to make room
+static SBox dxcflt_b;                           // Filter indicator/control box
+
 // connection info
 static WiFiClient dxc_client;                   // persistent TCP connection while displayed ...
 static WiFiUDP udp_server;                      // or persistent UDP "connection" to WSJT-X client program
@@ -31,6 +46,44 @@ static const uint8_t dxc_ages[] = {10, 20, 40, 60};   // menu selections in asce
 static uint8_t dxc_age;                               // one of above, once set
 #define N_DXCAGES       NARRAY(dxc_ages)              // handy count
 #define MAXKEEP_DT      (60*dxc_ages[N_DXCAGES-1])    // max age to stay on dxc_spots list, secs
+
+// whether to hide the IOTA marker column in the spot list, same spirit as dxc_showbio
+static bool dxc_hide_iota;
+
+// mode filter: independent checkboxes, "at least 1" enforced by the menu itself, same
+// pattern as ONTA's ONTAMB_* in ontheair.cpp. PHONE is a shortcut meaning "SSB or FM or
+// AM" so it overlaps the SSB checkbox by design -- a spot passes if either is checked.
+#define DXCMB_CW        (1<<0)
+#define DXCMB_PHONE     (1<<1)
+#define DXCMB_DATA      (1<<2)
+#define DXCMB_FT8       (1<<3)
+#define DXCMB_SSB       (1<<4)
+#define DXCMB_ALL       (DXCMB_CW|DXCMB_PHONE|DXCMB_DATA|DXCMB_FT8|DXCMB_SSB)
+static uint8_t dxc_modes;                             // bitmask of DXCMB_*
+
+// band filter: same convention as ONTA's onta_bands -- bit i set means HamBandSetting i
+// is shown; only 8 bands get their own checkbox, everything else (160/80/60/2m, or any
+// frequency outside a known ham band) is covered by a single "Other" checkbox using a
+// dedicated bit well outside HamBandSetting's 0..11 range.
+static uint32_t dxc_bands;                            // bit i set means HamBandSetting i shown
+#define TST_DXCBAND(b)  ((b) != HAMBAND_NONE && (dxc_bands & (1U<<(b))) != 0)
+#define SET_DXCBAND(b)  (dxc_bands |= (1U<<(b)))
+#define DXC_BAND_OTHER  (1U<<31)                              // catch-all bit
+#define DXC_NBANDS_SHOWN 8                                    // how many get their own checkbox
+static const HamBandSetting dxc_shown_bands[DXC_NBANDS_SHOWN] = {
+    HAMBAND_40M, HAMBAND_30M, HAMBAND_20M, HAMBAND_17M,
+    HAMBAND_15M, HAMBAND_10M, HAMBAND_12M, HAMBAND_6M,
+};
+
+/* return the dxc_bands value meaning "every band shown", ie no band filtering at all
+ */
+static uint32_t dxcAllBandsMask (void)
+{
+    uint32_t m = DXC_BAND_OTHER;
+    for (int i = 0; i < DXC_NBANDS_SHOWN; i++)
+        m |= (1U << dxc_shown_bands[i]);
+    return (m);
+}
 
 // timing
 #define BGCHECK_DT      1000                    // background checkDXCluster period, millis
@@ -49,6 +102,12 @@ static bool new_dxc_cntn;                       // set to commence initial serve
 static time_t scrolledaway_tm;                  // time() when user scrolled away from top of list
 static uint32_t dxc_activity_ms;                // millis() of last socket activity
 static SBox dxcclr_b;                           // Clear spots control box
+static bool dxc_flt_active;                     // whether a mode/band filter is currently
+                                                 // restricting the spot list
+static uint16_t dxc_hdr_extra;                  // 0 or DXC_HDR_EXTRA, set in initDXGUI to
+                                                 // match dxc_flt_active -- everything below
+                                                 // the title bar (subtitle, spot list, touch
+                                                 // hit-testing) is offset down by this much
 
 
 // type
@@ -85,11 +144,67 @@ static void drawClearListBtn (bool draw)
     tft.print ("CLR");
 }
 
+/* draw the filter indicator/control -- only called at all when dxc_flt_active, so unlike
+ * CLR this never needs an "erase" mode: initDXGUI simply doesn't reserve the row (and
+ * therefore never calls this) when no mode/band filter is restricting the spot list.
+ * always green -- its mere presence already means "something is hidden", no need for a
+ * separate off-color state the way CLR uses black for "no spots to clear".
+ */
+static void drawFilterBtn (void)
+{
+    drawSBox (dxcflt_b, RA8875_GREEN);
+
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
+    tft.setCursor (dxcflt_b.x+1, dxcflt_b.y+2);
+    tft.setTextColor (RA8875_GREEN);
+    tft.print ("FLT");
+}
+
 /* handy check whether we are, or should, show the New spots symbol
  */
 static bool showingNewSpot(void)
 {
     return (scrolledaway_tm > 0 && n_dxspots > 0 && dxc_spots[n_dxspots-1].spotted > scrolledaway_tm);
+}
+
+/* return whether the given spot passes the current mode+band filter.
+ * a frequency outside any known ham band always passes under "Other" -- we don't hide a
+ * spot just because we can't classify its band. same spirit as ontaModeBandOk().
+ */
+static bool dxcModeBandOk (const DXSpot &s)
+{
+    // band -- one of the 8 bands with their own checkbox, or everything else bucketed
+    // under "Other"
+    HamBandSetting b = findHamBand (s.kHz);
+    bool is_shown_band = false;
+    for (int i = 0; i < DXC_NBANDS_SHOWN && !is_shown_band; i++)
+        if (b == dxc_shown_bands[i])
+            is_shown_band = true;
+    if (is_shown_band) {
+        if (!TST_DXCBAND(b))
+            return (false);
+    } else {
+        if (!(dxc_bands & DXC_BAND_OTHER))
+            return (false);
+    }
+
+    // mode -- a blank/unrecognized mode falls through to the DATA catch-all so it's
+    // actually filterable, matching ontaModeBandOk()'s reasoning
+    bool cw  = strcasecmp (s.mode, "CW")  == 0;
+    bool ft8 = strcasecmp (s.mode, "FT8") == 0;
+    bool ssb = strcasecmp (s.mode, "SSB") == 0 || strcasecmp (s.mode, "USB") == 0
+                                                || strcasecmp (s.mode, "LSB") == 0;
+    bool fm  = strcasecmp (s.mode, "FM")  == 0;
+    bool am  = strcasecmp (s.mode, "AM")  == 0;
+    bool data = !cw && !ft8 && !ssb && !fm && !am;         // catch-all: blank, RTTY, FT4, etc
+
+    if (cw   && (dxc_modes & DXCMB_CW))    return (true);
+    if (ft8  && (dxc_modes & DXCMB_FT8))   return (true);
+    if (ssb  && (dxc_modes & DXCMB_SSB))   return (true);
+    if (data && (dxc_modes & DXCMB_DATA))  return (true);
+    if ((ssb || fm || am) && (dxc_modes & DXCMB_PHONE)) return (true);   // shortcut
+
+    return (false);
 }
 
 /* rebuild dxwl_spots from dxc_spots
@@ -104,7 +219,8 @@ static void rebuildDXWatchList(void)
     dxc_ss.n_data = 0;                                  // reset count, don't bother to resize dxwl_spots
     for (int i = 0; i < n_dxspots; i++) {
         DXSpot &spot = dxc_spots[i];
-        if (spot.spotted >= oldest && checkWatchListSpot (WLID_DX, spot) != WLS_NO) {
+        if (spot.spotted >= oldest && dxcModeBandOk (spot)
+                                    && checkWatchListSpot (WLID_DX, spot) != WLS_NO) {
             dxwl_spots = (DXSpot *) realloc (dxwl_spots, (dxc_ss.n_data+1) * sizeof(DXSpot));
             if (!dxwl_spots)
                 fatalError ("No mem for %d watch list spots", dxc_ss.n_data+1);
@@ -121,7 +237,15 @@ static void rebuildDXWatchList(void)
  */
 static void drawAllVisDXCSpots (const SBox &box)
 {
-    drawVisibleSpots (WLID_DX, dxwl_spots, dxc_ss, box, DXC_COLOR);
+    // offset down by dxc_hdr_extra when the filter row is present -- see initDXGUI. only y
+    // needs to move: drawVisibleSpots/drawSpotOnList only ever reference box.y (plus box.x/w
+    // for row width), never box.h, so there's nothing else to adjust here. the scroll arrow
+    // controls, though, must NOT move -- pass the original box as ctrl_box so they stay put
+    // in the title bar, matching where checkDXClusterTouch still expects to find them.
+    SBox list_b = box;
+    list_b.y += dxc_hdr_extra;
+
+    drawVisibleSpots (WLID_DX, dxwl_spots, dxc_ss, list_b, DXC_COLOR, &box);
     drawClearListBtn (dxc_ss.n_data > 0);
 }
 
@@ -482,7 +606,7 @@ static void showDXCHost (const SBox &box, uint16_t c)
 
     tft.setTextColor(c);
     uint16_t hw = getTextWidth (host);
-    tft.setCursor (box.x + (box.w-hw)/2, box.y + SUBTITLE_Y0);
+    tft.setCursor (box.x + (box.w-hw)/2, box.y + SUBTITLE_Y0 + dxc_hdr_extra);
     tft.print (host);
 }
 
@@ -537,6 +661,15 @@ static void initDXGUI (const SBox &box)
     // locate the Clr box
     dxcclr_b = {(uint16_t)(box.x+CLRBOX_DX), (uint16_t)(box.y+CLRBOX_DY), CLRBOX_W, CLRBOX_H};
 
+    // whether a mode/band filter is actually restricting the spot list right now -- drives
+    // whether the FLT row exists in the layout at all, see dxc_hdr_extra just below
+    dxc_flt_active = dxc_modes != DXCMB_ALL || dxc_bands != dxcAllBandsMask();
+    dxc_hdr_extra = dxc_flt_active ? DXC_HDR_EXTRA : 0;
+    if (dxc_flt_active) {
+        dxcflt_b = {(uint16_t)(box.x+FLTBOX_DX), (uint16_t)(box.y+FLTBOX_DY), FLTBOX_W, FLTBOX_H};
+        drawFilterBtn();
+    }
+
     // title
     const char *title = BOX_IS_PANE_0(box) ? "Cluster" : "DX Cluster";
     selectFontStyle (LIGHT_FONT, SMALL_FONT);
@@ -546,14 +679,17 @@ static void initDXGUI (const SBox &box)
     tft.print (title);
 
     // init scroller for this box size but leave n_data
-    dxc_ss.max_vis = (box.h - LISTING_Y0)/LISTING_DY;
+    dxc_ss.max_vis = (box.h - LISTING_Y0 - dxc_hdr_extra)/LISTING_DY;
     dxc_ss.initNewSpotsSymbol (box, DXC_COLOR);
     dxc_ss.dir = dxc_ss.DIR_FROMSETUP;
     dxc_ss.scrollToNewest();
 }
 
 
-/* run menu to allow editing watch list
+/* run menu to allow editing watch list, bio, age, mode/band filter and IOTA marker visibility.
+ * layout mirrors ontheair.cpp's runONTASortMenu(): narrow "Data Pane" (PANE_0) gets a taller
+ * 2-column layout since it has plenty of height to spare, normal panes get a wider 3-column
+ * layout since they're short on height but have the width for it.
  */
 static void runDXClusterMenu (const SBox &box)
 {
@@ -567,58 +703,238 @@ static void runDXClusterMenu (const SBox &box)
     for (int i = 0; i < N_DXCAGES; i++)
         snprintf (dxages_str[i], sizeof(dxages_str[i]), "%d m", dxc_ages[i]);
 
-    // whether to show bio on click, only show in menu at all if bio source has been set in Setup
+    // whether to show bio on click, only show in menu at all if bio source has been set in Setup.
+    // narrow layout uses MENU_BLANK when hidden so its table stays a fixed size regardless (its
+    // Bio row sits alone in column 1, so collapsing it would misalign column 2 -- see the IGNORE
+    // note in the ONTA sort menu for why that only works when a row is used by every column).
+    // wide layout instead uses MENU_IGNORE: its Bio row spans all 3 columns (label/Yes/No), so
+    // dropping all three -- one per column -- shrinks every column by exactly one row in lockstep
+    // and the whole table just gets shorter instead of leaving blank space, same technique (and
+    // same y-compensation below) as ONTA's own 3-column sort menu uses for its Bio row.
     bool show_bio_enabled = getQRZId() != QRZ_NONE;
-    MenuFieldType bio_lbl_mft = show_bio_enabled ? MENU_LABEL : MENU_IGNORE;
-    MenuFieldType bio_yes_mft = show_bio_enabled ? MENU_1OFN : MENU_IGNORE;
-    MenuFieldType bio_no_mft = show_bio_enabled ? MENU_1OFN : MENU_IGNORE;
+    MenuFieldType bio_lbl_mft_n = show_bio_enabled ? MENU_LABEL : MENU_BLANK;
+    MenuFieldType bio_yes_mft_n = show_bio_enabled ? MENU_1OFN  : MENU_BLANK;
+    MenuFieldType bio_no_mft_n  = show_bio_enabled ? MENU_1OFN  : MENU_BLANK;
+    MenuFieldType bio_lbl_mft_w = show_bio_enabled ? MENU_LABEL : MENU_IGNORE;
+    MenuFieldType bio_yes_mft_w = show_bio_enabled ? MENU_1OFN  : MENU_IGNORE;
+    MenuFieldType bio_no_mft_w  = show_bio_enabled ? MENU_1OFN  : MENU_IGNORE;
 
-    // optional bio and watch list
     #define MI_AGE_GRP  3                                       // MenuItem.group for the age items
-    MenuItem mitems[10] = {
-        // column 1
-        {bio_lbl_mft, false,                 0, 2, "Bio:", NULL},                       // 0
-        {MENU_LABEL, false,                  1, 2, "Age:", NULL},                       // 1
-        {MENU_BLANK, false,                  2, 0, NULL, NULL},                         // 2
+    #define MI_BIO_GRP  5                                       // " for the bio yes/no items
+    #define MI_IOTA_GRP 8                                       // " for the hide-IOTA toggle
+    #define MI_MODE_GRP 6                                       // " for the mode checkboxes
+    #define MI_BAND_GRP 7                                       // " for the band checkboxes
 
-        // column 2
-        {bio_yes_mft, dxc_showbio,           5, 2, "Yes", NULL},                        // 3
-        {MENU_1OFN,  dxc_age == dxc_ages[0], MI_AGE_GRP, 2, dxages_str[0], NULL},       // 4
-        {MENU_1OFN,  dxc_age == dxc_ages[2], MI_AGE_GRP, 2, dxages_str[2], NULL},       // 5
+    // narrow "Data Pane" view (PANE_0) can't fit 3 columns -- use 2, more vertical, instead
+    bool narrow = BOX_IS_PANE_0(box);
 
-        // column 3
-        {bio_no_mft, !dxc_showbio,           5, 2, "No", NULL},                         // 6
-        {MENU_1OFN,  dxc_age == dxc_ages[1], MI_AGE_GRP, 2, dxages_str[1], NULL},       // 7
-        {MENU_1OFN,  dxc_age == dxc_ages[3], MI_AGE_GRP, 2, dxages_str[3], NULL},       // 8
-
-        // watch list
-        {MENU_TEXT,  false,                  4, 2, wl_state, &mtext},                   // 9
-    };
-
-
-    SBox menu_b = box;                                  // copy, not ref!
-    menu_b.x = box.x + 5;
-    menu_b.y = box.y + SUBTITLE_Y0;
-    menu_b.w = box.w-10;
+    SBox menu_b = box;                          // copy, not ref!
+    menu_b.y = box.y + 7;
+    if (!narrow && show_bio_enabled)
+        menu_b.y -= 11;                          // one row height (MENU_RH in menu.cpp, not
+                                                  // exported) -- wide table is one row taller
+                                                  // with Bio shown, shift up to compensate so
+                                                  // it doesn't overlap/overflow the pane
+    if (narrow) {
+        // 2-col layout has plenty of vertical slack in the tall data pane
+        menu_b.x = box.x + 5;
+        menu_b.w = box.w - 10;
+    } else {
+        // 3-col layout's content is tighter than box.w-10 would allow; full width avoids
+        // runMenu's own auto-widen growing the box off-center to the right
+        menu_b.x = box.x;
+        menu_b.w = box.w;
+    }
     SBox ok_b;
-    MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 3, NARRAY(mitems), mitems};
-    if (runMenu (menu)) {
+    bool ok;
 
-        // check bio
-        if (show_bio_enabled) {
-            dxc_showbio = mitems[3].set;
+    if (narrow) {
+
+        // column 1: single-choice pickers (Age, IOTA toggle, Bio) -- same grouping spirit
+        // as ONTA's narrow layout (Age/Sort in col1); Bio last, same as ONTA puts its Bio
+        // last so a disabled Bio's blank padding doesn't disturb anything above it.
+        // column 2: checkbox groups (Modes, Bands) stacked together, matching how ONTA
+        // stacks its own Modes then Bands in column 2. Column 1 is padded with blanks to
+        // match column 2's height so both columns end at the same row.
+        MenuItem mitems[] = {
+            // column 1
+            {MENU_LABEL, false,                       0, 2,  "Age:", NULL},                          // 0
+            {MENU_1OFN, dxc_age == dxc_ages[0],       MI_AGE_GRP, 2, dxages_str[0], NULL},           // 1
+            {MENU_1OFN, dxc_age == dxc_ages[1],       MI_AGE_GRP, 2, dxages_str[1], NULL},           // 2
+            {MENU_1OFN, dxc_age == dxc_ages[2],       MI_AGE_GRP, 2, dxages_str[2], NULL},           // 3
+            {MENU_1OFN, dxc_age == dxc_ages[3],       MI_AGE_GRP, 2, dxages_str[3], NULL},           // 4
+            {MENU_LABEL, false,                       0, 2,  "IOTA:", NULL},                         // 5
+            {MENU_TOGGLE, dxc_hide_iota,              MI_IOTA_GRP, 2, "Hide", NULL},                 // 6
+            {bio_lbl_mft_n, false,                    0, 2,  "Bio:", NULL},                          // 7
+            {bio_yes_mft_n, dxc_showbio,               MI_BIO_GRP, 2,  "Yes", NULL},                 // 8
+            {bio_no_mft_n, !dxc_showbio,                MI_BIO_GRP, 2,  "No", NULL},                  // 9
+            {MENU_BLANK, false,                       0, 2,  NULL, NULL},                            // 10
+            {MENU_BLANK, false,                       0, 2,  NULL, NULL},                            // 11
+            {MENU_BLANK, false,                       0, 2,  NULL, NULL},                            // 12
+            {MENU_BLANK, false,                       0, 2,  NULL, NULL},                            // 13
+            {MENU_BLANK, false,                       0, 2,  NULL, NULL},                            // 14
+            {MENU_BLANK, false,                       0, 2,  NULL, NULL},                            // 15
+
+            // column 2
+            {MENU_LABEL, false,                       0, 2,  "Modes:", NULL},                        // 16
+            {MENU_AL1OFN, (dxc_modes&DXCMB_CW)!=0,    MI_MODE_GRP, 2,  "CW",    NULL},               // 17
+            {MENU_AL1OFN, (dxc_modes&DXCMB_PHONE)!=0, MI_MODE_GRP, 2,  "PHONE", NULL},               // 18
+            {MENU_AL1OFN, (dxc_modes&DXCMB_DATA)!=0,  MI_MODE_GRP, 2,  "DATA",  NULL},               // 19
+            {MENU_AL1OFN, (dxc_modes&DXCMB_FT8)!=0,   MI_MODE_GRP, 2,  "FT8",   NULL},               // 20
+            {MENU_AL1OFN, (dxc_modes&DXCMB_SSB)!=0,   MI_MODE_GRP, 2,  "SSB",   NULL},               // 21
+            {MENU_LABEL, false,                       0, 2,  "Bands:", NULL},                        // 22
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_40M),   MI_BAND_GRP, 12, findBandName(HAMBAND_40M), NULL}, // 23
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_30M),   MI_BAND_GRP, 12, findBandName(HAMBAND_30M), NULL}, // 24
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_20M),   MI_BAND_GRP, 12, findBandName(HAMBAND_20M), NULL}, // 25
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_17M),   MI_BAND_GRP, 12, findBandName(HAMBAND_17M), NULL}, // 26
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_15M),   MI_BAND_GRP, 12, findBandName(HAMBAND_15M), NULL}, // 27
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_10M),   MI_BAND_GRP, 12, findBandName(HAMBAND_10M), NULL}, // 28
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_12M),   MI_BAND_GRP, 12, findBandName(HAMBAND_12M), NULL}, // 29
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_6M),    MI_BAND_GRP, 12, findBandName(HAMBAND_6M),  NULL}, // 30
+            {MENU_AL1OFN, (dxc_bands&DXC_BAND_OTHER)!=0, MI_BAND_GRP, 12, "Other", NULL},             // 31
+
+            // watch list, full width below the table
+            {MENU_TEXT,  false,                       4, 2, wl_state, &mtext},                       // 32
+        };
+        #define DXCMENU_NARROW_N   NARRAY(mitems)
+
+        MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 2, DXCMENU_NARROW_N, mitems};
+        ok = runMenu (menu);
+        if (ok) {
+            if (mitems[1].set)       dxc_age = dxc_ages[0];
+            else if (mitems[2].set)  dxc_age = dxc_ages[1];
+            else if (mitems[3].set)  dxc_age = dxc_ages[2];
+            else if (mitems[4].set)  dxc_age = dxc_ages[3];
+            else fatalError ("runDXClusterMenu no age set (narrow)");
+
+            dxc_hide_iota = mitems[6].set;
+
+            if (show_bio_enabled)
+                dxc_showbio = mitems[8].set;
+
+            dxc_modes = 0;
+            if (mitems[17].set) dxc_modes |= DXCMB_CW;
+            if (mitems[18].set) dxc_modes |= DXCMB_PHONE;
+            if (mitems[19].set) dxc_modes |= DXCMB_DATA;
+            if (mitems[20].set) dxc_modes |= DXCMB_FT8;
+            if (mitems[21].set) dxc_modes |= DXCMB_SSB;
+
+            dxc_bands = 0;
+            if (mitems[23].set) SET_DXCBAND(HAMBAND_40M);
+            if (mitems[24].set) SET_DXCBAND(HAMBAND_30M);
+            if (mitems[25].set) SET_DXCBAND(HAMBAND_20M);
+            if (mitems[26].set) SET_DXCBAND(HAMBAND_17M);
+            if (mitems[27].set) SET_DXCBAND(HAMBAND_15M);
+            if (mitems[28].set) SET_DXCBAND(HAMBAND_10M);
+            if (mitems[29].set) SET_DXCBAND(HAMBAND_12M);
+            if (mitems[30].set) SET_DXCBAND(HAMBAND_6M);
+            if (mitems[31].set) dxc_bands |= DXC_BAND_OTHER;
+        }
+
+    } else {
+
+        // compact "row-major" layout using all 3 columns per logical row -- same technique
+        // ONTA's own 160px-pane menu uses (label in col1, two items in col2/col3), so each
+        // section reads top-to-bottom instead of column-to-column. This keeps Age above
+        // Modes above Bands, stacked, rather than side by side. Bio's row (all 3 columns)
+        // disappears entirely -- rather than leaving blank space -- when bio is unavailable,
+        // via MENU_IGNORE + the y-compensation above; see bio_*_mft_w setup for why that's
+        // safe here specifically (every other layout below keeps a fixed row count).
+        //   row0: Bio:  | Yes | No        <- only present when show_bio_enabled
+        //   row1: Age:  | 10m | 20m
+        //   row2:       | 40m | 60m
+        //   row3: IOTA: | Hide|
+        //   row4: Modes:| CW  | PHONE
+        //   row5:       | DATA| FT8
+        //   row6:       | SSB |
+        //   row7: 30    | 20  | 40
+        //   row8: 15    | 10  | 17
+        //   row9: 12    | 6   | Other
+        MenuItem mitems[] = {
+            // column 1: row labels, plus bands 30/15/12 once the labeled rows run out
+            {bio_lbl_mft_w, false,                    0, 2, "Bio:", NULL},                           // 0
+            {MENU_LABEL, false,                       0, 2, "Age:", NULL},                           // 1
+            {MENU_BLANK, false,                       0, 2, NULL, NULL},                             // 2
+            {MENU_LABEL, false,                       0, 2, "IOTA:", NULL},                          // 3
+            {MENU_LABEL, false,                       0, 2, "Modes:", NULL},                         // 4
+            {MENU_BLANK, false,                       0, 2, NULL, NULL},                             // 5
+            {MENU_BLANK, false,                       0, 2, NULL, NULL},                             // 6
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_30M),   MI_BAND_GRP, 12, findBandName(HAMBAND_30M), NULL}, // 7
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_15M),   MI_BAND_GRP, 12, findBandName(HAMBAND_15M), NULL}, // 8
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_12M),   MI_BAND_GRP, 12, findBandName(HAMBAND_12M), NULL}, // 9
+
+            // column 2
+            {bio_yes_mft_w, dxc_showbio,              MI_BIO_GRP, 2, "Yes", NULL},                   // 10
+            {MENU_1OFN, dxc_age == dxc_ages[0],       MI_AGE_GRP, 2, dxages_str[0], NULL},           // 11
+            {MENU_1OFN, dxc_age == dxc_ages[2],       MI_AGE_GRP, 2, dxages_str[2], NULL},           // 12
+            {MENU_TOGGLE, dxc_hide_iota,              MI_IOTA_GRP, 2, "Hide", NULL},                 // 13
+            {MENU_AL1OFN, (dxc_modes&DXCMB_CW)!=0,    MI_MODE_GRP, 2, "CW",    NULL},                // 14
+            {MENU_AL1OFN, (dxc_modes&DXCMB_DATA)!=0,  MI_MODE_GRP, 2, "DATA",  NULL},                // 15
+            {MENU_AL1OFN, (dxc_modes&DXCMB_SSB)!=0,   MI_MODE_GRP, 2, "SSB",   NULL},                // 16
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_20M),   MI_BAND_GRP, 12, findBandName(HAMBAND_20M), NULL}, // 17
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_10M),   MI_BAND_GRP, 12, findBandName(HAMBAND_10M), NULL}, // 18
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_6M),    MI_BAND_GRP, 12, findBandName(HAMBAND_6M),  NULL}, // 19
+
+            // column 3
+            {bio_no_mft_w, !dxc_showbio,              MI_BIO_GRP, 2, "No", NULL},                    // 20
+            {MENU_1OFN, dxc_age == dxc_ages[1],       MI_AGE_GRP, 2, dxages_str[1], NULL},           // 21
+            {MENU_1OFN, dxc_age == dxc_ages[3],       MI_AGE_GRP, 2, dxages_str[3], NULL},           // 22
+            {MENU_BLANK, false,                       0, 2, NULL, NULL},                             // 23
+            {MENU_AL1OFN, (dxc_modes&DXCMB_PHONE)!=0, MI_MODE_GRP, 2, "PHONE", NULL},                // 24
+            {MENU_AL1OFN, (dxc_modes&DXCMB_FT8)!=0,   MI_MODE_GRP, 2, "FT8",   NULL},                // 25
+            {MENU_BLANK, false,                       0, 2, NULL, NULL},                             // 26
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_40M),   MI_BAND_GRP, 12, findBandName(HAMBAND_40M), NULL}, // 27
+            {MENU_AL1OFN, TST_DXCBAND(HAMBAND_17M),   MI_BAND_GRP, 12, findBandName(HAMBAND_17M), NULL}, // 28
+            {MENU_AL1OFN, (dxc_bands&DXC_BAND_OTHER)!=0, MI_BAND_GRP, 12, "Other", NULL},             // 29
+
+            // watch list, full width below the table
+            {MENU_TEXT,  false,                       4, 2, wl_state, &mtext},                       // 30
+        };
+        #define DXCMENU_N   NARRAY(mitems)
+
+        MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 3, DXCMENU_N, mitems};
+        ok = runMenu (menu);
+        if (ok) {
+            if (show_bio_enabled)
+                dxc_showbio = mitems[10].set;
+
+            if (mitems[11].set)      dxc_age = dxc_ages[0];
+            else if (mitems[21].set) dxc_age = dxc_ages[1];
+            else if (mitems[12].set) dxc_age = dxc_ages[2];
+            else if (mitems[22].set) dxc_age = dxc_ages[3];
+            else fatalError ("runDXClusterMenu no age set");
+
+            dxc_hide_iota = mitems[13].set;
+
+            dxc_modes = 0;
+            if (mitems[14].set) dxc_modes |= DXCMB_CW;
+            if (mitems[24].set) dxc_modes |= DXCMB_PHONE;
+            if (mitems[15].set) dxc_modes |= DXCMB_DATA;
+            if (mitems[25].set) dxc_modes |= DXCMB_FT8;
+            if (mitems[16].set) dxc_modes |= DXCMB_SSB;
+
+            dxc_bands = 0;
+            if (mitems[27].set) SET_DXCBAND(HAMBAND_40M);
+            if (mitems[7].set)  SET_DXCBAND(HAMBAND_30M);
+            if (mitems[17].set) SET_DXCBAND(HAMBAND_20M);
+            if (mitems[28].set) SET_DXCBAND(HAMBAND_17M);
+            if (mitems[8].set)  SET_DXCBAND(HAMBAND_15M);
+            if (mitems[18].set) SET_DXCBAND(HAMBAND_10M);
+            if (mitems[9].set)  SET_DXCBAND(HAMBAND_12M);
+            if (mitems[19].set) SET_DXCBAND(HAMBAND_6M);
+            if (mitems[29].set) dxc_bands |= DXC_BAND_OTHER;
+        }
+    }
+
+    if (ok) {
+
+        // persist the simple settings
+        if (show_bio_enabled)
             NVWriteUInt8 (NV_DXCBIO, dxc_showbio);
-        }
-
-        // set desired age
-        for (int i = 0; i < NARRAY(mitems); i++) {
-            MenuItem &mi = mitems[i];
-            if (mi.group == MI_AGE_GRP && mi.set) {
-                dxc_age = atoi (mi.label);
-                NVWriteUInt8 (NV_DXCAGE, dxc_age);
-                break;
-            }
-        }
+        NVWriteUInt8 (NV_DXCAGE, dxc_age);
+        NVWriteUInt8 (NV_DXC_HIDEIOTA, dxc_hide_iota);
+        NVWriteUInt8 (NV_DXC_MODES, dxc_modes);
+        NVWriteUInt32 (NV_DXC_BANDS, dxc_bands);
 
         // must recompile to update wl but runMenu already insured wl compiles ok
         Message ynot;
@@ -975,6 +1291,28 @@ bool connectDXCluster (void)
     }
     dxc_showbio = (bio != 0);
 
+    // hide IOTA marker column?
+    uint8_t hide_iota;
+    if (!NVReadUInt8 (NV_DXC_HIDEIOTA, &hide_iota)) {
+        hide_iota = 0;
+        NVWriteUInt8 (NV_DXC_HIDEIOTA, hide_iota);
+    }
+    dxc_hide_iota = (hide_iota != 0);
+
+    // mode filter, default to showing everything
+    if (!NVReadUInt8 (NV_DXC_MODES, &dxc_modes)) {
+        dxc_modes = DXCMB_ALL;
+        NVWriteUInt8 (NV_DXC_MODES, dxc_modes);
+    }
+
+    // band filter, default to showing everything including Other
+    if (!NVReadUInt32 (NV_DXC_BANDS, &dxc_bands)) {
+        dxc_bands = DXC_BAND_OTHER;
+        for (int i = 0; i < DXC_NBANDS_SHOWN; i++)
+            SET_DXCBAND(dxc_shown_bands[i]);
+        NVWriteUInt32 (NV_DXC_BANDS, dxc_bands);
+    }
+
     // note for background
     new_dxc_cntn = true;
 
@@ -1129,19 +1467,27 @@ bool checkDXClusterTouch (const SCoord &s, const SBox &box)
 
     }
 
+    // filter indicator/control? explicit handler rather than leaning on it merely falling
+    // into the generic "tap host to edit" catch-all below -- same destination either way,
+    // but this makes the FLT box's own tap target explicit like CLR's above.
+    if (dxc_flt_active && inBox (s, dxcflt_b)) {
+        runDXClusterMenu (box);
+        return (true);
+    }
+
     // check tapping host to edit watch list
-    if (s.y < box.y + LISTING_Y0) {
+    if (s.y < box.y + LISTING_Y0 + dxc_hdr_extra) {
         runDXClusterMenu (box);
         return (true);
     }
 
     // everything else below may be a tapped spot
-    int vis_row = (s.y - (box.y + LISTING_Y0)) / LISTING_DY;
+    int vis_row = (s.y - (box.y + LISTING_Y0 + dxc_hdr_extra)) / LISTING_DY;
     int spot_row;
     if (dxc_ss.findDataIndex (vis_row, spot_row)
                         && dxwl_spots[spot_row].tx_call[0] != '\0' && isDXClusterConnected()) {
         DXSpot &sp = dxwl_spots[spot_row];
-        if (sp.iota[0]) {
+        if (sp.iota[0] && !dxc_hide_iota) {
             // show the resolved name (or just the bare ref if cache hasn't loaded
             // it yet) instead of the normal engage action -- tap again to engage
             const char *name = lookupIOTAName (sp.iota);
@@ -1179,6 +1525,15 @@ bool getDXClusterSpots (DXSpot **spp, uint8_t *nspotsp)
 bool isDXClusterConnected()
 {
     return (useDXCluster() && (dxc_client || udp_server));
+}
+
+/* return whether the user has opted to hide the IOTA marker column in the spot list.
+ * called from spots.cpp's drawSpotOnList(), shared with other DXSpot-list panes -- safe
+ * because only DX Cluster spots ever populate DXSpot::iota in the first place.
+ */
+bool dxcHideIOTA(void)
+{
+    return (dxc_hide_iota);
 }
 
 /* draw all qualiying paths and spots on map, as desired
@@ -1276,7 +1631,7 @@ bool getDXCPaneSpot (const SCoord &ms, DXSpot *dxs, LatLong *ll)
     listrow_b.h = LISTING_DY;
 
     // scan listed spots for one located at ms
-    uint16_t y0 = plot_b[pp].y + LISTING_Y0;
+    uint16_t y0 = plot_b[pp].y + LISTING_Y0 + dxc_hdr_extra;
     int min_i, max_i;
     if (dxc_ss.getVisDataIndices (min_i, max_i) > 0) {
         for (int i = min_i; i <= max_i; i++) {

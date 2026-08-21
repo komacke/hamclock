@@ -138,6 +138,7 @@ typedef enum {
  */
 #define DEBUG_SUBSYS                        \
     X(DEBUG_ADIF,       "ADIF")             \
+    X(DEBUG_APRS,       "aprs")             \
     X(DEBUG_BMP,        "BMP")              \
     X(DEBUG_BC,         "BigClock")         \
     X(DEBUG_CACHE,      "cache")            \

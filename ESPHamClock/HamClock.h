@@ -430,6 +430,7 @@ typedef enum {
     X(PLOT_CH_SATACT,       "Sat_Alerts")        \
     X(PLOT_CH_MESHTASTIC,   "Mesh_Mon")          \
     X(PLOT_CH_ECLIPSE,      "Eclipse")           \
+    X(PLOT_CH_APRSCLUSTER,  "Nearby_APRS")       \
     X(PLOT_CH_BALLOONS,     "Balloons")
 
 #define PLOTNAMES PLOTNAMES_LOW PLOTNAMES_HIGH
@@ -1348,6 +1349,40 @@ extern void drawMeshtasticOnMap (void);
 extern bool getClosestMeshtasticNode (LatLong &from_ll, LatLong *mark_ll, MeshInfo *info);
 extern bool getMeshtasticPaneInfo (const SCoord &ms, LatLong *mark_ll, MeshInfo *info);
 
+// nearby APRS station, keyed by callsign, one entry per station currently within radius
+#define MAX_APRSCALL_LEN        10                  // callsign+SSID, including EOS
+#define MAX_APRSCOMMENT_LEN     44                  // free-text comment/status, APRS's usual cap
+typedef struct {
+    char call[MAX_APRSCALL_LEN];        // source callsign, eg "N0CALL-9"
+    bool has_pos;                       // whether ll/dist_mi/symbol are valid yet
+    LatLong ll;                         // last known position
+    float dist_mi;                      // great-circle distance from DE, statute miles
+    float bear_deg;                     // TRUE bearing from DE, degrees 0..360 (convert for display
+                                         // with desiredBearing() same as everywhere else in HamClock)
+    char symbol[12];                    // short human name for APRS symbol, eg "CAR", "HOUSE"
+    char sym_table;                     // raw symbol table id and code, for icon rendering
+    char sym_code;
+    uint8_t category;                   // APRSCategory (see aprscluster.cpp) this symbol belongs
+                                         // to, for the pane's category filter
+    time_t heard;                       // myNow() this station was last heard
+    char comment[MAX_APRSCOMMENT_LEN];  // free-text comment/status following the position, if any
+    bool has_course_speed;              // whether course_deg/speed_mph are valid (moving stations)
+    float course_deg;                   // TRUE course over ground, degrees 0..360
+    float speed_mph;                    // speed over ground, statute mph
+    bool has_alt;                       // whether alt_ft is valid
+    float alt_ft;                       // altitude, feet
+    bool has_wx;                        // whether the wx_* fields are valid (symbol is a WX station)
+    float wx_temp_f;                    // temperature, F
+    int wx_humidity;                    // relative humidity, percent, -1 if unknown
+    float wx_wind_mph;                  // sustained wind speed, mph
+    float wx_gust_mph;                  // wind gust, mph, -1 if unknown
+    float wx_baro_mb;                   // barometric pressure, millibars, -1 if unknown
+} APRSSpot;
+extern bool updateAPRSCluster (const SBox &box, bool fresh);
+extern void checkAPRSCluster (void);
+extern bool checkAPRSClusterTouch (const SCoord &s, const SBox &box);
+extern bool isAPRSClusterConnected (void);
+
 #define LAUNCHES_INTERVAL (2)
 #define BALLOONS_INTERVAL (15)
 
@@ -1419,7 +1454,9 @@ extern bool checkDXClusterTouch (const SCoord &s, const SBox &box);
 extern bool getDXClusterSpots (DXSpot **spp, uint8_t *nspotsp);
 extern void drawDXClusterSpotsOnMap (void);
 extern bool isDXClusterConnected(void);
+extern bool dxcHideIOTA(void);
 extern void sendDXClusterDELLGrid(void);
+extern void sendAPRSClusterNewDE (void);
 extern bool getClosestDXCluster (LatLong &ll, DXSpot *sp, LatLong *llp);
 extern bool getDXCPaneSpot (const SCoord &ms, DXSpot *dxs, LatLong *ll);
 extern bool connectDXCluster (void);
@@ -2403,7 +2440,11 @@ extern PlotMask plot_rotset[PANE_N];       // each pane's PlotChoice rotation ch
                                  PLOTBIT(PLOT_CH_ADIF) | PLOTBIT(PLOT_CH_ONTA) | \
                                  PLOTBIT(PLOT_CH_DXPEDS) | PLOTBIT(PLOT_CH_ACTIVENETS) | \
                                  PLOTBIT(PLOT_CH_LAUNCHES) | PLOTBIT(PLOT_CH_SATACT) | \
+<<<<<<< HEAD
                                  PLOTBIT(PLOT_CH_BALLOONS))
+=======
+                                 PLOTBIT(PLOT_CH_APRSCLUSTER))
+>>>>>>> 63acd646ddfea8ad9f5858399db09680c7e62415
 
 // compute number of bits set in PANE_0_CH_MASK at compile time :-)
 // https://stackoverflow.com/questions/109023/count-the-number-of-set-bits-in-a-32-bit-integer
@@ -2910,6 +2951,10 @@ extern void renameCfgInfo (const char *from, const char *to);
 extern const char *getDXClusterHost(void);
 extern int getDXClusterPort(void);
 extern bool setDXCluster (char *host, char *port_str, Message &ynot);
+extern const char *getAPRSClusterHost(void);
+extern int getAPRSClusterPort(void);
+extern int getAPRSClusterRadiusMiles(void);
+extern bool useAPRSCluster(void);
 extern bool showTempC(void);
 extern bool showATMhPa(void);
 extern bool showDistKm(void);
@@ -3307,7 +3352,7 @@ extern void drawSpotPathOnMap (const DXSpot &spot);
 extern void ditherLL (LatLong &ll);
 extern void drawSpotDot (int16_t raw_x, int16_t raw_y, uint16_t radius, LabelOnMapEnd txrx, uint16_t color);
 extern void drawVisibleSpots (WatchListId wl_id, const DXSpot *spots, const ScrollState &ss, const SBox &box,
-    int16_t app_color);
+    int16_t app_color, const SBox *ctrl_box = NULL);
 
 
 typedef int (*PQSF)(const void *, const void *);        // pointer to qsort-style compare function
