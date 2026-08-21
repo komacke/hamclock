@@ -35,9 +35,12 @@ typedef enum {
     N_APRSCAT
 } APRSCategory;
 
+// short enough that 2 columns of these fit within even the narrowest pane (PLOTBOX0_W, 139px)
+// without spilling into whatever pane sits to the right -- the enum comments above and the
+// tooltip when filtering give the fuller picture for anyone who wants it.
 static const char *aprs_cat_names[N_APRSCAT] = {
-    "Vehicles", "Aircraft/Boats", "Weather", "Emergency/Safety", "Digital/Repeaters",
-    "Infra/Computers", "Places", "People/Animals", "Other/Unclassified"
+    "Vehicles", "Air/Boat", "Weather", "Emerg", "Digi/Rpt",
+    "Infra/PC", "Places", "Ppl/Anml", "Other"
 };
 
 // bit i set means category i is SHOWN. all bits set (the default) means no filtering is in
@@ -76,6 +79,17 @@ static uint16_t aprsColor (void)
 {
     return (getMapColor (findColSel (HAMBAND_2M)));
 }
+
+// fixed colors, matching the storms pane's plain white title (STORM_COLOR_TITLE) rather than the
+// user-configurable 2m band color above -- that band color can be quite dim/dark depending on how
+// the user has their band colors set up, which made the title, CLR/FLT, the "new spots" symbol,
+// and the scroll arrows all look washed-out/inactive next to other panes. All of these reuse this
+// same fixed white so the pane reads as bright and active regardless of the user's 2m color choice.
+// The error-state header color (RA8875_RED, used when not configured/connected) is unaffected.
+#define APRS_COLOR_TITLE RA8875_WHITE
+#define APRS_COLOR_BTN   RA8875_WHITE
+#define APRS_COLOR_NEW   RA8875_WHITE   // "new spots" symbol, normal (non-error) state
+#define APRS_COLOR_SCRL  RA8875_WHITE   // scroll up/down arrows
 
 // timing
 #define APRS_BGCHECK_DT  250            // background socket-check period, millis -- keep it snappy,
@@ -1173,7 +1187,7 @@ static void printClipped (uint16_t x, uint16_t y, const char *text, uint16_t max
  */
 static void drawAPRSClearListBtn (bool draw)
 {
-    uint16_t color = draw ? aprsColor() : RA8875_BLACK;
+    uint16_t color = draw ? APRS_COLOR_BTN : RA8875_BLACK;
 
     drawSBox (aprsclr_b, color);
 
@@ -1191,7 +1205,7 @@ static void drawAPRSClearListBtn (bool draw)
  */
 static void drawAPRSFilterBtn (bool draw)
 {
-    uint16_t color = !draw ? RA8875_BLACK : (APRS_FILTER_IS_OFF() ? aprsColor() : RA8875_GREEN);
+    uint16_t color = !draw ? RA8875_BLACK : (APRS_FILTER_IS_OFF() ? APRS_COLOR_BTN : RA8875_GREEN);
 
     drawSBox (aprsflt_b, color);
 
@@ -1222,7 +1236,9 @@ static void drawAPRSHeader (const SBox &box, uint16_t color)
     // button now sits in its own row below CLR/New, out of the title's way.
     if (BOX_IS_PANE_0(box) || getTextWidth(title) > box.w - (APRS_CLRBOX_DX+APRS_CLRBOX_W+6))
         title = "APRS";
-    tft.setTextColor (color);
+    // title uses the fixed APRS_COLOR_TITLE (see above), not the passed-in band-tied color, which
+    // is still used below for the new-spots symbol/scroll controls
+    tft.setTextColor (APRS_COLOR_TITLE);
     uint16_t tw = getTextWidth (title);
     tft.setCursor (box.x + (box.w-tw)/2, box.y + PANETITLE_H);
     tft.print (title);
@@ -1261,9 +1277,13 @@ static void runAPRSFilterMenu (const SBox &box)
     for (int i = 0; i < N_APRSCAT; i++)
         mitems[i] = {MENU_TOGGLE, (bool)((aprs_cat_filter >> i) & 1), 1, 2, aprs_cat_names[i], NULL};
 
-    SBox menu_b = {aprsflt_b.x, (uint16_t)(aprsflt_b.y+APRS_FLTBOX_H+2), 0, 0};
+    // start as close to the top of the pane as the CLR/FLT stack allows, and lay out in 2 columns
+    // (see the shortened aprs_cat_names above) -- 9 items in 1 column ran to 9 rows plus the
+    // footer/Ok/Cancel row, tall enough to spill well down into the map on most pane sizes; 2
+    // columns cuts that to 5 rows and starting higher keeps it from reaching as far down.
+    SBox menu_b = {aprsflt_b.x, (uint16_t)(box.y + 2), 0, 0};
     SBox ok_b;
-    MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 1, N_APRSCAT, mitems};
+    MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 2, N_APRSCAT, mitems};
     if (runMenu (menu)) {
         uint16_t newmask = 0;
         for (int i = 0; i < N_APRSCAT; i++)
@@ -1274,7 +1294,7 @@ static void runAPRSFilterMenu (const SBox &box)
         aprs_cat_filter = newmask;
         saveAPRSCatFilter();
         rebuildAPRSDisplay();
-        drawAPRSHeader (box, aprsColor());
+        drawAPRSHeader (box, APRS_COLOR_NEW);
         drawAllVisAPRSSpots (box);
     }
 }
@@ -1411,8 +1431,8 @@ static void drawAllVisAPRSSpots (const SBox &box)
         }
     }
 
-    aprs_ss.drawScrollUpControl (box, aprsColor(), aprsColor());
-    aprs_ss.drawScrollDownControl (box, aprsColor(), aprsColor());
+    aprs_ss.drawScrollUpControl (box, APRS_COLOR_SCRL, APRS_COLOR_SCRL);
+    aprs_ss.drawScrollDownControl (box, APRS_COLOR_SCRL, APRS_COLOR_SCRL);
 }
 
 /* ***********************************************************************************************
@@ -1440,7 +1460,7 @@ bool updateAPRSCluster (const SBox &box, bool fresh)
     }
 
     if (fresh)
-        drawAPRSHeader (box, aprsColor());
+        drawAPRSHeader (box, APRS_COLOR_NEW);
 
     if (aprs_ss.atNewest()) {
         // safe to refresh the display copy -- nothing for the user to lose track of
@@ -1551,7 +1571,7 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
         if (useAPRSCluster() && inBox (s, aprsclr_b)) {
             aprsLog ("User erased list of %d spots\n", n_aprs_spots);
             resetAPRSMem();
-            drawAPRSHeader (box, aprsColor());
+            drawAPRSHeader (box, APRS_COLOR_NEW);
             drawAllVisAPRSSpots (box);
             return (true);
         }
@@ -1577,8 +1597,10 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
         return (false);
     }
 
-    // a tap on the column header row itself: KM/MI toggles sort order, SYM shows a legend,
-    // AGE explains the countdown-style age display
+    // a tap on the column header row itself: CALL explains the list, KM/MI toggles sort order
+    // (and says so), SYM shows a legend, AGE explains the countdown-style age display. Every one
+    // of these tooltips also mentions the KM/MI sort toggle, since that's the one control here
+    // that actually *does* something besides pop up help, and it's otherwise easy to miss.
     if (useAPRSCluster()) {
         uint16_t hdr_y0 = box.y + APRS_LIST_Y0;
         uint16_t hdr_y1 = hdr_y0 + APRS_HDR_DY;
@@ -1587,14 +1609,22 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
             uint16_t sym_x  = age_x - APRS_COL_GAP - APRS_SYM_W;
             uint16_t dist_x = sym_x - APRS_COL_GAP - APRS_DIST_W;
 
+            if (s.x < dist_x) {
+                tooltip (s, "Stations heard nearby. Tap a row for full detail. Tap KM/MI to sort "
+                            "by distance or by time heard.");
+                return (true);
+            }
+
             if (s.x >= dist_x && s.x < sym_x) {
                 aprs_sort_recent = !aprs_sort_recent;
                 aprs_list_changed = true;
                 if (aprs_ss.atNewest())
                     rebuildAPRSDisplay();
                 drawAllVisAPRSSpots (box);
-                tooltip (s, aprs_sort_recent ? "Sorted by most recently heard"
-                                              : "Sorted by distance, nearest first");
+                tooltip (s, aprs_sort_recent ? "Sorted by most recently heard. Tap KM/MI again to "
+                                                "sort by distance instead."
+                                              : "Sorted by distance, nearest first. Tap KM/MI again "
+                                                "to sort by time heard instead.");
                 return (true);
             }
 
@@ -1604,13 +1634,15 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
                 // and what still falls back to "-" instead
                 tooltip (s, "Most APRS symbols show as small icons. \"-\" means either the "
                             "alternate symbol table (not decoded) or one of a handful of unused/"
-                            "reserved primary-table codes.");
+                            "reserved primary-table codes. Tap KM/MI to sort by distance or by "
+                            "time heard.");
                 return (true);
             }
 
             if (s.x >= age_x) {
                 tooltip (s, "Time since last heard: counts up in seconds, then switches to "
-                            "whole minutes, hours, days, etc.");
+                            "whole minutes, hours, days, etc. Tap KM/MI to sort by distance or "
+                            "by time heard.");
                 return (true);
             }
         }

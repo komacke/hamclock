@@ -76,13 +76,15 @@ void tooltip (const SCoord &s, const char *tip)
         text_y += TT_ROWH;
     }
 
-    // wait
+    // wait -- UF_CLOCKSOK so the main clock(s) keep ticking while the tooltip is up; only the
+    // small backing-store region under the tooltip itself is frozen/restored, so this doesn't
+    // disturb the tooltip's own contents.
     UserInput ui = {
         tip_b,
         UI_UFuncNone,
         UF_UNUSED,
         TT_TIMEOUT,
-        UF_NOCLOCKS,
+        UF_CLOCKSOK,
         {0,0}, TT_NONE, '\0', false, false
     };
 
