@@ -691,11 +691,13 @@ void drawInfoBox()
     bool over_dxped = (over_map && getClosestDXPed (ll, dxp)) || (!over_map && getPaneDXPed (ms, dxp));
     bool over_spot = over_map && !over_psk && !over_dxped &&
                                 (getClosestDXCluster (ll, &dx_s, &dxc_ll)
+                                    || getClosestHamAlert (ll, &dx_s, &dxc_ll)
                                     || getClosestOnTheAirSpot (ll, &dx_s, &dxc_ll)
                                     || getClosestADIFSpot (ll, &dx_s, &dxc_ll)
                                 );
     bool over_pane = over_app && !over_map && !over_dxped &&
                                 (getDXCPaneSpot (ms, &dx_s, &dxc_ll)
+                                    || getHamAlertPaneSpot (ms, &dx_s, &dxc_ll)
                                     || getMaxDistPSK (ms, &dx_s, &dxc_ll)
                                     || getOnTheAirPaneSpot (ms, &dx_s, &dxc_ll)
                                     || getADIFPaneSpot (ms, &dx_s, &dxc_ll)

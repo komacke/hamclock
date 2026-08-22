@@ -423,6 +423,10 @@ static const uint8_t nv_sizes[NV_N] = {
     2,                          // NV_APRSRADIUS
     2,                          // NV_APRSCATFILTER
 
+    // 264
+    NV_HAMALERT_PASSWD_LEN,     // NV_HAMALERT_PASSWD
+    NV_HAMALERT_LOGIN_LEN,      // NV_HAMALERT_LOGIN
+
 };
 
 #endif // _NVRAMSIZE_H

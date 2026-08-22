@@ -698,6 +698,7 @@ void loop()
     drawFireworks();                    // only new years midnight
     updateSatPass ();                   // just for the satellite LED
     checkDXCluster ();                  // collect new spots if running
+    checkHamAlert ();                   // collect new alerts if running
     checkAPRSCluster ();                // collect new APRS traffic if running
     checkEclipsePopupTimeout ();        // auto-dismiss the eclipse pane's detail popup, if up
 
@@ -1784,6 +1785,7 @@ void drawAllSymbols()
         drawDEAPMarker();
     drawOnTheAirSpotsOnMap();
     drawDXClusterSpotsOnMap();
+    drawHamAlertSpotsOnMap();
     drawADIFSpotsOnMap();
     drawDXPedsOnMap();
     drawHamsatOnMap();

@@ -128,6 +128,7 @@ OBJS = \
 	fsfree.o \
 	gimbal.o \
 	gpsd.o \
+	hamalert.o \
 	grayline.o \
 	kd3tree.o \
 	launches.o \

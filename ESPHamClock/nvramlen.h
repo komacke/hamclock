@@ -47,5 +47,8 @@
 #define NV_SATGROUP_LEN         240
 #define NV_MESHWATCHLIST_LEN    120
 #define NV_APRSHOST_LEN          26
+#define NV_HAMALERT_PASSWD_LEN  32      // HamAlert.org telnet password (separate from web password)
+#define NV_HAMALERT_LOGIN_LEN   64      // HamAlert.org telnet login -- call sign or, per HamAlert's
+                                         // own account system, sometimes an email address
 
 #endif // _NVRAMLEN_H

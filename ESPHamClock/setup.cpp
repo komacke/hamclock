@@ -61,6 +61,8 @@ static char rot_host[NV_ROTHOST_LEN];
 static char rig_host[NV_RIGHOST_LEN];
 static char flrig_host[NV_FLRIGHOST_LEN];
 static char piaware_host[NV_PIAWAREHOST_LEN];  // optional PiAware ADS-B receiver host/IP; blank == unused
+static char hamalert_login[NV_HAMALERT_LOGIN_LEN];    // HamAlert.org telnet login; blank == use station call
+static char hamalert_passwd[NV_HAMALERT_PASSWD_LEN];  // HamAlert.org telnet password; blank == unused
 static char gpsd_host[NV_GPSDHOST_LEN];
 static char nmea_file[NV_NMEAFILE_LEN];
 static char ntp_host[NV_NTPHOST_LEN];
@@ -331,6 +333,8 @@ typedef struct {
     uint8_t v_ci;                               // v_str index of cursor: insert here, delete char before
     uint8_t v_wi;                               // v_str index of first character at left end of window
     const char *tt;                             // tooltip text, if any
+    uint16_t p_color;                           // 0 == use default PR_C, else this exact RGB565 color
+    bool masked;                                // true to display v_str as asterisks (eg passwords)
 } StringPrompt;
 
 
@@ -422,6 +426,11 @@ typedef enum {
     CSELRED_SPR,
     CSELGRN_SPR,
     CSELBLU_SPR,
+
+    // page "7" -- HamAlert's own dedicated page (index HAMALERT_PAGE), so it never has to
+    // compete for space with anything else again
+    HAMALERTUSER_SPR,
+    HAMALERTPASSWD_SPR,
 
 
     N_SPR
@@ -567,9 +576,24 @@ static StringPrompt string_pr[N_SPR] = {
     {5, {CSEL_VX, CSEL_VYB, 0, PR_H}, {CSEL_VX, CSEL_VYB, 80, PR_H}, NULL, NULL, 0, 0, 0,
                 "Enter magnitude of blue on a scale of 0-255"},                                   // shadowed
 
-    // "page 7" -- index 6
+    // "page 7" -- index 6 -- HAMALERT_PAGE, entirely dedicated to HamAlert. Plenty of clean,
+    // empty space here, so both fields get generous width with room to spare -- no cramming,
+    // no sharing a row with anything else, nowhere near the keyboard's top edge (KB_Y0). Left
+    // an extra blank row between them (row 3 instead of row 2) since the tight, code-standard
+    // 1px gap between adjacent rows leaves effectively no margin for touch-coordinate error.
+    {6, {10, R2Y(1), 115, PR_H}, {135, R2Y(1), 400, PR_H}, "HamAlert User:", hamalert_login,
+                NV_HAMALERT_LOGIN_LEN, 0, 0,
+                "Enter your hamalert.org call sign or, per HamAlert's account system, sometimes an "
+                "email address, to log in with (see Settings on the HamAlert web site); "
+                "leave blank to use your station call sign", RA8875_CYAN},
 
-    // on/off table
+    {6, {10, R2Y(3), 155, PR_H}, {175, R2Y(3), 400, PR_H}, "HamAlert Password:", hamalert_passwd,
+                NV_HAMALERT_PASSWD_LEN, 0, 0,
+                "Enter your hamalert.org telnet password (Settings on the HamAlert web site -- "
+                "this is NOT your HamAlert web login password); leave blank to disable the HamAlert pane",
+                RA8875_CYAN, true},
+
+    // "page 8" -- index 7 -- on/off table (ONOFF_PAGE); no string_pr entries, custom-drawn
 
 };
 
@@ -1045,10 +1069,14 @@ typedef struct {
 #define SPIDER_PAGE     1                       // 0-based counting
 #define ALLBOOLS_PAGE   4                       // 0-based counting
 #define COLOR_PAGE      5                       // 0-based counting
-#define ONOFF_PAGE      6                       // 0-based counting
+#define HAMALERT_PAGE   6                       // 0-based counting -- its own dedicated page
+#define ONOFF_PAGE      7                       // 0-based counting
 #define KBPAGE_FIRST    0                       // first in a series of pages that need a keyboard
-#define KBPAGE_LAST     3                       // last in a series of pages that need a keyboard
-#define MAX_PAGES       7                       // max number of possible pages
+#define KBPAGE_LAST     3                       // last in a *contiguous* series needing a keyboard;
+                                                 // HAMALERT_PAGE also needs one but sits after the
+                                                 // non-keyboard ALLBOOLS/COLOR pages, so it's handled
+                                                 // as an explicit special case everywhere this is checked
+#define MAX_PAGES       8                       // max number of possible pages
 #define N_PAGES         (HAVE_ONOFF() ? MAX_PAGES : (MAX_PAGES-1))      // last page only if on/off
 
 static Focus cur_focus[MAX_PAGES];              // retain focus for each page
@@ -2171,7 +2199,7 @@ static void eraseCursor()
 static void drawSPPrompt (StringPrompt *sp)
 {
     if (sp->p_str) {
-        tft.setTextColor (PR_C);
+        tft.setTextColor (sp->p_color ? sp->p_color : PR_C);
         tft.setCursor (sp->p_box.x, sp->p_box.y+sp->p_box.h-PR_D);
         tft.print(sp->p_str);
     }
@@ -2230,7 +2258,17 @@ static void drawSPValue (StringPrompt *sp)
     }
 
     // print and free
-    tft.print (w_dup);
+    if (sp->masked) {
+        // print asterisks matching the visible substring length, never the real characters
+        size_t mask_l = strlen (w_dup);
+        char *mask_str = (char *) malloc (mask_l+1);
+        memset (mask_str, '*', mask_l);
+        mask_str[mask_l] = '\0';
+        tft.print (mask_str);
+        free (mask_str);
+    } else {
+        tft.print (w_dup);
+    }
     free (w_dup);
 
     // printf ("'%-*s' c= %2d w= %2d\n", sp->v_len, sp->v_str, sp->v_ci, sp->v_wi);
@@ -2493,8 +2531,10 @@ static bool s2char (SCoord &s, char &kbchar)
             return (false);
     }
 
-    // check main qwerty
-    if (cur_page >= KBPAGE_FIRST && cur_page <= KBPAGE_LAST) {
+    // check main qwerty -- includes HAMALERT_PAGE, which needs a keyboard too despite sitting
+    // after the non-keyboard ALLBOOLS/COLOR pages, so it can't just extend the KBPAGE range
+    if ((cur_page >= KBPAGE_FIRST && cur_page <= KBPAGE_LAST) || cur_page == HAMALERT_PAGE) {
+
         if (s.y >= KB_Y0) {
             uint16_t kb_y = s.y - KB_Y0;
             uint8_t row = kb_y/KB_CHAR_H;
@@ -2707,6 +2747,28 @@ static void drawNTPPrompts (void)
  */
 static void drawCurrentPageFields()
 {
+    {
+        // "HamAlert User:" (row 1) and "HamAlert Password:" (row 2) on their own dedicated page
+        // (HAMALERT_PAGE), left-aligned at x=10. Nothing else is ever on this page, so the value
+        // boxes extend generously toward the right edge rather than being squeezed. x/w are still
+        // computed from the font's real measured label width so nothing is hand-guessed.
+        StringPrompt &su = string_pr[HAMALERTUSER_SPR];
+        su.p_box.x = 10;
+        uint16_t su_lbl_w = getTextWidth (su.p_str);
+        su.p_box.w = su_lbl_w;
+        uint16_t su_vx = 10 + su_lbl_w + 10;
+        su.v_box.x = su_vx;
+        su.v_box.w = su_vx + 30 < tft.width() ? tft.width() - su_vx - 5 : 30;
+
+        StringPrompt &sw = string_pr[HAMALERTPASSWD_SPR];
+        sw.p_box.x = 10;
+        uint16_t sw_lbl_w = getTextWidth (sw.p_str);
+        sw.p_box.w = sw_lbl_w;
+        uint16_t sw_vx = 10 + sw_lbl_w + 10;
+        sw.v_box.x = sw_vx;
+        sw.v_box.w = sw_vx + 30 < tft.width() ? tft.width() - sw_vx - 5 : 30;
+    }
+
     // draw relevant string prompts on this page
     for (int i = 0; i < N_SPR; i++) {
         StringPrompt *sp = &string_pr[i];
@@ -3579,7 +3641,7 @@ static void changePage (int new_page)
         setInitialFocus ();
 
     } else {
-        if (prev_page >= KBPAGE_FIRST && prev_page <= KBPAGE_LAST) {
+        if ((prev_page >= KBPAGE_FIRST && prev_page <= KBPAGE_LAST) || prev_page == HAMALERT_PAGE) {
             // just refresh top portion, keyboard already ok
             tft.fillRect (0, 0, tft.width(), KB_Y0-1, BG_C);
             drawPageButton();
@@ -3846,6 +3908,15 @@ static bool validateStringPrompts (bool show_errors)
     if (strlen (string_pr[PIAWAREHOST_SPR].v_str) > 0) {
         if (!hostOK(string_pr[PIAWAREHOST_SPR].v_str, NV_PIAWAREHOST_LEN))
             badsids[n_badsids++] = PIAWAREHOST_SPR;
+    }
+
+    // HamAlert password is optional -- blank just means the pane is unused. if a password has been
+    // entered, we need a callsign to log in with: either the explicit HamAlert User field or, failing
+    // that, the main station call sign.
+    if (strlen (string_pr[HAMALERTPASSWD_SPR].v_str) > 0
+                        && strlen (string_pr[HAMALERTUSER_SPR].v_str) == 0 && !callsignOk (cs_info.call)) {
+        err_msg = "HamAlert requires a call sign, either HamAlert User or the station call sign";
+        badsids[n_badsids++] = err_sid = HAMALERTUSER_SPR;
     }
 
     // check for plausible temperature and pressure corrections and file name if used
@@ -4305,6 +4376,18 @@ static void initSetup()
     if (!NVReadString (NV_PIAWAREHOST, piaware_host)) {
         piaware_host[0] = '\0';
         NVWriteString (NV_PIAWAREHOST, piaware_host);
+    }
+
+    // init optional HamAlert telnet login and password; blank login falls back to station call sign,
+    // blank password means the pane is not configured for use at all.
+
+    if (!NVReadString (NV_HAMALERT_LOGIN, hamalert_login)) {
+        hamalert_login[0] = '\0';
+        NVWriteString (NV_HAMALERT_LOGIN, hamalert_login);
+    }
+    if (!NVReadString (NV_HAMALERT_PASSWD, hamalert_passwd)) {
+        hamalert_passwd[0] = '\0';
+        NVWriteString (NV_HAMALERT_PASSWD, hamalert_passwd);
     }
 
 
@@ -5596,6 +5679,8 @@ static void saveParams2NV()
     NVWriteString (NV_FLRIGHOST, flrig_host);
     NVWriteUInt16 (NV_FLRIGPORT, flrig_port);
     NVWriteString (NV_PIAWAREHOST, piaware_host);
+    NVWriteString (NV_HAMALERT_LOGIN, hamalert_login);
+    NVWriteString (NV_HAMALERT_PASSWD, hamalert_passwd);
     NVWriteUInt8 (NV_SETRADIO, bool_pr[SETRADIO_BPR].state);
     NVWriteUInt8 (NV_SCROLLDIR, bool_pr[SCROLLDIR_BPR].state);
     NVWriteUInt8 (NV_NEWDXDEWX, bool_pr[NEWDXDEWX_BPR].state);
@@ -5840,6 +5925,33 @@ const char *getGPSDHost()
 const char *getPiAwareHost()
 {
     return (piaware_host);
+}
+
+/* return pointer to static storage containing the HamAlert.org telnet login call sign,
+ * falling back to the station call sign if not explicitly set.
+ * N.B. only sensible if useHamAlert() is true
+ */
+const char *getHamAlertLogin()
+{
+    return (hamalert_login[0] != '\0' ? hamalert_login : cs_info.call);
+}
+
+/* return pointer to static storage containing the HamAlert.org telnet password,
+ * or an empty string if not configured.
+ * N.B. only sensible if useHamAlert() is true
+ */
+const char *getHamAlertPasswd()
+{
+    return (hamalert_passwd);
+}
+
+/* return whether the HamAlert pane is configured for use, ie, a telnet password has been entered
+ * and we have some callsign, explicit or from the station, to log in with.
+ */
+bool useHamAlert()
+{
+    return (hamalert_passwd[0] != '\0'
+                        && (hamalert_login[0] != '\0' || callsignOk (cs_info.call)));
 }
 
 /* return pointer to static storage containing the NMEA host
