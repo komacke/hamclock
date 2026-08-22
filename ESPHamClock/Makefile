@@ -117,6 +117,7 @@ OBJS = \
 	aprscluster.o \
 	dxpeds.o \
 	dxpeds_hide.o \
+	hamalert.o \
 	hamqsl.o \
 	hamsat.o \
 	hurricane.o \
@@ -128,7 +129,6 @@ OBJS = \
 	fsfree.o \
 	gimbal.o \
 	gpsd.o \
-	hamalert.o \
 	grayline.o \
 	kd3tree.o \
 	launches.o \
