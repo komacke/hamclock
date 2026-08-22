@@ -1,3 +1,5 @@
 Changes with latest release:
 - new APRS monitoring
 - new HAB monitoring
+- new HamAlert monitoring
+- more ONTAs and highlights
