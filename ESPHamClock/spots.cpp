@@ -6,6 +6,37 @@
 #define IOTA_MARK_COLOR RGB565(150,250,255)     // matches ONTA_COLOR; box behind the "I" flags an IOTA ref
 #define IOTA_MARK_W     9                        // pixels reserved for the marker column, incl gap
 
+// letter + color for each "extra" xOTA program's marker -- see xota.h. Chosen to be visually
+// distinct from IOTA_MARK_COLOR above and from each other; avoids RA8875_RED (reserved for
+// watchlist hits elsewhere) and DXC_COLOR's pure green (dxcluster.cpp's own accent).
+typedef struct {
+    const char *org;
+    char letter;
+    uint16_t color;
+} XOTAMarker;
+static const XOTAMarker xota_markers[] = {
+    { "WCA",    'C', RGB565(255,215,0)   },     // gold
+    { "ARLHS",  'L', RGB565(100,170,255) },     // sky blue -- lighthouses
+    { "ILLW",   'L', RGB565(100,170,255) },     // "
+    { "SIOTA",  'O', RGB565(200,200,200) },     // light grey
+    { "WAB",    'W', RGB565(255,127,80)  },     // coral
+    { "WWBOTA", 'B', RGB565(150,150,60)  },     // olive/khaki
+};
+
+/* look up the marker letter+color for an xota_org value; returns NULL if not recognized
+ * (shouldn't happen since xota_org is only ever set by findXOTARef() using these same names,
+ * but a spot list is exactly the wrong place to let an unrecognized value crash anything).
+ */
+static const XOTAMarker *findXOTAMarker (const char *org)
+{
+    if (!org || !org[0])
+        return (NULL);
+    for (const XOTAMarker &m : xota_markers)
+        if (!strcmp (m.org, org))
+            return (&m);
+    return (NULL);
+}
+
 
 /* find list element, subject to possible filtering, that is closest to ll on the given end(s).
  * return whether found one within MAX_CSR_DIST.
@@ -206,18 +237,24 @@ void drawSpotOnList (const SBox &box, const DXSpot &spot, int row, uint16_t bg_c
     snprintf (line, sizeof(line), " %-*.*s ", max_call, max_call, spot.tx_call);
     tft.print (line);
 
-    // reserve a small fixed-width column for an IOTA marker -- reserved on every row, drawn only
-    // when this spot's comment carried a recognized IOTA reference, so the age field lines up in
-    // the same column either way instead of drifting into it (as a plain floating dot used to).
-    // full name doesn't fit here -- tap the row (see checkDXClusterTouch) to see it in a tooltip.
-    // user can hide the marker entirely (Age/IOTA/Modes/Bands menu) while keeping the column
-    // reserved, so age still lines up whether or not markers are being shown.
+    // reserve a small fixed-width column for a marker -- reserved on every row, drawn only
+    // when this spot's comment carried a recognized IOTA or "extra" xOTA (xota.h) reference,
+    // so the age field lines up in the same column either way instead of drifting into it (as
+    // a plain floating dot used to). full name/program doesn't fit here -- tap the row (see
+    // checkDXClusterTouch) to see it in a tooltip. user can hide the marker entirely (the
+    // Marker: Hide toggle in Age/Marker/Modes/Bands menu) while keeping the column reserved,
+    // so age still lines up whether or not markers are being shown.
+    // IOTA takes priority if a spot somehow matches both -- vanishingly unlikely in practice,
+    // not worth a two-letter marker to cover.
     uint16_t call_end_x = tft.getCursorX();
-    if (spot.iota[0] && !dxcHideIOTA()) {
-        tft.fillRect (call_end_x, y-LISTING_OS, IOTA_MARK_W, h, IOTA_MARK_COLOR);
+    const XOTAMarker *xm = spot.iota[0] ? NULL : findXOTAMarker (spot.xota_org);
+    if ((spot.iota[0] || xm) && !dxcHideIOTA()) {
+        char letter = spot.iota[0] ? 'I' : xm->letter;
+        uint16_t mark_color = spot.iota[0] ? IOTA_MARK_COLOR : xm->color;
+        tft.fillRect (call_end_x, y-LISTING_OS, IOTA_MARK_W, h, mark_color);
         tft.setTextColor (RA8875_BLACK);
         tft.setCursor (call_end_x + 2, y);
-        tft.print ('I');
+        tft.print (letter);
         tft.setTextColor (RA8875_WHITE);
     }
     tft.setCursor (call_end_x + IOTA_MARK_W, y);

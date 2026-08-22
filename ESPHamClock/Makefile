@@ -186,6 +186,7 @@ OBJS = \
 	wifi.o \
 	wifimeter.o \
 	wx.o \
+	xota.o \
 	zones.o
 
 help:

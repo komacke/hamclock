@@ -4,6 +4,7 @@
 
 #include "HamClock.h"
 #include "iota.h"
+#include "xota.h"
 
 
 
@@ -50,8 +51,11 @@ bool crackClusterSpot (char line[], DXSpot &spot)
     quietStrncpy (spot.mode, findHamMode (spot.kHz), sizeof(spot.mode));
 
     // comment is whatever text sits between the callsign and the time field at
-    // line[70]; scan it for a recognizable IOTA group reference
+    // line[70]; scan it for a recognizable IOTA group reference, and separately for
+    // any of the "extra" xOTA programs (WCA/ARLHS/ILLW/SIOTA/WAB/WWBOTA) -- see xota.h
+    // for why that one needs its own, stricter, label-anchored scan
     findIOTARef (line, spot.iota, sizeof(spot.iota));
+    findXOTARef (line, spot.xota_org, sizeof(spot.xota_org), spot.xota_ref, sizeof(spot.xota_ref));
 
     // accommodate future from roundoff
     if (spot.spotted > now) {
