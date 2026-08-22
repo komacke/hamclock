@@ -23,6 +23,7 @@ DEFAULT_LIVE_PORT=:8081
 DEFAULT_RO_PORT=:8082
 DEFAULT_BACKEND_HOST=-
 DEFAULT_HC_SIZE=-
+DEFAULT_MAC_ADDRESS=-
 # the following env is the lighttpd env file
 DEFAULT_HC_EEPROM=hc.settings
 HC_UID=1199
@@ -98,7 +99,7 @@ main() {
 }
 
 get_compose_opts() {
-    while getopts ":a:b:e:r:s:t:w:" opt; do
+    while getopts ":a:b:e:M:r:s:t:w:" opt; do
         case $opt in
             a)
                 REQUESTED_API_PORT="$OPTARG"
@@ -108,6 +109,13 @@ get_compose_opts() {
                 ;;
             e)
                 REQUESTED_HC_EEPROM="$OPTARG"
+                ;;
+            M)
+                REQUESTED_MAC_ADDRESS="$OPTARG"
+                if [[ "$REQUESTED_MAC_ADDRESS" != "-" && ! "$REQUESTED_MAC_ADDRESS" =~ ^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$ ]]; then
+                    echo "ERROR: -$opt option must be a valid MAC address (e.g. 02:42:aa:bb:cc:dd) or '-'"
+                    exit 1
+                fi
                 ;;
             r)
                 REQUESTED_RO_PORT="$OPTARG"
@@ -155,13 +163,14 @@ $THIS <COMMAND> [options]:
     check-hamclock-install:
             check if Hamclock is installed and report versions
 
-    install [-a <port>] [-r <port>] [-w <port>] [-t <tag>] [-b <backend host:port>]
+    install [-a <port>] [-r <port>] [-w <port>] [-t <tag>] [-b <backend host:port>] [-M <mac>]
             do a fresh install and optionally provide the version
             -b: set backend host
             -a: set the HTTP API port
             -r: set the read-only live web port
             -w: set the read-write live web port
             -t: set image tag
+            -M: set container MAC address; "-" clears/lets docker assign
 
     upgrade [-a <port>] [-r <port>] [-w <port>] [-t <tag>] [-b <backend host:port>]
             upgrade hamclock; defaults to current git tag if there is one. Otherwise you can provide one.
@@ -225,6 +234,14 @@ get_sticky_vars() {
 }
 
 save_sticky_vars() {
+    # If MAC_ADDRESS was not set yet, check if container exists and get its MAC
+    if [ -z "$MAC_ADDRESS" -o "$MAC_ADDRESS" == "-" ]; then
+        get_current_mac_address
+        if [ -n "$CURRENT_MAC_ADDRESS" ]; then
+            MAC_ADDRESS="$CURRENT_MAC_ADDRESS"
+        fi
+    fi
+
     cat<<EOF > $STICKY_ENV_FILE
 STICKY_API_PORT="$API_PORT"
 STICKY_LIVE_PORT="$LIVE_PORT"
@@ -232,6 +249,7 @@ STICKY_RO_PORT="$RO_PORT"
 STICKY_HC_EEPROM="$HC_EEPROM"
 STICKY_BACKEND_HOST=$BACKEND_HOST
 STICKY_HC_SIZE=$HC_SIZE
+STICKY_MAC_ADDRESS="${MAC_ADDRESS:--}"
 EOF
 }
 
@@ -418,6 +436,12 @@ is_hamclock_installed() {
         else
             echo "'$STICKY_BACKEND_HOST'"
         fi
+        get_current_mac_address
+        if [ -n "$CURRENT_MAC_ADDRESS" ]; then
+            echo "  MAC address:           '$CURRENT_MAC_ADDRESS'"
+        elif [ -n "$STICKY_MAC_ADDRESS" -a "$STICKY_MAC_ADDRESS" != "-" ]; then
+            echo "  MAC address:           '$STICKY_MAC_ADDRESS' (saved)"
+        fi
     fi
 
     if ! is_container_running; then
@@ -431,6 +455,7 @@ upgrade_hamclock() {
 
     get_current_ports
     get_current_image_tag
+    get_current_mac_address
 
     echo "Upgrading Hamclock ..."
 
@@ -509,6 +534,7 @@ docker_compose_down() {
 docker_compose_reset() {
     get_current_ports
     get_current_image_tag
+    get_current_mac_address
     docker_compose_down || return $RETVAL
     docker_compose_up
 }
@@ -544,6 +570,7 @@ remove_hamclock() {
 recreate_hamclock() {
     get_current_ports
     get_current_image_tag
+    get_current_mac_address
 
     remove_hamclock || return $RETVAL
     install_hamclock || return $RETVAL
@@ -615,6 +642,46 @@ get_current_image_tag() {
     if [ "$CURRENT_DOCKER_IMAGE" != 'null' ]; then
         CURRENT_TAG=${CURRENT_DOCKER_IMAGE#*:}
         CURRENT_IMAGE_BASE=${CURRENT_DOCKER_IMAGE%:*}
+    fi
+}
+
+get_current_mac_address() {
+    DOCKER_MAC_ADDRESS=$(docker inspect $CONTAINER 2>/dev/null | jq -r '.[0]?.NetworkSettings?.Networks?.hamclock?.MacAddress // (.[0]?.NetworkSettings?.Networks // {})[]?.MacAddress // .[0]?.NetworkSettings?.MacAddress // empty' 2>/dev/null | head -n 1)
+    if [ -n "$DOCKER_MAC_ADDRESS" -a "$DOCKER_MAC_ADDRESS" != 'null' ]; then
+        CURRENT_MAC_ADDRESS=$DOCKER_MAC_ADDRESS
+    else
+        unset CURRENT_MAC_ADDRESS
+    fi
+}
+
+determine_mac_address() {
+    get_current_mac_address
+
+    # first precedence
+    if [ -n "$REQUESTED_MAC_ADDRESS" ]; then
+        if [ "$REQUESTED_MAC_ADDRESS" == "-" ]; then
+            MAC_ADDRESS=""
+        else
+            MAC_ADDRESS=$REQUESTED_MAC_ADDRESS
+        fi
+
+    # second precedence
+    elif [ -n "$CURRENT_MAC_ADDRESS" ]; then
+        MAC_ADDRESS=$CURRENT_MAC_ADDRESS
+
+    # third precedence
+    elif [ -n "$STICKY_MAC_ADDRESS" -a "$STICKY_MAC_ADDRESS" != "-" ]; then
+        MAC_ADDRESS=$STICKY_MAC_ADDRESS
+
+    # fourth precedence
+    else
+        MAC_ADDRESS=""
+    fi
+
+    if [ -n "$MAC_ADDRESS" ]; then
+        MAC_ADDRESS_MAPPING="mac_address: $MAC_ADDRESS"
+    else
+        unset MAC_ADDRESS_MAPPING
     fi
 }
 
@@ -920,6 +987,7 @@ docker_compose_yml() {
     determine_backend_host
     determine_hc_size
     determine_eeprom_file
+    determine_mac_address
 
     determine_tag || return $?
     IMAGE=$IMAGE_BASE:$TAG
@@ -948,6 +1016,7 @@ services:
     container_name: $CONTAINER
     image: $IMAGE
     restart: unless-stopped
+    $MAC_ADDRESS_MAPPING
     networks:
       - hamclock
     ${PORT_MAPPING}
