@@ -2276,6 +2276,7 @@ void updateWiFi(PlotPane skip_pp)
 
             // if a choice needs fresh_redraw when newly exposed set it here
             if (pc == PLOT_CH_DXCLUSTER) fresh_redraw[PLOT_CH_DXCLUSTER] = true;
+            if (pc == PLOT_CH_HAMALERT)  fresh_redraw[PLOT_CH_HAMALERT] = true;
             if (pc == PLOT_CH_ADIF)      fresh_redraw[PLOT_CH_ADIF] = true;
             if (pc == PLOT_CH_ONTA)      fresh_redraw[PLOT_CH_ONTA] = true;
             if (pc == PLOT_CH_CONTESTS)  fresh_redraw[PLOT_CH_CONTESTS] = true;
@@ -2318,6 +2319,16 @@ void updateWiFi(PlotPane skip_pp)
                     fresh_redraw[pc] = false;
                 } else
                     next_update[pp] = nextWiFiRetry (PLOT_CH_DXCLUSTER);
+            }
+            break;
+
+        case PLOT_CH_HAMALERT:
+            if (t0 >= next_update[pp]) {
+                if (updateHamAlert (box, fresh_redraw[pc])) {
+                    next_update[pp] = myNow() + DXC_INTERVAL;   // same fast cadence as DX Cluster
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry (PLOT_CH_HAMALERT);
             }
             break;
 
@@ -2833,6 +2844,7 @@ void forcePaneRotationPrev (PlotPane pp)
 
     // same fresh_redraw bookkeeping as the forward path in updateWiFi()
     if (pc == PLOT_CH_DXCLUSTER)  fresh_redraw[PLOT_CH_DXCLUSTER] = true;
+    if (pc == PLOT_CH_HAMALERT)   fresh_redraw[PLOT_CH_HAMALERT] = true;
     if (pc == PLOT_CH_ADIF)       fresh_redraw[PLOT_CH_ADIF] = true;
     if (pc == PLOT_CH_ONTA)       fresh_redraw[PLOT_CH_ONTA] = true;
     if (pc == PLOT_CH_CONTESTS)   fresh_redraw[PLOT_CH_CONTESTS] = true;

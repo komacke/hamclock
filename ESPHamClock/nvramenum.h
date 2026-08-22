@@ -420,6 +420,10 @@ typedef enum {
     NV_APRSRADIUS,                    // nearby-station search radius, statute miles (canonical unit)
     NV_APRSCATFILTER,                 // bitmask of APRSCategory values currently shown in the pane
 
+    // 264
+    NV_HAMALERT_PASSWD,             // HamAlert.org telnet password; blank means HamAlert pane is unused
+    NV_HAMALERT_LOGIN,              // HamAlert.org telnet login call sign; blank means use station call
+
     NV_N
 
 } NV_Name;

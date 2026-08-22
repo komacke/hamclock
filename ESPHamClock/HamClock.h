@@ -431,7 +431,8 @@ typedef enum {
     X(PLOT_CH_MESHTASTIC,   "Mesh_Mon")          \
     X(PLOT_CH_ECLIPSE,      "Eclipse")           \
     X(PLOT_CH_APRSCLUSTER,  "Nearby_APRS")       \
-    X(PLOT_CH_BALLOONS,     "Balloons")
+    X(PLOT_CH_BALLOONS,     "Balloons")          \
+    X(PLOT_CH_HAMALERT,     "HamAlert")
 
 #define PLOTNAMES PLOTNAMES_LOW PLOTNAMES_HIGH
 
@@ -2304,6 +2305,22 @@ extern bool checkOnTheAirTouch (TouchType tt, const SCoord &s, const SBox &box);
 
 /*********************************************************************************************
  *
+ * hamalert.cpp
+ *
+ */
+
+extern bool connectHamAlert (void);
+extern void closeHamAlert (void);
+extern bool updateHamAlert (const SBox &box, bool fresh);
+extern void checkHamAlert (void);
+extern bool checkHamAlertTouch (TouchType tt, const SCoord &s, const SBox &box);
+extern bool isHamAlertConnected (void);
+extern void drawHamAlertSpotsOnMap (void);
+extern bool getClosestHamAlert (LatLong &ll, DXSpot *sp, LatLong *llp);
+extern bool getHamAlertPaneSpot (const SCoord &ms, DXSpot *dxs, LatLong *ll);
+
+/*********************************************************************************************
+ *
  * hamsat.cpp
  *
  */
@@ -2960,6 +2977,9 @@ extern bool useGPSDTime(void);
 extern bool useGPSDLoc(void);
 extern const char *getGPSDHost(void);
 extern const char *getPiAwareHost(void);
+extern const char *getHamAlertLogin(void);
+extern const char *getHamAlertPasswd(void);
+extern bool useHamAlert(void);
 extern bool useNMEATime(void);
 extern bool useNMEALoc(void);
 extern const char *getNMEAFile(void);

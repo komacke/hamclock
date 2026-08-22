@@ -117,6 +117,7 @@ OBJS = \
 	aprscluster.o \
 	dxpeds.o \
 	dxpeds_hide.o \
+	hamalert.o \
 	hamqsl.o \
 	hamsat.o \
 	hurricane.o \

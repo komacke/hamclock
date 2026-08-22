@@ -150,6 +150,7 @@ bool plotChoiceIsAvailable (PlotChoice pc)
     case PLOT_CH_MESHTASTIC:    // fallthru
     case PLOT_CH_APRSCLUSTER:   // fallthru
     case PLOT_CH_BALLOONS:      // fallthru
+    case PLOT_CH_HAMALERT:      // fallthru
         return (true);
 
     case PLOT_CH_NONE:         // fallthru
@@ -231,6 +232,7 @@ static int categoryOfChoice (PlotChoice pc)
 
     case PLOT_CH_CONTESTS: case PLOT_CH_DXCLUSTER: case PLOT_CH_DXPEDS: case PLOT_CH_HFCOND:
     case PLOT_CH_PSK: case PLOT_CH_ONTA: case PLOT_CH_VHFCOND: case PLOT_CH_BC:
+    case PLOT_CH_HAMALERT:
         return 1;   // DX & Contest
 
     case PLOT_CH_DEWX: case PLOT_CH_DXWX: case PLOT_CH_STORMS:
@@ -1203,6 +1205,11 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
             return (true);
         in_top = true;
         break;
+    case PLOT_CH_HAMALERT:
+        if (checkHamAlertTouch (tt, s, box))
+            return (true);
+        in_top = true;
+        break;
     case PLOT_CH_SATACT:
         if (checkHamsatTouch (s, box))
             return (true);
@@ -1556,7 +1563,7 @@ bool overHoverPane (const SCoord &s)
             if (ch == PLOT_CH_ACTIVENETS || ch == PLOT_CH_LAUNCHES || ch == PLOT_CH_STORMS ||
                 ch == PLOT_CH_DXCLUSTER || ch == PLOT_CH_PSK || ch == PLOT_CH_ONTA ||
                 ch == PLOT_CH_ADIF || ch == PLOT_CH_DXPEDS || ch == PLOT_CH_SDO ||
-                ch == PLOT_CH_MOON || ch == PLOT_CH_SATACT || ch == PLOT_CH_SATACT) {
+                ch == PLOT_CH_MOON || ch == PLOT_CH_SATACT || ch == PLOT_CH_HAMALERT) {
                 return (true);
             }
         }
