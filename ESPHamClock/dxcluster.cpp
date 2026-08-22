@@ -10,6 +10,7 @@
 
 #include "HamClock.h"
 #include "iota.h"
+#include "xota.h"
 
 
 // layout 
@@ -47,7 +48,9 @@ static uint8_t dxc_age;                               // one of above, once set
 #define N_DXCAGES       NARRAY(dxc_ages)              // handy count
 #define MAXKEEP_DT      (60*dxc_ages[N_DXCAGES-1])    // max age to stay on dxc_spots list, secs
 
-// whether to hide the IOTA marker column in the spot list, same spirit as dxc_showbio
+// name kept for history/NV compatibility, but this now gates ALL spot-list markers -- IOTA's
+// "I" and the six "extra" xOTA letters from xota.h alike -- hence the menu says "Marker:" now,
+// not "IOTA:". see dxcHideIOTA() below and its use in spots.cpp's drawSpotOnList().
 static bool dxc_hide_iota;
 
 // mode filter: independent checkboxes, "at least 1" enforced by the menu itself, same
@@ -763,7 +766,7 @@ static void runDXClusterMenu (const SBox &box)
             {MENU_1OFN, dxc_age == dxc_ages[1],       MI_AGE_GRP, 2, dxages_str[1], NULL},           // 2
             {MENU_1OFN, dxc_age == dxc_ages[2],       MI_AGE_GRP, 2, dxages_str[2], NULL},           // 3
             {MENU_1OFN, dxc_age == dxc_ages[3],       MI_AGE_GRP, 2, dxages_str[3], NULL},           // 4
-            {MENU_LABEL, false,                       0, 2,  "IOTA:", NULL},                         // 5
+            {MENU_LABEL, false,                       0, 2,  "Marker:", NULL},                         // 5
             {MENU_TOGGLE, dxc_hide_iota,              MI_IOTA_GRP, 2, "Hide", NULL},                 // 6
             {bio_lbl_mft_n, false,                    0, 2,  "Bio:", NULL},                          // 7
             {bio_yes_mft_n, dxc_showbio,               MI_BIO_GRP, 2,  "Yes", NULL},                 // 8
@@ -855,7 +858,7 @@ static void runDXClusterMenu (const SBox &box)
             {bio_lbl_mft_w, false,                    0, 2, "Bio:", NULL},                           // 0
             {MENU_LABEL, false,                       0, 2, "Age:", NULL},                           // 1
             {MENU_BLANK, false,                       0, 2, NULL, NULL},                             // 2
-            {MENU_LABEL, false,                       0, 2, "IOTA:", NULL},                          // 3
+            {MENU_LABEL, false,                       0, 2, "Marker:", NULL},                          // 3
             {MENU_LABEL, false,                       0, 2, "Modes:", NULL},                         // 4
             {MENU_BLANK, false,                       0, 2, NULL, NULL},                             // 5
             {MENU_BLANK, false,                       0, 2, NULL, NULL},                             // 6
@@ -1497,6 +1500,13 @@ bool checkDXClusterTouch (const SCoord &s, const SBox &box)
             else
                 snprintf (tip, sizeof(tip), "IOTA %s", sp.iota);
             tooltip (s, tip);
+        } else if (sp.xota_org[0] && !dxc_hide_iota) {
+            // no reference->name database exists for any of these (see xota.h) -- the raw
+            // program + reference is all there is to show, same fallback IOTA uses when its
+            // own lookup hasn't (yet) resolved a name
+            char tip[64];
+            snprintf (tip, sizeof(tip), "%s %s", sp.xota_org, sp.xota_ref);
+            tooltip (s, tip);
         } else
             engageDXCRow (sp);
     }
@@ -1527,9 +1537,11 @@ bool isDXClusterConnected()
     return (useDXCluster() && (dxc_client || udp_server));
 }
 
-/* return whether the user has opted to hide the IOTA marker column in the spot list.
+/* return whether the user has opted to hide the marker column in the spot list -- IOTA's "I"
+ * and all six "extra" xOTA letters alike, despite the function's name (kept to avoid an
+ * unnecessary rename churn; the underlying NV key is likewise still NV_DXC_HIDEIOTA).
  * called from spots.cpp's drawSpotOnList(), shared with other DXSpot-list panes -- safe
- * because only DX Cluster spots ever populate DXSpot::iota in the first place.
+ * because only DX Cluster spots ever populate DXSpot::iota/xota_org in the first place.
  */
 bool dxcHideIOTA(void)
 {
@@ -1694,8 +1706,8 @@ const DXSpot *findDXCCall (const char *call)
 }
 
 /* inject a fake DXSpot, typically from RESTful command.
- * comment is optional (may be NULL) -- only used to test IOTA reference matching, same as a real
- * cluster spot's comment text would be.
+ * comment is optional (may be NULL) -- only used to test IOTA/xOTA reference matching, same as
+ * a real cluster spot's comment text would be.
  * return true else short reason why not.
  */
 bool injectDXClusterSpot (const char *tx_call, const char *rx_call, const char *kHz,
@@ -1706,8 +1718,10 @@ const char *comment, Message &ynot)
     quietStrncpy (fake.tx_call, tx_call, sizeof(fake.tx_call));
     quietStrncpy (fake.rx_call, rx_call, sizeof(fake.rx_call));
 
-    if (comment)
+    if (comment) {
         findIOTARef (comment, fake.iota, sizeof(fake.iota));
+        findXOTARef (comment, fake.xota_org, sizeof(fake.xota_org), fake.xota_ref, sizeof(fake.xota_ref));
+    }
 
     char *endptr;
     fake.kHz = strtod (kHz, &endptr);

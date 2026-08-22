@@ -817,6 +817,11 @@ typedef struct {
     float snr;                          // only used by pskreporter.cpp
     time_t spotted;                     // UTC when spotted
     char iota[8];                       // IOTA group ref found in comment, eg "EU-005"; else empty
+    char xota_org[8];                   // "extra" xOTA program found in comment -- one of
+                                         // WCA/ARLHS/ILLW/SIOTA/WAB/WWBOTA; else empty. See xota.h --
+                                         // unlike iota[], these have no reference->name database at
+                                         // all, so this is the whole story: no matching xota_name().
+    char xota_ref[12];                  // its reference, eg "F-07849"; else empty
 } DXSpot;
 
 

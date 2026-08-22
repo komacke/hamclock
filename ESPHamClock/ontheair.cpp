@@ -28,6 +28,13 @@ static const char onta_file[] = "onta.txt";             // local cache file
 static const char onta_iota_page[] = "/ONTA/iota_spots.txt";
 static const char onta_iota_file[] = "iota_spots.txt";
 
+// third source, same idea again: gen_xonta.pl covers whatever "extra" xOTA programs Spothole
+// has live beyond POTA/SOTA/WWFF/IOTA -- currently GMA, LLOTA and WWTOTA, see gen_xonta.pl's
+// own header comment for why that specific set and not the many others Spothole's README
+// mentions. Same purely-additive, separate-file treatment as iota_spots.txt above.
+static const char onta_xonta_page[] = "/ONTA/xonta_spots.txt";
+static const char onta_xonta_file[] = "xonta_spots.txt";
+
 // each entry is one onta.txt-schema source to merge into onta_spots
 typedef struct {
     const char *file;
@@ -36,8 +43,45 @@ typedef struct {
 static const ONTASource onta_sources[] = {
     { onta_file, onta_page },
     { onta_iota_file, onta_iota_page },
+    { onta_xonta_file, onta_xonta_page },
 };
 #define N_ONTASOURCES NARRAY(onta_sources)
+
+// per-org marker color, drawn as the background of the reference ("id") field -- same idea
+// as the freq field's own band-color background just below it, not a separate letter column:
+// unlike the DX Cluster pane's marker (spots.cpp's IOTA_MARK_W reserved column), ONTA's row
+// layout is already character-budgeted to the pixel (see formatONTASpot()'s comment), with no
+// spare width for another field. Colors chosen to avoid RA8875_RED (watchlist highlight) and
+// to stay visually distinct from each other; deliberately does NOT need to match the DX
+// Cluster pane's own WCA/ARLHS/etc marker colors from spots.cpp -- different pane, different
+// (non-overlapping) set of orgs, no reason they need to share a palette.
+typedef struct {
+    const char *org;
+    uint16_t color;
+} ONTAOrgColor;
+static const ONTAOrgColor onta_org_colors[] = {
+    { "POTA",   RGB565(60,200,90)   },   // green
+    { "SOTA",   RGB565(255,150,30)  },   // orange
+    { "WWFF",   RGB565(0,190,160)   },   // teal
+    { "IOTA",   RGB565(150,250,255) },   // cyan -- matches ONTA_COLOR
+    { "GMA",    RGB565(150,150,170) },   // slate grey
+    { "LLOTA",  RGB565(90,90,220)   },   // indigo
+    { "WWTOTA", RGB565(184,115,51)  },   // copper
+};
+
+/* look up the marker color for an org name (spot.rx_grid, repurposed -- see header comment);
+ * returns RA8875_BLACK as a "no specific color" sentinel for anything not in the table above,
+ * eg an org the user's own onta.txt org filter produces that we haven't accounted for -- falls
+ * back to plain, uncolored text rather than misbehaving.
+ */
+static uint16_t ontaOrgMarkerColor (const char *org)
+{
+    if (org)
+        for (const ONTAOrgColor &oc : onta_org_colors)
+            if (!strcasecmp (oc.org, org))
+                return (oc.color);
+    return (RA8875_BLACK);
+}
 
 // park/summit reference -> 2-letter state/province, purely additive side file. this
 // data is essentially static (park locations don't move), so it's cached far longer
@@ -511,12 +555,42 @@ static void drawONTAVisSpots (const SBox &box)
                 tft.printf ("%*.*s", freq_len, freq_len, line);
 
                 // show remainder of line in white, or green + struck through once we've
-                // personally (re)spotted this activation this session
+                // personally (re)spotted this activation this session -- except the id (park/
+                // summit/etc reference) field, which gets its own org-colored background the
+                // same way freq gets a band-colored one above, see ontaOrgMarkerColor(). that
+                // field's text color follows the background for contrast, same as freq's does,
+                // regardless of spotted state -- consistent with how freq's own text color
+                // already ignores spotted state.
                 bool spotted = ontaWasSpottedByMe (spot);
-                tft.setTextColor (spotted ? RA8875_GREEN : RA8875_WHITE);
-                tft.printf (line+freq_len);
+                uint16_t rem_color = spotted ? RA8875_GREEN : RA8875_WHITE;
+                int call_len = BOX_IS_PANE_0(box) ? ONTA_P0_CALL_LEN : ONTA_PX_CALL_LEN;
+                int id_len   = BOX_IS_PANE_0(box) ? ONTA_P0_ID_LEN   : ONTA_PX_ID_LEN;
+
+                // call field + 1 trailing blank, plain
+                uint16_t call_x = x + freq_len*ONTA_CHAR_W;
+                tft.setTextColor (rem_color);
+                tft.setCursor (call_x, y);
+                tft.printf ("%.*s", call_len+1, line+freq_len);
+
+                // id field, org-colored background
+                uint16_t id_x = call_x + (call_len+1)*ONTA_CHAR_W;
+                uint16_t id_col = ontaOrgMarkerColor (spot.rx_grid);          // repurposed: program name
+                if (id_col != RA8875_BLACK) {
+                    tft.fillRect (id_x, y-LISTING_OS, id_len*ONTA_CHAR_W, LISTING_DY-2, id_col);
+                    tft.setTextColor (getGoodTextColor (id_col));
+                } else
+                    tft.setTextColor (rem_color);
+                tft.setCursor (id_x, y);
+                tft.printf ("%.*s", id_len, line+freq_len+call_len+1);
+
+                // remainder: blank(s) + state/country + age, plain
+                uint16_t tail_x = id_x + id_len*ONTA_CHAR_W;
+                tft.setTextColor (rem_color);
+                tft.setCursor (tail_x, y);
+                tft.printf (line+freq_len+call_len+1+id_len);
+
                 if (spotted) {
-                    uint16_t rem_x0 = x + freq_len*ONTA_CHAR_W;
+                    uint16_t rem_x0 = call_x;
                     uint16_t rem_w = getTextWidth (line+freq_len);
                     tft.drawLine (rem_x0, y+3, rem_x0+rem_w, y+3, RA8875_GREEN);
                 }
