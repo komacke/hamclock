@@ -10,8 +10,12 @@ object HamClockNative {
         rwPort: Int,
         roPort: Int,
         restPort: Int,
-        backendHost: String = ""
+        backendHost: String = "",
+        hasLocation: Boolean = false,
+        lat: Double = 0.0,
+        lng: Double = 0.0
     ): Boolean
+
 
 
     external fun isDaemonRunning(): Boolean

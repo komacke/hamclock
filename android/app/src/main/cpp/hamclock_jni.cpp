@@ -6,6 +6,8 @@
 #include <dlfcn.h>
 #include <android/log.h>
 
+#include "HamClock.h"
+
 #define TAG "HamClockNative"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
@@ -18,6 +20,9 @@ struct DaemonArgs {
     int roPort;
     int restPort;
     std::string backendHost;
+    bool hasLocation;
+    double lat;
+    double lng;
 };
 
 static pthread_t daemon_thread;
@@ -68,12 +73,10 @@ extern "C" std::string __wrap__ZN4WiFi10macAddressEv() {
     uint8_t rand_bytes[6] = {0};
     FILE *urand = fopen("/dev/urandom", "re");
     if (urand) {
-        fread(rand_bytes, 1, sizeof(rand_bytes), urand);
+        fread(rand_bytes, 1, 6, urand);
         fclose(urand);
-    } else {
-        for (int i = 0; i < 6; i++) rand_bytes[i] = (uint8_t)rand();
     }
-    rand_bytes[0] = (rand_bytes[0] & 0xFC) | 0x02; // locally administered, unicast
+    rand_bytes[0] = (rand_bytes[0] & 0xFE) | 0x02; // locally administered unicast
 
     snprintf(mac_buf, sizeof(mac_buf), "%02X:%02X:%02X:%02X:%02X:%02X",
              rand_bytes[0], rand_bytes[1], rand_bytes[2],
@@ -94,7 +97,33 @@ extern "C" std::string __wrap__ZN4WiFi10macAddressEv() {
 static void *daemon_worker(void *arg) {
     DaemonArgs *dargs = static_cast<DaemonArgs *>(arg);
     cached_data_dir = dargs->dataDir;
+    our_dir = dargs->dataDir + "/";
 
+    // Preset NTP to Computer (OS) time if unconfigured
+    uint8_t ntp_val = 0;
+    if (!NVReadUInt8(NV_NTPSET, &ntp_val) || ntp_val == 0) {
+        NVWriteUInt8(NV_NTPSET, 2); // NTPSC_OS ("Computer")
+        LOGI("Preset NTP to Computer (OS) time");
+    }
+
+    // If host GPS location is available, update DE location on every start
+    if (dargs->hasLocation) {
+        LatLong ll;
+        ll.lat_d = dargs->lat;
+        ll.lng_d = dargs->lng;
+        ll.normalize();
+
+        NVWriteFloat(NV_DE_LAT, ll.lat_d);
+        NVWriteFloat(NV_DE_LNG, ll.lng_d);
+        setNVMaidenhead(NV_DE_GRID, ll);
+        setTZAuto(de_tz);
+        NVWriteTZ(NV_DE_TZ, de_tz);
+
+        char grid[MAID_CHARLEN] = {0};
+        getNVMaidenhead(NV_DE_GRID, grid);
+        LOGI("Updated DE from host GPS: %.4f, %.4f (Grid: %s, TZ: %d min)",
+             ll.lat_d, ll.lng_d, grid, de_tz.tz_secs / 60);
+    }
 
     std::string progName = "hamclock-android";
     std::string dirFlag = "-d";
@@ -108,8 +137,10 @@ static void *daemon_worker(void *arg) {
     std::string throtFlag = "-t";
     std::string throtVal = "80";
     std::string skipFlag = "-k";
+    std::string geoFlag = "-g";
     std::string bFlag = "-b";
     std::string bVal = dargs->backendHost;
+    bool hasLoc = dargs->hasLocation;
 
     delete dargs;
 
@@ -126,10 +157,15 @@ static void *daemon_worker(void *arg) {
     argv.push_back(const_cast<char *>(throtFlag.c_str()));
     argv.push_back(const_cast<char *>(throtVal.c_str()));
     argv.push_back(const_cast<char *>(skipFlag.c_str()));
+    if (!hasLoc) {
+        argv.push_back(const_cast<char *>(geoFlag.c_str()));
+        LOGI("Host GPS location not available: falling back to GeoIP (-g)");
+    }
     if (!bVal.empty()) {
         argv.push_back(const_cast<char *>(bFlag.c_str()));
         argv.push_back(const_cast<char *>(bVal.c_str()));
     }
+
     argv.push_back(nullptr);
 
     int argc = static_cast<int>(argv.size() - 1);
@@ -151,7 +187,10 @@ Java_org_openhamclock_HamClockNative_startDaemon(
         jint rwPort,
         jint roPort,
         jint restPort,
-        jstring backendHost) {
+        jstring backendHost,
+        jboolean hasLocation,
+        jdouble lat,
+        jdouble lng) {
 
     configure_fdsan();
 
@@ -165,27 +204,32 @@ Java_org_openhamclock_HamClockNative_startDaemon(
         return JNI_FALSE;
     }
 
-    const char *backendHostChars = backendHost ? env->GetStringUTFChars(backendHost, nullptr) : nullptr;
-
-    DaemonArgs *dargs = new DaemonArgs();
-    dargs->dataDir = dataDirChars;
-    dargs->rwPort = rwPort;
-    dargs->roPort = roPort;
-    dargs->restPort = restPort;
-    dargs->backendHost = backendHostChars ? backendHostChars : "";
-
-    env->ReleaseStringUTFChars(dataDir, dataDirChars);
-    if (backendHostChars) {
-        env->ReleaseStringUTFChars(backendHost, backendHostChars);
+    std::string backendHostStr;
+    if (backendHost) {
+        const char *backendChars = env->GetStringUTFChars(backendHost, nullptr);
+        if (backendChars) {
+            backendHostStr = backendChars;
+            env->ReleaseStringUTFChars(backendHost, backendChars);
+        }
     }
 
+    DaemonArgs *args = new DaemonArgs();
+    args->dataDir = dataDirChars;
+    args->rwPort = rwPort;
+    args->roPort = roPort;
+    args->restPort = restPort;
+    args->backendHost = backendHostStr;
+    args->hasLocation = (hasLocation == JNI_TRUE);
+    args->lat = lat;
+    args->lng = lng;
+
+    env->ReleaseStringUTFChars(dataDir, dataDirChars);
 
     daemon_running = true;
-    int err = pthread_create(&daemon_thread, nullptr, daemon_worker, dargs);
-    if (err != 0) {
-        LOGE("Failed to create daemon pthread: %d", err);
+    if (pthread_create(&daemon_thread, nullptr, daemon_worker, args) != 0) {
+        LOGE("Failed to create daemon thread");
+        delete args;
         daemon_running = false;
-        delete dargs;
         return JNI_FALSE;
     }
 
@@ -199,4 +243,3 @@ Java_org_openhamclock_HamClockNative_isDaemonRunning(
         jobject /* this */) {
     return daemon_running ? JNI_TRUE : JNI_FALSE;
 }
-

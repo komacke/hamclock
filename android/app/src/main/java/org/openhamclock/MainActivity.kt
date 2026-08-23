@@ -1,6 +1,11 @@
 package org.openhamclock
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -16,7 +21,9 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import org.openhamclock.HamClockNative
 import java.io.File
 import java.net.Socket
@@ -36,6 +43,12 @@ class MainActivity : AppCompatActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        startNativeBackend()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -48,8 +61,48 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.status_text)
 
         setupWebView()
-        startNativeBackend()
+
+        // Check or request location permissions to obtain host coordinates
+        if (hasLocationPermission()) {
+            startNativeBackend()
+        } else {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
     }
+
+    private fun hasLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun getHostLocation(): Pair<Double, Double>? {
+        if (!hasLocationPermission()) return null
+
+        val lm = getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+        var bestLocation: Location? = null
+
+        for (provider in lm.getProviders(true)) {
+            try {
+                val loc = lm.getLastKnownLocation(provider) ?: continue
+                if (bestLocation == null || loc.accuracy < bestLocation.accuracy) {
+                    bestLocation = loc
+                }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Location permission error: ${e.message}")
+            }
+        }
+
+        return bestLocation?.let { Pair(it.latitude, it.longitude) }
+    }
+
 
     private fun hideSystemUI() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -118,15 +171,24 @@ class MainActivity : AppCompatActivity() {
         executor.execute {
             if (!HamClockNative.isDaemonRunning()) {
                 val backendHost = getString(R.string.backend_host)
-                Log.i(TAG, "Launching native HamClock in ${dataDir.absolutePath} with backend $backendHost")
+                val location = getHostLocation()
+                val hasLocation = location != null
+                val lat = location?.first ?: 0.0
+                val lng = location?.second ?: 0.0
+
+                Log.i(TAG, "Launching native HamClock in ${dataDir.absolutePath} (hasLocation=$hasLocation, lat=$lat, lng=$lng, backend=$backendHost)")
                 HamClockNative.startDaemon(
                     dataDir = dataDir.absolutePath,
                     rwPort = RW_PORT,
                     roPort = RO_PORT,
                     restPort = REST_PORT,
-                    backendHost = backendHost
+                    backendHost = backendHost,
+                    hasLocation = hasLocation,
+                    lat = lat,
+                    lng = lng
                 )
             }
+
 
             // Wait for local HTTP/WebSocket port to become available
             waitForServerReady()
