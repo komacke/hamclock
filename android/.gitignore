@@ -11,3 +11,6 @@ build/
 **/.cxx/
 *.apk
 *.aab
+*.keystore
+*.jks
+*.key
