@@ -433,7 +433,7 @@ typedef enum {
     X(PLOT_CH_APRSCLUSTER,  "Nearby_APRS")       \
     X(PLOT_CH_BALLOONS,     "Balloons")          \
     X(PLOT_CH_HAMALERT,     "HamAlert")          \
-    X(PLOT_CH_BANDACT,      "Band_Activity")
+    X(PLOT_CH_BANDACT,      "Band_Act")
 
 #define PLOTNAMES PLOTNAMES_LOW PLOTNAMES_HIGH
 
