@@ -24,7 +24,7 @@ public:
 class SPIClass {
     public:
 
-        SPIClass();
+        SPIClass() {}
 
         // stubs
         void begin(void){}

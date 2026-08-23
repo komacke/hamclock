@@ -159,6 +159,8 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
  */
 static void close_socket(int fd)
 {
+	if (fd < 0)
+		return;
 #ifndef _WIN32
 	shutdown(fd, SHUT_RDWR);
 	close(fd);
@@ -166,6 +168,7 @@ static void close_socket(int fd)
 	closesocket(fd);
 #endif
 }
+
 
 /**
  * @brief Returns the current client state for a given
@@ -1418,13 +1421,14 @@ static void *ws_establishconnection(void *vclient)
             if (cli_events.onnonws) {
                 FILE *sockfp = fdopen (client->client_sock, "w");
                 (*cli_events.onnonws) (sockfp, client->header);
-                /* want shutdown() first, then more closes are harmless */
                 fflush(sockfp);
-                close_socket(client->client_sock);
+                shutdown(client->client_sock, SHUT_RDWR);
                 fclose (sockfp);
+                client->client_sock = -1;
             }
             goto closed;
         }
+
 
 	/* Read next frame until client disconnects or an error occur. */
 	while (next_frame(&wfd) >= 0)

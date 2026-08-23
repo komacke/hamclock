@@ -702,10 +702,9 @@ static void crackArgs (int ac, char *av[])
             setX11FullScreen (full_screen);
 }
 
-/* Every normal C program requires a main().
- * This is provided as magic in the Arduino IDE so here we must do it ourselves.
+/* Main HamClock entry point.
  */
-int main (int ac, char *av[])
+int hamclock_main (int ac, char *av[])
 {
     // save our args for restart or remote update
     our_argv = av;
@@ -810,4 +809,14 @@ int main (int ac, char *av[])
             // printf ("sleep_us= %10d cpu= %10d et= %10d %g\n", sleep_us, cpu_us, et_us, fmin(100,100.0*cpu_us/et_us));
         }
     }
+    return 0;
 }
+
+#if !defined(__ANDROID__)
+/* Standard main entry point for standalone binaries */
+int main (int ac, char *av[])
+{
+    return hamclock_main (ac, av);
+}
+#endif
+
