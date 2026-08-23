@@ -3,4 +3,6 @@
     <string name="starting_engine">Starting HamClock Engine…</string>
     <string name="loading_interface">Loading HamClock Interface…</string>
     <string name="start_failed">Unable to connect to HamClock local server</string>
+    <string name="backend_host">ohb-test.hamclock.app:80</string>
 </resources>
+

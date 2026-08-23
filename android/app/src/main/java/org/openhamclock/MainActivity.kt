@@ -117,12 +117,14 @@ class MainActivity : AppCompatActivity() {
 
         executor.execute {
             if (!HamClockNative.isDaemonRunning()) {
-                Log.i(TAG, "Launching native HamClock in ${dataDir.absolutePath}")
+                val backendHost = getString(R.string.backend_host)
+                Log.i(TAG, "Launching native HamClock in ${dataDir.absolutePath} with backend $backendHost")
                 HamClockNative.startDaemon(
                     dataDir = dataDir.absolutePath,
                     rwPort = RW_PORT,
                     roPort = RO_PORT,
-                    restPort = REST_PORT
+                    restPort = REST_PORT,
+                    backendHost = backendHost
                 )
             }
 
@@ -130,6 +132,7 @@ class MainActivity : AppCompatActivity() {
             waitForServerReady()
         }
     }
+
 
     private fun waitForServerReady() {
         var attempts = 0

@@ -17,6 +17,7 @@ struct DaemonArgs {
     int rwPort;
     int roPort;
     int restPort;
+    std::string backendHost;
 };
 
 static pthread_t daemon_thread;
@@ -37,8 +38,63 @@ static void configure_fdsan() {
 }
 
 
+static std::string cached_data_dir;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreturn-type-c-linkage"
+extern "C" std::string __wrap__ZN4WiFi10macAddressEv() {
+#pragma clang diagnostic pop
+
+    char mac_buf[32] = {0};
+    std::string mac_file = cached_data_dir.empty() ? "" : (cached_data_dir + "/.mac_address");
+
+    if (!mac_file.empty()) {
+        FILE *fp = fopen(mac_file.c_str(), "r");
+        if (fp) {
+            if (fgets(mac_buf, sizeof(mac_buf), fp)) {
+                char *nl = strchr(mac_buf, '\n');
+                if (nl) *nl = '\0';
+                unsigned int m1, m2, m3, m4, m5, m6;
+                if (sscanf(mac_buf, "%x:%x:%x:%x:%x:%x", &m1, &m2, &m3, &m4, &m5, &m6) == 6) {
+                    fclose(fp);
+                    return std::string(mac_buf);
+                }
+            }
+            fclose(fp);
+        }
+    }
+
+    // Generate locally administered unicast MAC (02:xx:xx:xx:xx:xx)
+    uint8_t rand_bytes[6] = {0};
+    FILE *urand = fopen("/dev/urandom", "re");
+    if (urand) {
+        fread(rand_bytes, 1, sizeof(rand_bytes), urand);
+        fclose(urand);
+    } else {
+        for (int i = 0; i < 6; i++) rand_bytes[i] = (uint8_t)rand();
+    }
+    rand_bytes[0] = (rand_bytes[0] & 0xFC) | 0x02; // locally administered, unicast
+
+    snprintf(mac_buf, sizeof(mac_buf), "%02X:%02X:%02X:%02X:%02X:%02X",
+             rand_bytes[0], rand_bytes[1], rand_bytes[2],
+             rand_bytes[3], rand_bytes[4], rand_bytes[5]);
+
+    if (!mac_file.empty()) {
+        FILE *fp = fopen(mac_file.c_str(), "w");
+        if (fp) {
+            fprintf(fp, "%s\n", mac_buf);
+            fclose(fp);
+        }
+    }
+
+    LOGI("Generated persistent Android MAC: %s", mac_buf);
+    return std::string(mac_buf);
+}
+
 static void *daemon_worker(void *arg) {
     DaemonArgs *dargs = static_cast<DaemonArgs *>(arg);
+    cached_data_dir = dargs->dataDir;
+
 
     std::string progName = "hamclock-android";
     std::string dirFlag = "-d";
@@ -52,6 +108,8 @@ static void *daemon_worker(void *arg) {
     std::string throtFlag = "-t";
     std::string throtVal = "80";
     std::string skipFlag = "-k";
+    std::string bFlag = "-b";
+    std::string bVal = dargs->backendHost;
 
     delete dargs;
 
@@ -68,11 +126,16 @@ static void *daemon_worker(void *arg) {
     argv.push_back(const_cast<char *>(throtFlag.c_str()));
     argv.push_back(const_cast<char *>(throtVal.c_str()));
     argv.push_back(const_cast<char *>(skipFlag.c_str()));
+    if (!bVal.empty()) {
+        argv.push_back(const_cast<char *>(bFlag.c_str()));
+        argv.push_back(const_cast<char *>(bVal.c_str()));
+    }
     argv.push_back(nullptr);
 
     int argc = static_cast<int>(argv.size() - 1);
 
-    LOGI("Starting HamClock daemon with argc=%d in dir=%s on rw_port=%s", argc, dirVal.c_str(), rwVal.c_str());
+    LOGI("Starting HamClock daemon with argc=%d in dir=%s on rw_port=%s (backend=%s)",
+         argc, dirVal.c_str(), rwVal.c_str(), bVal.c_str());
     hamclock_main(argc, argv.data());
 
     LOGI("HamClock daemon exited");
@@ -87,7 +150,8 @@ Java_org_openhamclock_HamClockNative_startDaemon(
         jstring dataDir,
         jint rwPort,
         jint roPort,
-        jint restPort) {
+        jint restPort,
+        jstring backendHost) {
 
     configure_fdsan();
 
@@ -101,13 +165,20 @@ Java_org_openhamclock_HamClockNative_startDaemon(
         return JNI_FALSE;
     }
 
+    const char *backendHostChars = backendHost ? env->GetStringUTFChars(backendHost, nullptr) : nullptr;
+
     DaemonArgs *dargs = new DaemonArgs();
     dargs->dataDir = dataDirChars;
     dargs->rwPort = rwPort;
     dargs->roPort = roPort;
     dargs->restPort = restPort;
+    dargs->backendHost = backendHostChars ? backendHostChars : "";
 
     env->ReleaseStringUTFChars(dataDir, dataDirChars);
+    if (backendHostChars) {
+        env->ReleaseStringUTFChars(backendHost, backendHostChars);
+    }
+
 
     daemon_running = true;
     int err = pthread_create(&daemon_thread, nullptr, daemon_worker, dargs);

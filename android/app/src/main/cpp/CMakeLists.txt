@@ -58,5 +58,7 @@ target_link_options(
     hamclock
     PRIVATE
     "-Wl,-z,max-page-size=16384"
+    "-Wl,--wrap=_ZN4WiFi10macAddressEv"
 )
+
 

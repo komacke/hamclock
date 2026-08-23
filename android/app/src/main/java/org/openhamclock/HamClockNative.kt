@@ -9,8 +9,10 @@ object HamClockNative {
         dataDir: String,
         rwPort: Int,
         roPort: Int,
-        restPort: Int
+        restPort: Int,
+        backendHost: String = ""
     ): Boolean
+
 
     external fun isDaemonRunning(): Boolean
 }
