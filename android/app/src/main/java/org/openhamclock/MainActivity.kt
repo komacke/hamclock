@@ -1,4 +1,4 @@
-package org.hamclock
+package org.openhamclock.android
 
 import android.annotation.SuppressLint
 import android.os.Bundle
@@ -17,10 +17,9 @@ import android.webkit.WebViewClient
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import org.hamclock.android.R
+import org.openhamclock.HamClockNative
 import java.io.File
 import java.net.Socket
-
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {

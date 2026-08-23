@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "org.hamclock.android"
+    namespace = "org.openhamclock.android"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "org.hamclock.android"
+        applicationId = "org.openhamclock.android"
         minSdk = 24
         targetSdk = 34
         versionCode = 1

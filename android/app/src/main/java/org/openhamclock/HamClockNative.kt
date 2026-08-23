@@ -1,4 +1,4 @@
-package org.hamclock
+package org.openhamclock
 
 object HamClockNative {
     init {

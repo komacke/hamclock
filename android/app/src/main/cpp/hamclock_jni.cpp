@@ -3,6 +3,7 @@
 #include <vector>
 #include <pthread.h>
 #include <unistd.h>
+#include <dlfcn.h>
 #include <android/log.h>
 
 #define TAG "HamClockNative"
@@ -21,6 +22,21 @@ struct DaemonArgs {
 static pthread_t daemon_thread;
 static bool daemon_running = false;
 
+static void configure_fdsan() {
+    typedef enum {
+        FDSAN_DISABLED,
+        FDSAN_WARN_ONCE,
+        FDSAN_WARN_ALWAYS,
+        FDSAN_FATAL,
+    } fdsan_level;
+    typedef void (*set_fdsan_fn)(fdsan_level);
+    set_fdsan_fn set_fdsan = (set_fdsan_fn) dlsym(RTLD_DEFAULT, "android_fdsan_set_error_level");
+    if (set_fdsan) {
+        set_fdsan(FDSAN_WARN_ALWAYS);
+    }
+}
+
+
 static void *daemon_worker(void *arg) {
     DaemonArgs *dargs = static_cast<DaemonArgs *>(arg);
 
@@ -34,7 +50,8 @@ static void *daemon_worker(void *arg) {
     std::string restFlag = "-e";
     std::string restVal = std::to_string(dargs->restPort);
     std::string throtFlag = "-t";
-    std::string throtVal = "0.8";
+    std::string throtVal = "80";
+    std::string skipFlag = "-k";
 
     delete dargs;
 
@@ -50,6 +67,7 @@ static void *daemon_worker(void *arg) {
     argv.push_back(const_cast<char *>(restVal.c_str()));
     argv.push_back(const_cast<char *>(throtFlag.c_str()));
     argv.push_back(const_cast<char *>(throtVal.c_str()));
+    argv.push_back(const_cast<char *>(skipFlag.c_str()));
     argv.push_back(nullptr);
 
     int argc = static_cast<int>(argv.size() - 1);
@@ -63,13 +81,15 @@ static void *daemon_worker(void *arg) {
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_org_hamclock_HamClockNative_startDaemon(
+Java_org_openhamclock_HamClockNative_startDaemon(
         JNIEnv *env,
         jobject /* this */,
         jstring dataDir,
         jint rwPort,
         jint roPort,
         jint restPort) {
+
+    configure_fdsan();
 
     if (daemon_running) {
         LOGI("HamClock daemon already running");
@@ -103,8 +123,9 @@ Java_org_hamclock_HamClockNative_startDaemon(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_org_hamclock_HamClockNative_isDaemonRunning(
+Java_org_openhamclock_HamClockNative_isDaemonRunning(
         JNIEnv * /* env */,
         jobject /* this */) {
     return daemon_running ? JNI_TRUE : JNI_FALSE;
 }
+
