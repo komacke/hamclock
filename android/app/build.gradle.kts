@@ -4,12 +4,12 @@ plugins {
 }
 
 android {
-    namespace = "org.openhamclock.android"
+    namespace = "org.openhamclock"
     compileSdk = 34
     ndkVersion = "27.1.12297006"
 
     defaultConfig {
-        applicationId = "org.openhamclock.android"
+        applicationId = "org.openhamclock"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
@@ -58,7 +58,16 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    applicationVariants.all {
+        outputs.all {
+            val outputImpl = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            outputImpl?.outputFileName = "org.openhamclock-v${versionName}-${name}.apk"
+        }
+    }
 }
+
+
 
 dependencies {
     implementation(libs.androidx.core.ktx)

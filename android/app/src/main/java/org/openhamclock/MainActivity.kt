@@ -1,4 +1,4 @@
-package org.openhamclock.android
+package org.openhamclock
 
 import android.annotation.SuppressLint
 import android.os.Bundle
