@@ -432,7 +432,8 @@ typedef enum {
     X(PLOT_CH_ECLIPSE,      "Eclipse")           \
     X(PLOT_CH_APRSCLUSTER,  "Nearby_APRS")       \
     X(PLOT_CH_BALLOONS,     "Balloons")          \
-    X(PLOT_CH_HAMALERT,     "HamAlert")
+    X(PLOT_CH_HAMALERT,     "HamAlert")          \
+    X(PLOT_CH_BANDACT,      "Band_Activity")
 
 #define PLOTNAMES PLOTNAMES_LOW PLOTNAMES_HIGH
 
@@ -2310,6 +2311,21 @@ extern bool checkOnTheAirTouch (TouchType tt, const SCoord &s, const SBox &box);
 
 /*********************************************************************************************
  *
+ * bandactivity.cpp -- Band Activity heatmap pane
+ *
+ */
+
+// gen_bandactivity.pl's own window is 30 minutes and it's meant to represent "current"
+// conditions (see that script's header for why that's shorter than ONTA_INTERVAL-family
+// scripts' 65-minute window) -- polling much faster than that buys nothing, so this can
+// afford a longer client interval than ONTA_INTERVAL despite following the exact same
+// openCachedFile()-throttled pattern.
+#define BANDACT_INTERVAL   180                          // polling interval
+
+extern bool updateBandActivity (const SBox &box, bool fresh);
+
+/*********************************************************************************************
+ *
  * hamalert.cpp
  *
  */
@@ -2463,7 +2479,7 @@ extern PlotMask plot_rotset[PANE_N];       // each pane's PlotChoice rotation ch
                                  PLOTBIT(PLOT_CH_DXPEDS) | PLOTBIT(PLOT_CH_ACTIVENETS) | \
                                  PLOTBIT(PLOT_CH_LAUNCHES) | PLOTBIT(PLOT_CH_SATACT) | \
                                  PLOTBIT(PLOT_CH_APRSCLUSTER) | \
-                                 PLOTBIT(PLOT_CH_BALLOONS))
+                                 PLOTBIT(PLOT_CH_BALLOONS) | PLOTBIT(PLOT_CH_BANDACT))
 
 // compute number of bits set in PANE_0_CH_MASK at compile time :-)
 // https://stackoverflow.com/questions/109023/count-the-number-of-set-bits-in-a-32-bit-integer

@@ -2509,6 +2509,16 @@ void updateWiFi(PlotPane skip_pp)
             }
             break;
 
+        case PLOT_CH_BANDACT:
+            if (t0 >= next_update[pp]) {
+                if (updateBandActivity(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, BANDACT_INTERVAL);
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
         case PLOT_CH_SATACT:
             if (t0 >= next_update[pp]) {
                 if (updateHamsat(box, fresh_redraw[pc])) {

@@ -96,6 +96,7 @@ OBJS = \
 	antennas-html.o \
 	asknewpos.o \
 	astro.o \
+	bandactivity.o \
 	bands.o \
 	blinker.o \
 	bmp.o \
