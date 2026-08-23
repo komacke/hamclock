@@ -21,6 +21,13 @@ jobs:
             ref: ${{ github.ref_name }}
             fetch-depth: 0
 
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
       - name: Prepare assets
         run: |
           echo "Running on branch: ${{ github.ref_name }}"
@@ -55,7 +62,15 @@ jobs:
           # zip file for HamClock upgrades
           zip -r "dist/ESPHamClock-V$HC_TAG.zip" ESPHamClock -x "dist/*"
           zip -r "dist/hamclock-contrib-V$HC_TAG.zip" hamclock-contrib -x "dist/*"
-          zip -r "dist/hamclock-contrib-V$HC_TAG.zip" hamclock-contrib -x "dist/*"
+
+      - name: Build Android Release APK
+        run: |
+          TAG="${{ github.event.inputs.tag_name }}"
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+          # Copy generated release APK into dist directory
+          cp app/build/outputs/apk/release/org.openhamclock-*.apk ../dist/
 
       - name: Create Release and Upload Asset
         env:
@@ -66,9 +81,13 @@ jobs:
           HC_TAG=${HC_TAG#v}
           HC_TAG=${HC_TAG#V}
 
+          # Locate the built Android APK
+          APK_PATH=$(ls dist/org.openhamclock-*.apk | head -n 1)
+
           # Grabs file from repo tree and uploads with a label
           gh release create $TAG \
             "docker/manage-hc-docker-$TAG.sh#Manage HamClock Docker Installs" \
+            "$APK_PATH#HamClock Android APK" \
             "debian/install-hc-rpi#Installer for RPi and other Debian distros" \
             "dist/ESPHamClock-V$HC_TAG.zip#HamClock Source Zip with version" \
             "old-versions/ESPHamClock-V3.10.zip#HamClock Source Zip for ESP devices" \
@@ -78,3 +97,4 @@ jobs:
             --title "HamClock Release: $TAG" \
             --target ${{ github.ref_name }} \
             --generate-notes
+
