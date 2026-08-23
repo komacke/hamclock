@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project("hamclock")
 
-set(HC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../ESPHamClock")
+set(HC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../ESPHamClock")
 
 add_compile_definitions(
     _WEB_ONLY

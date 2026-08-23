@@ -43,7 +43,7 @@ WiFiClient::operator bool()
 
 int WiFiClient::connect_to (int sockfd, struct sockaddr *serv_addr, int addrlen, int to_ms)
 {
-    unsigned int len;
+    socklen_t len;
     int err;
     int flags;
     int ret;
