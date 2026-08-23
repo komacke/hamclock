@@ -36,4 +36,16 @@
             android:textSize="16sp" />
     </LinearLayout>
 
+    <ImageButton
+        android:id="@+id/btn_settings"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/settings_title"
+        android:src="@android:drawable/ic_menu_preferences"
+        android:alpha="0.2" />
+
 </FrameLayout>
+

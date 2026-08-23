@@ -22,8 +22,14 @@ import android.webkit.WebViewClient
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import org.openhamclock.HamClockNative
 import java.io.File
 import java.net.Socket
@@ -32,6 +38,10 @@ import java.util.concurrent.Executors
 class MainActivity : AppCompatActivity() {
 
     private val TAG = "HamClockActivity"
+    private val PREFS_NAME = "hamclock_prefs"
+    private val PREF_BACKEND_HOST = "backend_host"
+    private val PREF_CUSTOM_HOST = "custom_backend_host"
+
     private val RW_PORT = 8080
     private val RO_PORT = 8081
     private val REST_PORT = 8082
@@ -39,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
     private lateinit var statusText: TextView
+    private lateinit var btnSettings: ImageButton
 
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -59,6 +70,11 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.hamclock_webview)
         progressBar = findViewById(R.id.progress_bar)
         statusText = findViewById(R.id.status_text)
+        btnSettings = findViewById(R.id.btn_settings)
+
+        btnSettings.setOnClickListener {
+            showBackendSettingsDialog()
+        }
 
         setupWebView()
 
@@ -74,6 +90,81 @@ class MainActivity : AppCompatActivity() {
             )
         }
     }
+
+    private fun getSelectedBackendHost(): String {
+
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(PREF_BACKEND_HOST, getString(R.string.backend_default))
+            ?: getString(R.string.backend_default)
+    }
+
+    private fun showBackendSettingsDialog() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val currentHost = getSelectedBackendHost()
+        val customHostSaved = prefs.getString(PREF_CUSTOM_HOST, "") ?: ""
+
+        val ohbHost = getString(R.string.backend_ohb)
+        val hcHost = getString(R.string.backend_hamclock_com)
+
+        val dialogView = layoutInflater.inflate(R.layout.dialog_backend_settings, null)
+        val rg = dialogView.findViewById<RadioGroup>(R.id.rg_backends)
+        val rbOhb = dialogView.findViewById<RadioButton>(R.id.rb_ohb)
+        val rbHc = dialogView.findViewById<RadioButton>(R.id.rb_hamclock)
+        val rbCustom = dialogView.findViewById<RadioButton>(R.id.rb_custom)
+        val etCustom = dialogView.findViewById<EditText>(R.id.et_custom_backend)
+
+        when (currentHost) {
+            ohbHost -> rbOhb.isChecked = true
+            hcHost -> rbHc.isChecked = true
+            else -> {
+                rbCustom.isChecked = true
+                etCustom.setText(currentHost)
+                etCustom.visibility = View.VISIBLE
+            }
+        }
+
+        rg.setOnCheckedChangeListener { _, checkedId ->
+            if (checkedId == R.id.rb_custom) {
+                etCustom.visibility = View.VISIBLE
+                if (etCustom.text.isEmpty() && customHostSaved.isNotEmpty()) {
+                    etCustom.setText(customHostSaved)
+                }
+                etCustom.requestFocus()
+            } else {
+                etCustom.visibility = View.GONE
+            }
+        }
+
+        AlertDialog.Builder(this, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
+            .setTitle(getString(R.string.settings_title))
+            .setView(dialogView)
+            .setPositiveButton(getString(R.string.save_and_restart)) { _, _ ->
+                val newHost = when {
+                    rbOhb.isChecked -> ohbHost
+                    rbHc.isChecked -> hcHost
+                    else -> {
+                        val entered = etCustom.text.toString().trim()
+                        if (entered.isNotEmpty()) entered else ohbHost
+                    }
+                }
+
+                prefs.edit().apply {
+                    putString(PREF_BACKEND_HOST, newHost)
+                    if (rbCustom.isChecked) {
+                        putString(PREF_CUSTOM_HOST, newHost)
+                    }
+                    apply()
+                }
+
+                // Restart activity to apply updated daemon arguments
+                finish()
+                startActivity(intent)
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+
 
     private fun hasLocationPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
@@ -170,8 +261,9 @@ class MainActivity : AppCompatActivity() {
 
         executor.execute {
             if (!HamClockNative.isDaemonRunning()) {
-                val backendHost = getString(R.string.backend_host)
+                val backendHost = getSelectedBackendHost()
                 val location = getHostLocation()
+
                 val hasLocation = location != null
                 val lat = location?.first ?: 0.0
                 val lng = location?.second ?: 0.0
