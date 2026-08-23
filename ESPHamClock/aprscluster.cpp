@@ -1671,7 +1671,9 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
             }
 
             long age_s = (long)(myNow() - sp.heard);
-            char age[16];
+            if (age_s < 0)
+                age_s = 0;
+            char age[32];
             if (age_s < 60)
                 snprintf (age, sizeof(age), "%lds", age_s);
             else if (age_s < 3600)
