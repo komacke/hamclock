@@ -1,0 +1,55 @@
+cmake_minimum_required(VERSION 3.22.1)
+
+project("hamclock")
+
+set(HC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../ESPHamClock")
+
+add_compile_definitions(
+    _WEB_ONLY
+    _CLOCK_1600x960
+    _IS_LINUX
+    _IS_UNIX
+)
+
+include_directories(
+    ${HC_DIR}
+    ${HC_DIR}/ArduinoLib
+    ${HC_DIR}/wsServer/include
+    ${HC_DIR}/zlib-hc
+)
+
+file(GLOB HC_SRCS
+    "${HC_DIR}/*.cpp"
+)
+
+file(GLOB ARDUINO_SRCS
+    "${HC_DIR}/ArduinoLib/*.cpp"
+)
+
+file(GLOB WS_SRCS
+    "${HC_DIR}/wsServer/src/*.cpp"
+)
+
+file(GLOB ZLIB_SRCS
+    "${HC_DIR}/zlib-hc/*.cpp"
+)
+
+add_library(
+    hamclock
+    SHARED
+    hamclock_jni.cpp
+    ${HC_SRCS}
+    ${ARDUINO_SRCS}
+    ${WS_SRCS}
+    ${ZLIB_SRCS}
+)
+
+find_library(
+    log-lib
+    log
+)
+
+target_link_libraries(
+    hamclock
+    ${log-lib}
+)

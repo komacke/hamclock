@@ -1,0 +1,30 @@
+# HamClock for Android
+
+This directory contains the standalone Android wrapper for HamClock.
+
+## Architecture
+
+* **Core Engine:** The native C++ HamClock engine is compiled via Android NDK using `-D_WEB_ONLY` and `-D_CLOCK_1600x960` (crisp 2x resolution for 1080p and 2K screens).
+* **Display & Touch:** Interactive HTML5/WebSocket frontend rendered inside an accelerated, fullscreen Android `WebView`.
+* **Zero Source Duplication:** The NDK CMake build references `../../../../ESPHamClock` directly.
+
+## Building
+
+### Option 1: Android Studio (Recommended)
+1. Open **Android Studio**.
+2. Select **Open** and choose the `android/` directory (`/path/to/hamclock/android`).
+3. Allow Gradle to sync and download NDK/SDK dependencies if prompted.
+4. Select **Build > Build Bundle(s) / APK(s) > Build APK(s)** or click **Run** on a connected device/emulator.
+
+### Option 2: Command Line (with Android SDK installed)
+```bash
+cd android
+./gradlew assembleDebug
+```
+The resulting APK will be located at:
+`android/app/build/outputs/apk/debug/app-debug.apk`
+
+## Requirements
+* Android SDK 34 (Android 14)
+* Android NDK (version 25+ / 26+)
+* Minimum supported device: Android 7.0+ (API 24)

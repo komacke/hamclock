@@ -62,6 +62,7 @@ extern char our_make[];
 extern char build_variables[];
 
 extern void capturePasswords (const char *fn);
+extern int hamclock_main (int ac, char *av[]);
 
 #include "ESP.h"
 #include "Serial.h"
