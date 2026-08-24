@@ -3,6 +3,7 @@ package org.openhamclock
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
@@ -156,12 +157,46 @@ class MainActivity : AppCompatActivity() {
                     apply()
                 }
 
-                // Restart activity to apply updated daemon arguments
-                finish()
-                startActivity(intent)
+                // Clear cached files while preserving the eeprom file (holds config), configurations, and .mac_address
+                val dataDir = File(filesDir, "hamclock_data")
+                clearHamClockCache(dataDir)
+
+                // Restart app process cleanly so native daemon restarts with new backend argument
+                restartApp()
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+    }
+
+    private fun clearHamClockCache(dataDir: File) {
+        if (!dataDir.exists() || !dataDir.isDirectory) return
+        val files = dataDir.listFiles() ?: return
+        for (file in files) {
+            // Keep eeprom file which holds the config, saved configuration profiles, and persistent MAC address
+            if (file.name == "eeprom" || file.name == ".mac_address" || file.name == "configurations") {
+                continue
+            }
+            try {
+                if (file.isDirectory) {
+                    file.deleteRecursively()
+                } else {
+                    file.delete()
+                }
+                Log.i(TAG, "Cleared cache item: ${file.name}")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete cache item ${file.name}: ${e.message}")
+            }
+        }
+    }
+
+    private fun restartApp() {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            startActivity(launchIntent)
+        }
+        finishAffinity()
+        Runtime.getRuntime().exit(0)
     }
 
 
