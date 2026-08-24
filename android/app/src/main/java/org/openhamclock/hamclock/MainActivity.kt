@@ -30,8 +30,6 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
 import java.io.File
 import java.net.Socket
 import java.util.concurrent.Executors
@@ -41,7 +39,6 @@ class MainActivity : AppCompatActivity() {
     private val TAG = "HamClockActivity"
     private val PREFS_NAME = "hamclock_prefs"
     private val PREF_BACKEND_HOST = "backend_host"
-    private val PREF_CUSTOM_HOST = "custom_backend_host"
     private val PREF_FORCE_SETUP = "force_setup"
 
     private val RW_PORT = 8080
@@ -94,7 +91,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getSelectedBackendHost(): String {
-
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getString(PREF_BACKEND_HOST, getString(R.string.backend_default))
             ?: getString(R.string.backend_default)
@@ -103,59 +99,21 @@ class MainActivity : AppCompatActivity() {
     private fun showBackendSettingsDialog() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val currentHost = getSelectedBackendHost()
-        val customHostSaved = prefs.getString(PREF_CUSTOM_HOST, "") ?: ""
-
-        val ohbHost = getString(R.string.backend_ohb)
-        val hcHost = getString(R.string.backend_hamclock_com)
 
         val dialogView = layoutInflater.inflate(R.layout.dialog_backend_settings, null)
-        val rg = dialogView.findViewById<RadioGroup>(R.id.rg_backends)
-        val rbOhb = dialogView.findViewById<RadioButton>(R.id.rb_ohb)
-        val rbHc = dialogView.findViewById<RadioButton>(R.id.rb_hamclock)
-        val rbCustom = dialogView.findViewById<RadioButton>(R.id.rb_custom)
-        val etCustom = dialogView.findViewById<EditText>(R.id.et_custom_backend)
-
-        when (currentHost) {
-            ohbHost -> rbOhb.isChecked = true
-            hcHost -> rbHc.isChecked = true
-            else -> {
-                rbCustom.isChecked = true
-                etCustom.setText(currentHost)
-                etCustom.visibility = View.VISIBLE
-            }
-        }
-
-        rg.setOnCheckedChangeListener { _, checkedId ->
-            if (checkedId == R.id.rb_custom) {
-                etCustom.visibility = View.VISIBLE
-                if (etCustom.text.isEmpty() && customHostSaved.isNotEmpty()) {
-                    etCustom.setText(customHostSaved)
-                }
-                etCustom.requestFocus()
-            } else {
-                etCustom.visibility = View.GONE
-            }
-        }
+        val etBackendHost = dialogView.findViewById<EditText>(R.id.et_backend_host)
+        etBackendHost.setText(currentHost)
+        etBackendHost.setSelection(etBackendHost.text.length)
 
         val dialog = AlertDialog.Builder(this, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
             .setTitle(getString(R.string.settings_title))
             .setView(dialogView)
             .setPositiveButton(getString(R.string.save_and_restart)) { _, _ ->
-                val newHost = when (rg.checkedRadioButtonId) {
-                    R.id.rb_ohb -> ohbHost
-                    R.id.rb_hamclock -> hcHost
-                    else -> {
-                        val entered = etCustom.text.toString().trim()
-                        if (entered.isNotEmpty()) entered else ohbHost
-                    }
-                }
+                val entered = etBackendHost.text.toString().trim()
+                val newHost = if (entered.isNotEmpty()) entered else getString(R.string.backend_default)
 
                 Log.i(TAG, "Saving new backend host: $newHost")
-                val editor = prefs.edit().putString(PREF_BACKEND_HOST, newHost)
-                if (rg.checkedRadioButtonId == R.id.rb_custom) {
-                    editor.putString(PREF_CUSTOM_HOST, newHost)
-                }
-                val saved = editor.commit()
+                val saved = prefs.edit().putString(PREF_BACKEND_HOST, newHost).commit()
                 Log.i(TAG, "Backend host saved to preferences (success=$saved): $newHost")
 
                 // Clear cached files while preserving the eeprom file (holds config), configurations, and .mac_address

@@ -8,51 +8,23 @@
     android:paddingTop="12dp"
     android:paddingBottom="12dp">
 
-    <RadioGroup
-        android:id="@+id/rg_backends"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content">
-
-        <RadioButton
-            android:id="@+id/rb_ohb"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:padding="8dp"
-            android:text="@string/server_ohb_label"
-            android:textColor="@color/hamclock_text"
-            android:textSize="16sp" />
-
-        <RadioButton
-            android:id="@+id/rb_hamclock"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:padding="8dp"
-            android:text="@string/server_hc_label"
-            android:textColor="@color/hamclock_text"
-            android:textSize="16sp" />
-
-        <RadioButton
-            android:id="@+id/rb_custom"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:padding="8dp"
-            android:text="@string/server_custom_label"
-            android:textColor="@color/hamclock_text"
-            android:textSize="16sp" />
-    </RadioGroup>
-
-    <EditText
-        android:id="@+id/et_custom_backend"
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="32dp"
-        android:layout_marginTop="4dp"
-        android:hint="@string/custom_server_hint"
+        android:layout_marginBottom="8dp"
+        android:text="@string/backend_server_label"
+        android:textColor="@color/hamclock_text"
+        android:textSize="14sp" />
+
+    <EditText
+        android:id="@+id/et_backend_host"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/backend_hint"
         android:inputType="textUri"
         android:singleLine="true"
         android:textColor="@color/hamclock_text"
-        android:textColorHint="#888888"
-        android:visibility="gone" />
+        android:textColorHint="#888888" />
 
     <View
         android:layout_width="match_parent"

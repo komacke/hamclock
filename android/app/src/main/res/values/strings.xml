@@ -3,15 +3,11 @@
     <string name="starting_engine">Starting HamClock Engine…</string>
     <string name="loading_interface">Loading HamClock Interface…</string>
     <string name="start_failed">Unable to connect to HamClock local server</string>
-    <string name="backend_ohb">ohb.hamclock.app:80</string>
-    <string name="backend_hamclock_com">hamclock.com:80</string>
     <string name="backend_default">ohb.hamclock.app:80</string>
 
     <string name="settings_title">Backend Server Settings</string>
-    <string name="server_ohb_label">Open HamClock (ohb.hamclock.app:80)</string>
-    <string name="server_hc_label">HamClock.com (hamclock.com:80)</string>
-    <string name="server_custom_label">Custom Server…</string>
-    <string name="custom_server_hint">hostname:port (e.g. ohb-test.hamclock.app:80)</string>
+    <string name="backend_server_label">Backend Host (host:port):</string>
+    <string name="backend_hint">host:port</string>
     <string name="save_and_restart">Save &amp; Restart</string>
     <string name="open_setup">Open HamClock Setup</string>
     <string name="cancel">Cancel</string>
