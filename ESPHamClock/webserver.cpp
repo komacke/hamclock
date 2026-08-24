@@ -4442,6 +4442,10 @@ static bool doWiFiUpdate (WiFiClient &client, char *unused_line, size_t line_len
     // prep for response but won't be one if we succeed with update
     startPlainText(client);
 
+#if defined(NO_UPGRADE)
+    client.println ("Software updates are not supported directly in this build.");
+    return (true);
+#else
     // proceed if newer version is available
     char ver[100];
     if (newVersionIsAvailable (ver, sizeof(ver))) {
@@ -4454,6 +4458,7 @@ static bool doWiFiUpdate (WiFiClient &client, char *unused_line, size_t line_len
         client.println ("You're up to date!");    // match tapping version
 
     return (true);
+#endif
 }
 
 /* post diagnostics file

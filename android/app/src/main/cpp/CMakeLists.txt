@@ -9,6 +9,7 @@ add_compile_definitions(
     _CLOCK_1600x960
     _IS_LINUX
     _IS_UNIX
+    NO_UPGRADE
 )
 
 include_directories(
