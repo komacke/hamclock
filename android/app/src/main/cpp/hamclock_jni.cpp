@@ -23,6 +23,7 @@ struct DaemonArgs {
     bool hasLocation;
     double lat;
     double lng;
+    bool forceSetup;
 };
 
 static pthread_t daemon_thread;
@@ -141,6 +142,12 @@ static void *daemon_worker(void *arg) {
     std::string bFlag = "-b";
     std::string bVal = dargs->backendHost;
     bool hasLoc = dargs->hasLocation;
+    bool forceSetup = dargs->forceSetup;
+
+    if (forceSetup) {
+        LOGI("Setup requested: injecting keypress and omitting -k flag");
+        tft.putChar(' ', false, false); // Immediately satisfies askRun() in setup.cpp without countdown
+    }
 
     delete dargs;
 
@@ -156,7 +163,9 @@ static void *daemon_worker(void *arg) {
     argv.push_back(const_cast<char *>(restVal.c_str()));
     argv.push_back(const_cast<char *>(throtFlag.c_str()));
     argv.push_back(const_cast<char *>(throtVal.c_str()));
-    argv.push_back(const_cast<char *>(skipFlag.c_str()));
+    if (!forceSetup) {
+        argv.push_back(const_cast<char *>(skipFlag.c_str()));
+    }
     if (!hasLoc) {
         argv.push_back(const_cast<char *>(geoFlag.c_str()));
         LOGI("Host GPS location not available: falling back to GeoIP (-g)");
@@ -170,8 +179,8 @@ static void *daemon_worker(void *arg) {
 
     int argc = static_cast<int>(argv.size() - 1);
 
-    LOGI("Starting HamClock daemon with argc=%d in dir=%s on rw_port=%s (backend=%s)",
-         argc, dirVal.c_str(), rwVal.c_str(), bVal.c_str());
+    LOGI("Starting HamClock daemon with argc=%d in dir=%s on rw_port=%s (backend=%s, forceSetup=%d)",
+         argc, dirVal.c_str(), rwVal.c_str(), bVal.c_str(), forceSetup);
     hamclock_main(argc, argv.data());
 
     LOGI("HamClock daemon exited");
@@ -190,7 +199,8 @@ Java_org_openhamclock_HamClockNative_startDaemon(
         jstring backendHost,
         jboolean hasLocation,
         jdouble lat,
-        jdouble lng) {
+        jdouble lng,
+        jboolean forceSetup) {
 
     configure_fdsan();
 
@@ -222,6 +232,7 @@ Java_org_openhamclock_HamClockNative_startDaemon(
     args->hasLocation = (hasLocation == JNI_TRUE);
     args->lat = lat;
     args->lng = lng;
+    args->forceSetup = (forceSetup == JNI_TRUE);
 
     env->ReleaseStringUTFChars(dataDir, dataDirChars);
 

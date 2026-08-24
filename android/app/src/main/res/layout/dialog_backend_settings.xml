@@ -54,4 +54,19 @@
         android:textColorHint="#888888"
         android:visibility="gone" />
 
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
+        android:background="#33FFFFFF" />
+
+    <Button
+        android:id="@+id/btn_open_setup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/open_setup"
+        android:textColor="@color/hamclock_text"
+        android:backgroundTint="#2C3E50" />
+
 </LinearLayout>

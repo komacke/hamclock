@@ -13,6 +13,7 @@
     <string name="server_custom_label">Custom Server…</string>
     <string name="custom_server_hint">hostname:port (e.g. ohb-test.hamclock.app:80)</string>
     <string name="save_and_restart">Save &amp; Restart</string>
+    <string name="open_setup">Open HamClock Setup</string>
     <string name="cancel">Cancel</string>
 </resources>
 

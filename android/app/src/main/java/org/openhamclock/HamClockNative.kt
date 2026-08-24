@@ -13,7 +13,8 @@ object HamClockNative {
         backendHost: String = "",
         hasLocation: Boolean = false,
         lat: Double = 0.0,
-        lng: Double = 0.0
+        lng: Double = 0.0,
+        forceSetup: Boolean = false
     ): Boolean
 
 

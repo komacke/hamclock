@@ -26,6 +26,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -42,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private val PREFS_NAME = "hamclock_prefs"
     private val PREF_BACKEND_HOST = "backend_host"
     private val PREF_CUSTOM_HOST = "custom_backend_host"
+    private val PREF_FORCE_SETUP = "force_setup"
 
     private val RW_PORT = 8080
     private val RO_PORT = 8081
@@ -136,7 +138,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        AlertDialog.Builder(this, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
+        val dialog = AlertDialog.Builder(this, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
             .setTitle(getString(R.string.settings_title))
             .setView(dialogView)
             .setPositiveButton(getString(R.string.save_and_restart)) { _, _ ->
@@ -165,7 +167,17 @@ class MainActivity : AppCompatActivity() {
                 restartApp()
             }
             .setNegativeButton(getString(R.string.cancel), null)
-            .show()
+            .create()
+
+        val btnOpenSetup = dialogView.findViewById<Button>(R.id.btn_open_setup)
+        btnOpenSetup.setOnClickListener {
+            Log.i(TAG, "User requested HamClock Setup screen")
+            prefs.edit().putBoolean(PREF_FORCE_SETUP, true).commit()
+            dialog.dismiss()
+            restartApp()
+        }
+
+        dialog.show()
     }
 
     private fun clearHamClockCache(dataDir: File) {
@@ -296,6 +308,13 @@ class MainActivity : AppCompatActivity() {
 
         executor.execute {
             if (!HamClockNative.isDaemonRunning()) {
+                val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val forceSetup = prefs.getBoolean(PREF_FORCE_SETUP, false)
+                if (forceSetup) {
+                    prefs.edit().putBoolean(PREF_FORCE_SETUP, false).apply()
+                    Log.i(TAG, "Starting native backend with forceSetup=true")
+                }
+
                 val backendHost = getSelectedBackendHost()
                 val location = getHostLocation()
 
@@ -303,7 +322,7 @@ class MainActivity : AppCompatActivity() {
                 val lat = location?.first ?: 0.0
                 val lng = location?.second ?: 0.0
 
-                Log.i(TAG, "Launching native HamClock in ${dataDir.absolutePath} (hasLocation=$hasLocation, lat=$lat, lng=$lng, backend=$backendHost)")
+                Log.i(TAG, "Launching native HamClock in ${dataDir.absolutePath} (hasLocation=$hasLocation, lat=$lat, lng=$lng, backend=$backendHost, forceSetup=$forceSetup)")
                 HamClockNative.startDaemon(
                     dataDir = dataDir.absolutePath,
                     rwPort = RW_PORT,
@@ -312,7 +331,8 @@ class MainActivity : AppCompatActivity() {
                     backendHost = backendHost,
                     hasLocation = hasLocation,
                     lat = lat,
-                    lng = lng
+                    lng = lng,
+                    forceSetup = forceSetup
                 )
             }
 
