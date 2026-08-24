@@ -1,4 +1,4 @@
-package org.openhamclock
+package org.openhamclock.hamclock
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -32,7 +32,6 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
-import org.openhamclock.HamClockNative
 import java.io.File
 import java.net.Socket
 import java.util.concurrent.Executors

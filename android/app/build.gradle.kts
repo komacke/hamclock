@@ -89,12 +89,12 @@ tasks.matching {
 
 android {
 
-    namespace = "org.openhamclock"
+    namespace = "org.openhamclock.hamclock"
     compileSdk = 34
     ndkVersion = "27.1.12297006"
 
     defaultConfig {
-        applicationId = "org.openhamclock"
+        applicationId = "org.openhamclock.hamclock"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
@@ -174,7 +174,7 @@ android {
     applicationVariants.all {
         outputs.all {
             val outputImpl = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            outputImpl?.outputFileName = "org.openhamclock-${versionName}-${name}.apk"
+            outputImpl?.outputFileName = "org.openhamclock.hamclock-${versionName}-${name}.apk"
         }
     }
 }

@@ -189,7 +189,7 @@ static void *daemon_worker(void *arg) {
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_org_openhamclock_HamClockNative_startDaemon(
+Java_org_openhamclock_hamclock_HamClockNative_startDaemon(
         JNIEnv *env,
         jobject /* this */,
         jstring dataDir,
@@ -249,7 +249,7 @@ Java_org_openhamclock_HamClockNative_startDaemon(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_org_openhamclock_HamClockNative_isDaemonRunning(
+Java_org_openhamclock_hamclock_HamClockNative_isDaemonRunning(
         JNIEnv * /* env */,
         jobject /* this */) {
     return daemon_running ? JNI_TRUE : JNI_FALSE;
