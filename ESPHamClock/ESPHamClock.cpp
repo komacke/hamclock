@@ -2461,10 +2461,12 @@ static void runShutdownMenu(void)
         {locked ? MENU_IGNORE : MENU_TOGGLE, getDemoMode(), 2, SHM_INDENT, "Demo mode", 0},        // 1
         {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Configurations", 0},   // 2
         {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Post diagnostics", 0}, // 3
+#if !defined(NO_SYSTEM_CONTROLS)
         {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Restart HamClock", 0}, // 4
         {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Exit HamClock", 0},    // 5
         {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Reboot computer", 0},  // 6
         {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Shutdown computer", 0},// 7
+#endif
     };
     const int n_shm = NARRAY(mitems);
 
@@ -2508,6 +2510,7 @@ static void runShutdownMenu(void)
             }
         }
 
+#if !defined(NO_SYSTEM_CONTROLS)
         if (mitems[4].set) {
             if (RUSure (menu_b, mitems[4].label) && askPasswd ("restart", true)) {
                 Serial.print ("Restarting\n");
@@ -2573,6 +2576,7 @@ static void runShutdownMenu(void)
                 }
             }
         }
+#endif
     }
 
     if (do_full_init)

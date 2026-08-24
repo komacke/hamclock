@@ -10,6 +10,7 @@ add_compile_definitions(
     _IS_LINUX
     _IS_UNIX
     NO_UPGRADE
+    NO_SYSTEM_CONTROLS
 )
 
 include_directories(

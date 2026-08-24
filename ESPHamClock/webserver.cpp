@@ -4419,6 +4419,11 @@ static bool doWiFiReboot (WiFiClient &client, char *unused_line, size_t line_len
 
     // send html header then close
     startPlainText(client);
+
+#if defined(NO_SYSTEM_CONTROLS)
+    client.println ("System restart is not supported on this platform.");
+    return (true);
+#else
     client.println ("restarting ... bye for now.");
     wdDelay(100);
     client.flush();
@@ -4430,6 +4435,7 @@ static bool doWiFiReboot (WiFiClient &client, char *unused_line, size_t line_len
 
     // never returns but compiler doesn't know that
     return (true);
+#endif
 }
 
 /* update firmware if available
