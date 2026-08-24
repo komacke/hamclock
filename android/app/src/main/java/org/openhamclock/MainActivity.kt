@@ -140,22 +140,22 @@ class MainActivity : AppCompatActivity() {
             .setTitle(getString(R.string.settings_title))
             .setView(dialogView)
             .setPositiveButton(getString(R.string.save_and_restart)) { _, _ ->
-                val newHost = when {
-                    rbOhb.isChecked -> ohbHost
-                    rbHc.isChecked -> hcHost
+                val newHost = when (rg.checkedRadioButtonId) {
+                    R.id.rb_ohb -> ohbHost
+                    R.id.rb_hamclock -> hcHost
                     else -> {
                         val entered = etCustom.text.toString().trim()
                         if (entered.isNotEmpty()) entered else ohbHost
                     }
                 }
 
-                prefs.edit().apply {
-                    putString(PREF_BACKEND_HOST, newHost)
-                    if (rbCustom.isChecked) {
-                        putString(PREF_CUSTOM_HOST, newHost)
-                    }
-                    apply()
+                Log.i(TAG, "Saving new backend host: $newHost")
+                val editor = prefs.edit().putString(PREF_BACKEND_HOST, newHost)
+                if (rg.checkedRadioButtonId == R.id.rb_custom) {
+                    editor.putString(PREF_CUSTOM_HOST, newHost)
                 }
+                val saved = editor.commit()
+                Log.i(TAG, "Backend host saved to preferences (success=$saved): $newHost")
 
                 // Clear cached files while preserving the eeprom file (holds config), configurations, and .mac_address
                 val dataDir = File(filesDir, "hamclock_data")
