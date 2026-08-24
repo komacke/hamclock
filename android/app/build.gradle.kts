@@ -1,3 +1,6 @@
+import java.io.BufferedReader
+import java.io.InputStreamReader
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -90,13 +93,13 @@ tasks.matching {
 android {
 
     namespace = "org.openhamclock.hamclock"
-    compileSdk = 34
+    compileSdk = 35
     ndkVersion = "27.1.12297006"
 
     defaultConfig {
         applicationId = "org.openhamclock.hamclock"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = appVersion
 
@@ -114,22 +117,77 @@ android {
         }
     }
 
+fun resolvePath(path: String): File {
+    val expanded = if (path.startsWith("~/") || path == "~") {
+        path.replaceFirst("~", System.getProperty("user.home"))
+    } else {
+        path
+    }
+    return file(expanded)
+}
+
+fun promptSecure(prompt: String): String? {
+    val console = System.console()
+    if (console != null) {
+        val chars = console.readPassword("$prompt: ")
+        return chars?.let { String(it) }?.ifEmpty { null }
+    }
+    print("$prompt: ")
+    System.out.flush()
+    val reader = BufferedReader(InputStreamReader(System.`in`))
+    return reader.readLine()?.ifEmpty { null }
+}
+
+fun promptPlain(prompt: String): String? {
+    val console = System.console()
+    if (console != null) {
+        return console.readLine("$prompt: ")?.ifEmpty { null }
+    }
+    print("$prompt: ")
+    System.out.flush()
+    val reader = BufferedReader(InputStreamReader(System.`in`))
+    return reader.readLine()?.ifEmpty { null }
+}
+
     signingConfigs {
         create("release") {
             val storeFilePath = System.getenv("ANDROID_KEYSTORE_FILE")
                 ?: (project.findProperty("android.injected.signing.store.file") as? String)
-            val storePass = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-                ?: (project.findProperty("android.injected.signing.store.password") as? String)
-            val keyAliasStr = System.getenv("ANDROID_KEY_ALIAS")
-                ?: (project.findProperty("android.injected.signing.key.alias") as? String)
-            val keyPass = System.getenv("ANDROID_KEY_PASSWORD")
-                ?: (project.findProperty("android.injected.signing.key.password") as? String)
 
-            if (!storeFilePath.isNullOrEmpty() && file(storeFilePath).exists()) {
-                storeFile = file(storeFilePath)
-                storePassword = storePass
-                keyAlias = keyAliasStr
-                keyPassword = keyPass
+            if (!storeFilePath.isNullOrEmpty()) {
+                val keystoreFile = resolvePath(storeFilePath)
+                if (keystoreFile.exists()) {
+                    storeFile = keystoreFile
+
+                    val keyAliasStr = System.getenv("ANDROID_KEY_ALIAS")
+                        ?: (project.findProperty("android.injected.signing.key.alias") as? String)
+                        ?: promptPlain("Enter Key Alias")?.trim()
+
+                    val storePass = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                        ?: (project.findProperty("android.injected.signing.store.password") as? String)
+                        ?: promptSecure("Enter Keystore Password")
+
+                    val keyPassEnv = System.getenv("ANDROID_KEY_PASSWORD")
+                        ?: (project.findProperty("android.injected.signing.key.password") as? String)
+                    val keyPass = if (!keyPassEnv.isNullOrEmpty()) {
+                        keyPassEnv
+                    } else if (!storePass.isNullOrEmpty()) {
+                        val prompted = promptSecure("Enter Key Password (press Enter if same as keystore)")
+                        if (prompted.isNullOrEmpty()) storePass else prompted
+                    } else {
+                        null
+                    }
+
+                    if (!keyAliasStr.isNullOrEmpty() && !storePass.isNullOrEmpty()) {
+                        keyAlias = keyAliasStr
+                        storePassword = storePass
+                        keyPassword = keyPass ?: storePass
+                    } else {
+                        throw GradleException("Release signing error: keystore alias or password was not provided.")
+                    }
+                } else {
+                    throw GradleException("Release keystore file not found at: ${keystoreFile.absolutePath}")
+                }
             }
         }
     }

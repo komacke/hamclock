@@ -17,6 +17,8 @@ This directory contains the standalone Android wrapper for HamClock.
 4. Select **Build > Build Bundle(s) / APK(s) > Build APK(s)** or click **Run** on a connected device/emulator.
 
 ### Option 2: Command Line (with Android SDK installed)
+
+#### Build Debug APK:
 ```bash
 cd android
 ./gradlew assembleDebug
@@ -24,7 +26,19 @@ cd android
 The resulting APK will be located at:
 `android/app/build/outputs/apk/debug/app-debug.apk`
 
+#### Build & Sign Release App Bundle (.aab) for Google Play:
+Set the keystore file and key alias in your environment (passwords will be prompted interactively and securely):
+```bash
+cd android
+ANDROID_KEYSTORE_FILE=~/.keystores/hamclock-upload-key.keystore ANDROID_KEY_ALIAS=hamclock ./gradlew bundleRelease
+```
+*(You will be prompted to enter the keystore and key passwords without echoing them to the terminal).*
+
+The resulting signed release bundle will be located at:
+`android/app/build/outputs/bundle/release/app-release.aab`
+
 ## Requirements
-* Android SDK 34 (Android 14)
+* Android SDK 35 (Android 15)
 * Android NDK (version 25+ / 26+)
 * Minimum supported device: Android 7.0+ (API 24)
+
