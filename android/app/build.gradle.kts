@@ -111,13 +111,13 @@ tasks.matching {
 android {
 
     namespace = "org.openhamclock.hamclock"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "27.1.12297006"
 
     defaultConfig {
         applicationId = "org.openhamclock.hamclock"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = getGitCommitCount()
         versionName = appVersion
 

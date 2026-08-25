@@ -38,7 +38,7 @@ The resulting signed release bundle will be located at:
 `android/app/build/outputs/bundle/release/app-release.aab`
 
 ## Requirements
-* Android SDK 35 (Android 15)
+* Android SDK 36 (Android 16)
 * Android NDK (version 25+ / 26+)
 * Minimum supported device: Android 7.0+ (API 24)
 

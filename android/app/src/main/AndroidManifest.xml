@@ -20,7 +20,7 @@
         android:theme="@style/Theme.HamClock"
         android:hardwareAccelerated="true"
         android:usesCleartextTraffic="true"
-        tools:targetApi="35">
+        tools:targetApi="36">
 
         <activity
             android:name=".MainActivity"
