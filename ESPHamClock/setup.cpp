@@ -4079,7 +4079,7 @@ static bool getWPACreds()
     }
 
     // look for ssid and psk
-    char buf[100], wpa_ssid[100], wpa_psk[100];
+    char buf[100], wpa_ssid[101], wpa_psk[101];
     bool found_ssid = false, found_psk = false;
     while (fgets (buf, sizeof(buf), wpa_fp)) {
         if (sscanf (buf, " ssid=\"%100[^\"]\"", wpa_ssid) == 1)
