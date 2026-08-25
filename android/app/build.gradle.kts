@@ -212,7 +212,8 @@ fun promptPlain(prompt: String): String? {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             val releaseSigning = signingConfigs.getByName("release")
             signingConfig = if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
                 releaseSigning
