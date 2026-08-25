@@ -256,6 +256,22 @@ fun promptPlain(prompt: String): String? {
     }
 }
 
+tasks.matching {
+    it.name == "signReleaseBundle" || it.name == "signDebugBundle" ||
+    it.name == "packageReleaseBundle" || it.name == "packageDebugBundle"
+}.configureEach {
+    val isRelease = name.contains("Release")
+    val variantName = if (isRelease) "release" else "debug"
+    doLast {
+        val bundleDir = file("${layout.buildDirectory.get()}/outputs/bundle/$variantName")
+        val defaultAab = file("$bundleDir/app-$variantName.aab")
+        if (defaultAab.exists()) {
+            val descriptiveAab = file("$bundleDir/org.openhamclock.hamclock-${appVersion}-${variantName}.aab")
+            defaultAab.copyTo(descriptiveAab, overwrite = true)
+        }
+    }
+}
+
 
 
 
