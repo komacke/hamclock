@@ -24,6 +24,24 @@ fun getGitVersion(): Pair<String, Boolean> {
     }
 }
 
+fun getGitCommitCount(): Int {
+    return try {
+        val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+            .directory(rootDir)
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().readText().trim()
+        val exitCode = process.waitFor()
+        if (exitCode == 0 && output.isNotEmpty()) {
+            output.toInt()
+        } else {
+            1
+        }
+    } catch (e: Exception) {
+        1
+    }
+}
+
 fun hasLocalChanges(): Boolean {
     return try {
         val process = ProcessBuilder("git", "diff-index", "--quiet", "HEAD", "--")
@@ -100,7 +118,7 @@ android {
         applicationId = "org.openhamclock.hamclock"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
+        versionCode = getGitCommitCount()
         versionName = appVersion
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
