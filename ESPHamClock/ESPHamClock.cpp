@@ -237,6 +237,14 @@ static void showDefines(void)
         _PR_MAC(NO_UPGRADE);
     #endif
 
+    #if defined(NO_SYSTEM_CONTROLS)
+        _PR_MAC(NO_SYSTEM_CONTROLS);
+    #endif
+
+    #if defined(NO_HAMCLOCK_CONTROLS)
+        _PR_MAC(NO_HAMCLOCK_CONTROLS);
+    #endif
+
     #if defined(_SUPPORT_KX3)
         _PR_MAC(_SUPPORT_KX3);
     #endif
@@ -2456,15 +2464,35 @@ static void runShutdownMenu(void)
     bool locked = screenIsLocked();
 
     const int SHM_INDENT = 3;
-    MenuItem mitems[] = {
-        {MENU_TOGGLE,                        locked,        1, SHM_INDENT, "Lock screen ", 0},     // 0
-        {locked ? MENU_IGNORE : MENU_TOGGLE, getDemoMode(), 2, SHM_INDENT, "Demo mode", 0},        // 1
-        {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Configurations", 0},   // 2
-        {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Post diagnostics", 0}, // 3
-        {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Restart HamClock", 0}, // 4
-        {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Exit HamClock", 0},    // 5
-        {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Reboot computer", 0},  // 6
-        {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Shutdown computer", 0},// 7
+    enum {
+        SHM_LOCK,
+        SHM_DEMO,
+        SHM_CONFIGS,
+        SHM_DIAGS,
+#if !defined(NO_HAMCLOCK_CONTROLS)
+        SHM_RESTART_HC,
+        SHM_EXIT_HC,
+#endif
+#if !defined(NO_SYSTEM_CONTROLS)
+        SHM_REBOOT_SYS,
+        SHM_SHUTDOWN_SYS,
+#endif
+        SHM_N
+    };
+
+    MenuItem mitems[SHM_N] = {
+        {MENU_TOGGLE,                        locked,        1, SHM_INDENT, "Lock screen ", 0},     // SHM_LOCK
+        {locked ? MENU_IGNORE : MENU_TOGGLE, getDemoMode(), 2, SHM_INDENT, "Demo mode", 0},        // SHM_DEMO
+        {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Configurations", 0},   // SHM_CONFIGS
+        {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Post diagnostics", 0}, // SHM_DIAGS
+#if !defined(NO_HAMCLOCK_CONTROLS)
+        {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Restart HamClock", 0}, // SHM_RESTART_HC
+        {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Exit HamClock", 0},    // SHM_EXIT_HC
+#endif
+#if !defined(NO_SYSTEM_CONTROLS)
+        {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Reboot computer", 0},  // SHM_REBOOT_SYS
+        {locked ? MENU_IGNORE : MENU_01OFN,  false,         3, SHM_INDENT, "Shutdown computer", 0},// SHM_SHUTDOWN_SYS
+#endif
     };
     const int n_shm = NARRAY(mitems);
 
@@ -2481,7 +2509,7 @@ static void runShutdownMenu(void)
 
         // engage each selection
 
-        if (mitems[0].set) {
+        if (mitems[SHM_LOCK].set) {
             // anyone can lock
             setScreenLock (true);
         } else if (locked) {
@@ -2490,16 +2518,16 @@ static void runShutdownMenu(void)
                 setScreenLock (false);
         }
 
-        setDemoMode (mitems[1].set);
+        setDemoMode (mitems[SHM_DEMO].set);
         drawDemoRunner();
 
-        if (mitems[2].set) {
+        if (mitems[SHM_CONFIGS].set) {
             if (askPasswd ("configurations", true))
                 runConfigManagement();
         }
 
-        if (mitems[3].set) {
-            if (RUSure (menu_b, mitems[3].label)) {
+        if (mitems[SHM_DIAGS].set) {
+            if (RUSure (menu_b, mitems[SHM_DIAGS].label)) {
                 menuMsg (menu_b, RA8875_WHITE, "posting...");
                 if (postDiags())
                     menuMsg (menu_b, RA8875_GREEN, "posting complete");
@@ -2508,23 +2536,26 @@ static void runShutdownMenu(void)
             }
         }
 
-        if (mitems[4].set) {
-            if (RUSure (menu_b, mitems[4].label) && askPasswd ("restart", true)) {
+#if !defined(NO_HAMCLOCK_CONTROLS)
+        if (mitems[SHM_RESTART_HC].set) {
+            if (RUSure (menu_b, mitems[SHM_RESTART_HC].label) && askPasswd ("restart", true)) {
                 Serial.print ("Restarting\n");
                 eraseScreen();  // fast touch feedback
                 doReboot(false, false);
             }
         }
 
-        if (mitems[5].set) {
-            if (RUSure (menu_b, mitems[5].label) && askPasswd ("exit", true)) {
+        if (mitems[SHM_EXIT_HC].set) {
+            if (RUSure (menu_b, mitems[SHM_EXIT_HC].label) && askPasswd ("exit", true)) {
                 Serial.print ("Exiting\n");
                 doExit();
             }
         }
+#endif
 
-        if (mitems[6].set) {
-            if (RUSure (menu_b, mitems[6].label) && askPasswd ("reboot", true)) {
+#if !defined(NO_SYSTEM_CONTROLS)
+        if (mitems[SHM_REBOOT_SYS].set) {
+            if (RUSure (menu_b, mitems[SHM_REBOOT_SYS].label) && askPasswd ("reboot", true)) {
                 Serial.print ("Rebooting\n");
                 eraseScreen();
                 selectFontStyle (BOLD_FONT, SMALL_FONT);
@@ -2545,8 +2576,8 @@ static void runShutdownMenu(void)
             }
         }
 
-        if (mitems[7].set) {
-            if (RUSure (menu_b, mitems[7].label) && askPasswd ("shutdown", true)) {
+        if (mitems[SHM_SHUTDOWN_SYS].set) {
+            if (RUSure (menu_b, mitems[SHM_SHUTDOWN_SYS].label) && askPasswd ("shutdown", true)) {
                 Serial.print ("Shutting down\n");
                 eraseScreen();
                 selectFontStyle (BOLD_FONT, SMALL_FONT);
@@ -2573,6 +2604,7 @@ static void runShutdownMenu(void)
                 }
             }
         }
+#endif
     }
 
     if (do_full_init)

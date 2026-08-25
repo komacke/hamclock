@@ -4419,6 +4419,11 @@ static bool doWiFiReboot (WiFiClient &client, char *unused_line, size_t line_len
 
     // send html header then close
     startPlainText(client);
+
+#if defined(NO_HAMCLOCK_CONTROLS)
+    client.println ("HamClock restart is not supported on this platform.");
+    return (true);
+#else
     client.println ("restarting ... bye for now.");
     wdDelay(100);
     client.flush();
@@ -4430,6 +4435,7 @@ static bool doWiFiReboot (WiFiClient &client, char *unused_line, size_t line_len
 
     // never returns but compiler doesn't know that
     return (true);
+#endif
 }
 
 /* update firmware if available
@@ -4442,6 +4448,10 @@ static bool doWiFiUpdate (WiFiClient &client, char *unused_line, size_t line_len
     // prep for response but won't be one if we succeed with update
     startPlainText(client);
 
+#if defined(NO_UPGRADE)
+    client.println ("Software updates are not supported directly in this build.");
+    return (true);
+#else
     // proceed if newer version is available
     char ver[100];
     if (newVersionIsAvailable (ver, sizeof(ver))) {
@@ -4454,6 +4464,7 @@ static bool doWiFiUpdate (WiFiClient &client, char *unused_line, size_t line_len
         client.println ("You're up to date!");    // match tapping version
 
     return (true);
+#endif
 }
 
 /* post diagnostics file
@@ -4729,8 +4740,13 @@ static bool doWiFiExit (WiFiClient &client, char *unused_line, size_t line_len)
     (void)(unused_line);
     (void)(line_len);
 
-    // ack then die
     startPlainText(client);
+
+#if defined(NO_HAMCLOCK_CONTROLS)
+    client.println ("HamClock exit is not supported on this platform.");
+    return (true);
+#else
+    // ack then die
     client.println ("exiting");
 
     Serial.print ("Exiting\n");
@@ -4738,6 +4754,7 @@ static bool doWiFiExit (WiFiClient &client, char *unused_line, size_t line_len)
 
     // lint
     return (true);
+#endif
 }
 
 
