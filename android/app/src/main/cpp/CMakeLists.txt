@@ -7,8 +7,6 @@ set(HC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../ESPHamClock")
 add_compile_definitions(
     _WEB_ONLY
     _CLOCK_1600x960
-    _IS_LINUX
-    _IS_UNIX
     NO_UPGRADE
     NO_SYSTEM_CONTROLS
     NO_HAMCLOCK_CONTROLS
