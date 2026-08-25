@@ -13,7 +13,7 @@
 .PHONY: clean clobber help hclibs
 
 # build flags common to all options and architectures
-CXXFLAGS = -IArduinoLib -IwsServer/include -Izlib-hc -I. -g -O2 -Wall -pthread -std=c++17
+CXXFLAGS = -IArduinoLib -IwsServer/include -Izlib-hc -I. -g -O2 -Wall -pthread -std=c++17 -D_FORTIFY_SOURCE=2
 # CXXFLAGS += -Wextra -pedantic -Werror -Wno-attributes -Wno-unknown-pragmas
 
 # add explicit framebuffer depth as _FB_DEPTH if defined
