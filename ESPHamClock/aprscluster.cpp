@@ -1462,6 +1462,13 @@ bool updateAPRSCluster (const SBox &box, bool fresh)
     if (fresh)
         drawAPRSHeader (box, APRS_COLOR_NEW);
 
+    // periodically purge spots older than APRS_STALE_DT so they expire even without new packets
+    static uint32_t last_stale_check;
+    if (timesUp (&last_stale_check, 30000)) {
+        if (purgeStaleAPRSSpots())
+            aprs_list_changed = true;
+    }
+
     if (aprs_ss.atNewest()) {
         // safe to refresh the display copy -- nothing for the user to lose track of
         if (aprs_list_changed) {
