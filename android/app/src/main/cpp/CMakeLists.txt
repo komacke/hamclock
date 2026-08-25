@@ -11,6 +11,7 @@ add_compile_definitions(
     _IS_UNIX
     NO_UPGRADE
     NO_SYSTEM_CONTROLS
+    NO_HAMCLOCK_CONTROLS
 )
 
 include_directories(

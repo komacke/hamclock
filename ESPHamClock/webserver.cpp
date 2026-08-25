@@ -4420,8 +4420,8 @@ static bool doWiFiReboot (WiFiClient &client, char *unused_line, size_t line_len
     // send html header then close
     startPlainText(client);
 
-#if defined(NO_SYSTEM_CONTROLS)
-    client.println ("System restart is not supported on this platform.");
+#if defined(NO_HAMCLOCK_CONTROLS)
+    client.println ("HamClock restart is not supported on this platform.");
     return (true);
 #else
     client.println ("restarting ... bye for now.");
@@ -4740,8 +4740,13 @@ static bool doWiFiExit (WiFiClient &client, char *unused_line, size_t line_len)
     (void)(unused_line);
     (void)(line_len);
 
-    // ack then die
     startPlainText(client);
+
+#if defined(NO_HAMCLOCK_CONTROLS)
+    client.println ("HamClock exit is not supported on this platform.");
+    return (true);
+#else
+    // ack then die
     client.println ("exiting");
 
     Serial.print ("Exiting\n");
@@ -4749,6 +4754,7 @@ static bool doWiFiExit (WiFiClient &client, char *unused_line, size_t line_len)
 
     // lint
     return (true);
+#endif
 }
 
 
