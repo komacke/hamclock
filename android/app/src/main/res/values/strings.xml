@@ -5,10 +5,12 @@
     <string name="start_failed">Unable to connect to HamClock local server</string>
     <string name="backend_default">ohb.hamclock.app:80</string>
 
-    <string name="settings_title">Backend Server Settings</string>
+    <string name="settings_title">HamClock Settings</string>
     <string name="backend_server_label">Backend Host (host:port):</string>
     <string name="backend_hint">host:port</string>
+    <string name="start_on_boot_label">Start automatically on device boot</string>
     <string name="save_and_restart">Save &amp; Restart</string>
+    <string name="save">Save</string>
     <string name="open_setup">Open HamClock Setup</string>
     <string name="cancel">Cancel</string>
 </resources>

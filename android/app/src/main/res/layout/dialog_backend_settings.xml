@@ -34,6 +34,22 @@
         android:layout_marginBottom="16dp"
         android:background="#33FFFFFF" />
 
+    <CheckBox
+        android:id="@+id/cb_start_on_boot"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/start_on_boot_label"
+        android:textColor="@color/hamclock_text"
+        android:textSize="14sp"
+        android:buttonTint="@color/hamclock_accent" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
+        android:background="#33FFFFFF" />
+
     <Button
         android:id="@+id/btn_open_setup"
         android:layout_width="match_parent"

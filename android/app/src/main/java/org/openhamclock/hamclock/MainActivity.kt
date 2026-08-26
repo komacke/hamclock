@@ -28,6 +28,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -41,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private val PREFS_NAME = "hamclock_prefs"
     private val PREF_BACKEND_HOST = "backend_host"
     private val PREF_FORCE_SETUP = "force_setup"
+    private val PREF_START_ON_BOOT = "start_on_boot"
 
     private val RW_PORT = 8080
     private val RO_PORT = 8081
@@ -100,29 +102,39 @@ class MainActivity : AppCompatActivity() {
     private fun showBackendSettingsDialog() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val currentHost = getSelectedBackendHost()
+        val currentStartOnBoot = prefs.getBoolean(PREF_START_ON_BOOT, false)
 
         val dialogView = layoutInflater.inflate(R.layout.dialog_backend_settings, null)
         val etBackendHost = dialogView.findViewById<EditText>(R.id.et_backend_host)
+        val cbStartOnBoot = dialogView.findViewById<CheckBox>(R.id.cb_start_on_boot)
+
         etBackendHost.setText(currentHost)
         etBackendHost.setSelection(etBackendHost.text.length)
+        cbStartOnBoot.isChecked = currentStartOnBoot
 
         val dialog = AlertDialog.Builder(this, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
             .setTitle(getString(R.string.settings_title))
             .setView(dialogView)
-            .setPositiveButton(getString(R.string.save_and_restart)) { _, _ ->
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val entered = etBackendHost.text.toString().trim()
                 val newHost = if (entered.isNotEmpty()) entered else getString(R.string.backend_default)
+                val newStartOnBoot = cbStartOnBoot.isChecked
 
-                Log.i(TAG, "Saving new backend host: $newHost")
-                val saved = prefs.edit().putString(PREF_BACKEND_HOST, newHost).commit()
-                Log.i(TAG, "Backend host saved to preferences (success=$saved): $newHost")
+                Log.i(TAG, "Saving settings: backend=$newHost, startOnBoot=$newStartOnBoot")
+                val hostChanged = newHost != currentHost
+                prefs.edit()
+                    .putString(PREF_BACKEND_HOST, newHost)
+                    .putBoolean(PREF_START_ON_BOOT, newStartOnBoot)
+                    .commit()
 
-                // Clear cached files while preserving the eeprom file (holds config), configurations, and .mac_address
-                val dataDir = File(filesDir, "hamclock_data")
-                clearHamClockCache(dataDir)
+                if (hostChanged) {
+                    // Clear cached files while preserving the eeprom file (holds config), configurations, and .mac_address
+                    val dataDir = File(filesDir, "hamclock_data")
+                    clearHamClockCache(dataDir)
 
-                // Restart app process cleanly so native daemon restarts with new backend argument
-                restartApp()
+                    // Restart app process cleanly so native daemon restarts with new backend argument
+                    restartApp()
+                }
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .create()
