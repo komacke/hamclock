@@ -320,7 +320,7 @@ static const char *lbl_styles[LBL_N] = {
 #undef X
 
 // tooltip usage
-static const char tt_reminder[] = "Use control-click, Command-click or middle button to show a tooltip for most fields";
+static const char tt_reminder[] = "Tap a label, right-click, control-click or middle button to show a tooltip for most fields";
 
 // define a string prompt
 typedef struct {
@@ -5314,8 +5314,8 @@ static void runSetup()
             if (!bp || !boolIsRelevant(bp))
                 continue;
 
-            // check for tooltip
-            if (bp->tt && ui.tt == TT_TAP_BX) {
+            // check for tooltip: secondary tap OR tapping directly on the prompt label
+            if (bp->tt && (ui.tt == TT_TAP_BX || (bp->p_str && inBox (ui.tap, bp->p_box)))) {
                 tooltip (ui.tap, bp->tt);
                 continue;
             }
@@ -5544,8 +5544,8 @@ static void runSetup()
 
         } else if (tappedStringPrompt (ui.tap, &sp) && stringIsRelevant (sp)) {
 
-            // check for tooltip
-            if (sp->tt && ui.tt == TT_TAP_BX) {
+            // check for tooltip: secondary tap OR tapping directly on the prompt label
+            if (sp->tt && (ui.tt == TT_TAP_BX || (sp->p_str && inBox (ui.tap, sp->p_box)))) {
                 tooltip (ui.tap, sp->tt);
                 continue;
             }
