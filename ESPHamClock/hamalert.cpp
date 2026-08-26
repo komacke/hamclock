@@ -431,7 +431,7 @@ bool updateHamAlert (const SBox &box, bool fresh)
         // and never even try, until a password (and optionally login) has actually been entered
         if (fresh)
             initHAGUI (box);
-        plotMessage (box, HAC_COLOR, "Set HamAlert User/Password in Setup pg 4");
+        plotMessage (box, HAC_COLOR, "Set HamAlert User/Password in Setup pg 7");
         return (false);
     }
 

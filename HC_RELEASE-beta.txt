@@ -4,3 +4,5 @@ Changes with latest release:
 - new HamAlert monitoring
 - new band activity pane
 - more ONTAs and highlights
+- touchscreen fixes for ok/cancel
+- touchscreen fixes for tooltips

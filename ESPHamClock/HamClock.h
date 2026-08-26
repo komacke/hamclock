@@ -2320,7 +2320,8 @@ extern bool checkOnTheAirTouch (TouchType tt, const SCoord &s, const SBox &box);
 // scripts' 65-minute window) -- polling much faster than that buys nothing, so this can
 // afford a longer client interval than ONTA_INTERVAL despite following the exact same
 // openCachedFile()-throttled pattern.
-#define BANDACT_INTERVAL   180                          // polling interval
+#define BANDACT_INTERVAL   60                           // polling interval -- also how often the
+                                                          // pane's "X m ago" freshness caption redraws
 
 extern bool updateBandActivity (const SBox &box, bool fresh);
 
@@ -3523,7 +3524,7 @@ extern void strncpySubChar (char to_str[], const char from_str[], char to_char, 
  *
  */
 
-void tooltip (const SCoord &s, const char *tip);
+void tooltip (const SCoord &s, const char *tip, const SBox *bound = NULL);
 
 
 

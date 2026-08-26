@@ -717,12 +717,12 @@ bool runMenu (MenuInfo &menu)
     menu.menu_b.h = MENU_TBM + (n_tblrows + n_mt + n_footer + 1)*MENU_RH + MENU_TBM + MENU_BG;
 
     // set ok button size, don't know position yet
-    menu.ok_b.w = getTextWidth (ok_label) + MENU_BDX*2;
+    uint16_t min_ok_w = getTextWidth (ok_label) + MENU_BDX*2;
     menu.ok_b.h = MENU_RH;
 
     // create cancel button, set size but don't know position yet
     SBox cancel_b;
-    cancel_b.w = getTextWidth (cancel_label) + MENU_BDX*2;
+    uint16_t min_cancel_w = getTextWidth (cancel_label) + MENU_BDX*2;
     cancel_b.h = MENU_RH;
 
     // width is duplicated for each column plus add a bit of right margin
@@ -731,11 +731,11 @@ bool runMenu (MenuInfo &menu)
 
     // insure menu width accommodates ok and/or cancel buttons
     if (menu.cancel == M_NOCANCEL) {
-        if (menu.menu_b.w < MENU_BB + menu.ok_b.w + MENU_BB)
-            menu.menu_b.w = MENU_BB + menu.ok_b.w + MENU_BB;
+        if (menu.menu_b.w < MENU_BB + min_ok_w + MENU_BB)
+            menu.menu_b.w = MENU_BB + min_ok_w + MENU_BB;
     } else {
-        if (menu.menu_b.w < MENU_BB + menu.ok_b.w + MENU_BB + cancel_b.w + MENU_BB)
-            menu.menu_b.w = MENU_BB + menu.ok_b.w + MENU_BB + cancel_b.w + MENU_BB;
+        if (menu.menu_b.w < MENU_BB + min_ok_w + MENU_BB + min_cancel_w + MENU_BB)
+            menu.menu_b.w = MENU_BB + min_ok_w + MENU_BB + min_cancel_w + MENU_BB;
     }
 
 
@@ -749,15 +749,21 @@ bool runMenu (MenuInfo &menu)
 
     // now we can set ok and cancel button positions within the menu box
     if (menu.cancel == M_NOCANCEL) {
-        menu.ok_b.x = menu.menu_b.x + (menu.menu_b.w - menu.ok_b.w)/2;  // center
+        menu.ok_b.w = menu.menu_b.w - 2*MENU_BB;
+        menu.ok_b.x = menu.menu_b.x + MENU_BB;
         menu.ok_b.y = menu.menu_b.y + menu.menu_b.h - MENU_TBM - menu.ok_b.h;
         cancel_b.x = 0;
         cancel_b.y = 0;
+        cancel_b.w = 0;
+        cancel_b.h = 0;
     } else {
+        uint16_t btn_w = (menu.menu_b.w - 3*MENU_BB)/2;
+        menu.ok_b.w = btn_w;
         menu.ok_b.x = menu.menu_b.x + MENU_BB;
         menu.ok_b.y = menu.menu_b.y + menu.menu_b.h - MENU_TBM - menu.ok_b.h;
-        cancel_b.x = menu.menu_b.x + menu.menu_b.w - cancel_b.w - MENU_BB;
-        cancel_b.y = menu.menu_b.y + menu.menu_b.h - MENU_TBM - cancel_b.h;
+        cancel_b.w = btn_w;
+        cancel_b.x = menu.ok_b.x + btn_w + MENU_BB;
+        cancel_b.y = menu.ok_b.y;
     }
 
     // menu_b is now properly positioned
@@ -774,12 +780,16 @@ bool runMenu (MenuInfo &menu)
     // display ok/cancel buttons
     fillSBox (menu.ok_b, MENU_BGC);
     drawSBox (menu.ok_b, MENU_FGC);
-    tft.setCursor (menu.ok_b.x+MENU_BDX, menu.ok_b.y + MENU_BDROP);
+    uint16_t ok_txt_w = getTextWidth (ok_label);
+    uint16_t ok_tx = menu.ok_b.x + (menu.ok_b.w > ok_txt_w ? (menu.ok_b.w - ok_txt_w)/2 : MENU_BDX);
+    tft.setCursor (ok_tx, menu.ok_b.y + MENU_BDROP);
     tft.print (ok_label);
     if (menu.cancel == M_CANCELOK) {
         fillSBox (cancel_b, MENU_BGC);
         drawSBox (cancel_b, MENU_FGC);
-        tft.setCursor (cancel_b.x+MENU_BDX, cancel_b.y + MENU_BDROP);
+        uint16_t cancel_txt_w = getTextWidth (cancel_label);
+        uint16_t cancel_tx = cancel_b.x + (cancel_b.w > cancel_txt_w ? (cancel_b.w - cancel_txt_w)/2 : MENU_BDX);
+        tft.setCursor (cancel_tx, cancel_b.y + MENU_BDROP);
         tft.print (cancel_label);
     }
 
@@ -992,7 +1002,9 @@ void menuRedrawOk (SBox &ok_b, MenuOkState oks)
     }
 
     selectFontStyle (LIGHT_FONT, FAST_FONT);
-    tft.setCursor (ok_b.x+MENU_BDX, ok_b.y + MENU_BDROP);
+    uint16_t ok_txt_w = getTextWidth (ok_label);
+    uint16_t ok_tx = ok_b.x + (ok_b.w > ok_txt_w ? (ok_b.w - ok_txt_w)/2 : MENU_BDX);
+    tft.setCursor (ok_tx, ok_b.y + MENU_BDROP);
     tft.print (ok_label);
 
     // immediate draw if over map

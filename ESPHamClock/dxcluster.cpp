@@ -712,8 +712,8 @@ static void runDXClusterMenu (const SBox &box)
     // note in the ONTA sort menu for why that only works when a row is used by every column).
     // wide layout instead uses MENU_IGNORE: its Bio row spans all 3 columns (label/Yes/No), so
     // dropping all three -- one per column -- shrinks every column by exactly one row in lockstep
-    // and the whole table just gets shorter instead of leaving blank space, same technique (and
-    // same y-compensation below) as ONTA's own 3-column sort menu uses for its Bio row.
+    // and the whole table just gets shorter instead of leaving blank space, same technique
+    // as ONTA's own 3-column sort menu uses for its Bio row.
     bool show_bio_enabled = getQRZId() != QRZ_NONE;
     MenuFieldType bio_lbl_mft_n = show_bio_enabled ? MENU_LABEL : MENU_BLANK;
     MenuFieldType bio_yes_mft_n = show_bio_enabled ? MENU_1OFN  : MENU_BLANK;
@@ -733,11 +733,6 @@ static void runDXClusterMenu (const SBox &box)
 
     SBox menu_b = box;                          // copy, not ref!
     menu_b.y = box.y + 7;
-    if (!narrow && show_bio_enabled)
-        menu_b.y -= 11;                          // one row height (MENU_RH in menu.cpp, not
-                                                  // exported) -- wide table is one row taller
-                                                  // with Bio shown, shift up to compensate so
-                                                  // it doesn't overlap/overflow the pane
     if (narrow) {
         // 2-col layout has plenty of vertical slack in the tall data pane
         menu_b.x = box.x + 5;
@@ -841,7 +836,7 @@ static void runDXClusterMenu (const SBox &box)
         // section reads top-to-bottom instead of column-to-column. This keeps Age above
         // Modes above Bands, stacked, rather than side by side. Bio's row (all 3 columns)
         // disappears entirely -- rather than leaving blank space -- when bio is unavailable,
-        // via MENU_IGNORE + the y-compensation above; see bio_*_mft_w setup for why that's
+        // via MENU_IGNORE; see bio_*_mft_w setup for why that's
         // safe here specifically (every other layout below keeps a fixed row count).
         //   row0: Bio:  | Yes | No        <- only present when show_bio_enabled
         //   row1: Age:  | 10m | 20m

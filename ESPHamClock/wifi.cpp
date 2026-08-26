@@ -2285,6 +2285,7 @@ void updateWiFi(PlotPane skip_pp)
             if (pc == PLOT_CH_STORMS)    fresh_redraw[PLOT_CH_STORMS] = true;
             if (pc == PLOT_CH_LAUNCHES)  fresh_redraw[PLOT_CH_LAUNCHES] = true;
             if (pc == PLOT_CH_BALLOONS)  fresh_redraw[PLOT_CH_BALLOONS] = true;
+            if (pc == PLOT_CH_APRSCLUSTER) fresh_redraw[PLOT_CH_APRSCLUSTER] = true;
 
             // go now
             next_update[pp] = 0;

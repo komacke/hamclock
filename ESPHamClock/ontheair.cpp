@@ -966,12 +966,20 @@ static void runONTASortMenu (const SBox &box)
 
     SBox menu_b = box;                          // copy, not ref!
     menu_b.y = box.y + 7;
-    if (!narrow && show_bio_enabled)
-        menu_b.y -= 11;                          // one row height (MENU_RH in menu.cpp, not
-                                                  // exported) -- 3-col layout is one row taller
-                                                  // with Bio shown (its row isn't removed the
-                                                  // way it is when Bio is off) -- shift up to
-                                                  // compensate so it doesn't overlap the pane
+    if (!narrow && show_bio_enabled) {
+        // one row height (MENU_RH in menu.cpp, not exported) -- 3-col layout is one row
+        // taller with Bio shown (its row isn't removed the way it is when Bio is off) --
+        // shift up to compensate so it doesn't overlap the pane.
+        // N.B. menu_b.y is unsigned: for a pane docked at the very top of the screen
+        // (box.y == 0, eg PANE_1/2/3), box.y+7 can be less than this 11px shift, so guard
+        // against underflow (which previously wrapped y to ~65535 and made runMenu()'s own
+        // off-screen repositioning logic shove the whole menu down to the bottom of the
+        // screen instead of over the pane -- the reported "menu opens at the bottom" bug).
+        if (menu_b.y >= 11)
+            menu_b.y -= 11;
+        else
+            menu_b.y = 0;
+    }
     if (narrow) {
         // 2-col layout has plenty of slack (~104px content in a 139px pane) -- a small
         // inset stays comfortably clear of the map without risking any auto-widen

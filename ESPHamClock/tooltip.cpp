@@ -14,13 +14,26 @@
 
 /* show the given text in a box near the given location.
  * stay up until time out or any user input occurs.
+ * if bound is given, the tooltip is wrapped and positioned to stay entirely within it (eg the
+ * caller's own pane box) rather than being free to spill into neighboring panes -- see below.
  */
-void tooltip (const SCoord &s, const char *tip)
+void tooltip (const SCoord &s, const char *tip, const SBox *bound)
 {
     // save and restore font
     FontWeight fw;
     FontSize fs;
     getFontStyle (&fw, &fs);
+
+    // cap line length so the box fits within bound, if given -- otherwise TT_MAXLL is the only
+    // limit, same as always. N.B. this can only shrink max_ll, never grow it past TT_MAXLL.
+    int max_ll_cap = TT_MAXLL;
+    if (bound) {
+        int fit_ll = ((int)bound->w - 2*TT_BORDER) / TT_FONTW;
+        if (fit_ll < 1)
+            fit_ll = 1;                                 // pane is absurdly narrow -- still try
+        if (fit_ll < max_ll_cap)
+            max_ll_cap = fit_ll;
+    }
 
     // break into roughly same length lines at white space
     typedef struct {
@@ -28,7 +41,7 @@ void tooltip (const SCoord &s, const char *tip)
     } OneLine;
     OneLine tip_lines[TT_MAXLINES];                     // each line
     const size_t tip_len = strlen (tip);
-    int n_lines = tip_len / TT_MAXLL + 1;               // number of lines
+    int n_lines = tip_len / max_ll_cap + 1;             // number of lines
     int nom_ll = tip_len / n_lines;                     // nominal length of each line
     int max_ll = 0;                                     // actual longest line
 
@@ -38,8 +51,10 @@ void tooltip (const SCoord &s, const char *tip)
     for (int i = 0; i < n_lines; i++) {
         OneLine &ol = tip_lines[i];
         ol.start = start;
-        // find right-most blank after start + nom_ll. N.B. beware EOS on last line
-        for (ol.count = 0; tip[start+ol.count] != '\0'; ol.count++)
+        // find right-most blank after start + nom_ll, but never past max_ll_cap -- else, with no
+        // blank in range, a line could still run wider than bound allows. N.B. beware EOS on
+        // last line
+        for (ol.count = 0; tip[start+ol.count] != '\0' && ol.count < max_ll_cap; ol.count++)
             if (tip[start+ol.count] == ' ' && ol.count > nom_ll)
                 break;
         if (ol.count > max_ll)
@@ -52,9 +67,18 @@ void tooltip (const SCoord &s, const char *tip)
     tip_b.w = max_ll * TT_FONTW + 2*TT_BORDER;
     tip_b.h = n_lines * TT_ROWH + TT_BORDER;
 
-    // set location at s but beware right and bottom edges
-    tip_b.x = s.x + tip_b.w >= tft.width() ? tft.width() - tip_b.w : s.x;
-    tip_b.y = s.y + tip_b.h >= tft.height() ? tft.height() - tip_b.h : s.y;
+    // set location at s but beware right and bottom edges -- clamp to bound if given, else to
+    // the whole screen as before
+    uint16_t lo_x = bound ? bound->x : 0;
+    uint16_t hi_x = bound ? bound->x + bound->w : tft.width();
+    uint16_t lo_y = bound ? bound->y : 0;
+    uint16_t hi_y = bound ? bound->y + bound->h : tft.height();
+    tip_b.x = s.x + tip_b.w >= hi_x ? (tip_b.w >= hi_x - lo_x ? lo_x : hi_x - tip_b.w) : s.x;
+    tip_b.y = s.y + tip_b.h >= hi_y ? (tip_b.h >= hi_y - lo_y ? lo_y : hi_y - tip_b.h) : s.y;
+    if (tip_b.x < lo_x)
+        tip_b.x = lo_x;
+    if (tip_b.y < lo_y)
+        tip_b.y = lo_y;
 
     // get current pixels
     uint8_t *backing_store;
