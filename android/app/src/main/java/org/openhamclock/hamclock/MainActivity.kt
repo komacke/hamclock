@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.location.Location
 import android.location.LocationManager
 import android.os.Build
@@ -388,6 +389,18 @@ class MainActivity : AppCompatActivity() {
                 progressBar.visibility = View.GONE
             }
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        hideSystemUI()
+        webView.postDelayed({
+            hideSystemUI()
+            webView.evaluateJavascript(
+                "(function() { if (typeof runSoon === 'function' && typeof getFullImage === 'function') { runSoon(getFullImage); } else { window.dispatchEvent(new Event('resize')); } })();",
+                null
+            )
+        }, 300)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
