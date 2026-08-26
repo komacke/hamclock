@@ -219,7 +219,7 @@ class MainActivity : AppCompatActivity() {
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
             alarmManager?.set(
                 AlarmManager.RTC,
-                System.currentTimeMillis() + 250,
+                System.currentTimeMillis() + 500,
                 pendingIntent
             )
         }

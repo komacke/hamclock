@@ -145,8 +145,7 @@ static void *daemon_worker(void *arg) {
     bool forceSetup = dargs->forceSetup;
 
     if (forceSetup) {
-        LOGI("Setup requested: injecting keypress and omitting -k flag");
-        tft.putChar(' ', false, false); // Immediately satisfies askRun() in setup.cpp without countdown
+        LOGI("Setup requested: omitting -k flag so setup countdown screen runs");
     }
 
     delete dargs;
@@ -165,10 +164,10 @@ static void *daemon_worker(void *arg) {
     argv.push_back(const_cast<char *>(throtVal.c_str()));
     if (!forceSetup) {
         argv.push_back(const_cast<char *>(skipFlag.c_str()));
-    }
-    if (!hasLoc) {
-        argv.push_back(const_cast<char *>(geoFlag.c_str()));
-        LOGI("Host GPS location not available: falling back to GeoIP (-g)");
+        if (!hasLoc) {
+            argv.push_back(const_cast<char *>(geoFlag.c_str()));
+            LOGI("Host GPS location not available: falling back to GeoIP (-g)");
+        }
     }
     if (!bVal.empty()) {
         argv.push_back(const_cast<char *>(bFlag.c_str()));
