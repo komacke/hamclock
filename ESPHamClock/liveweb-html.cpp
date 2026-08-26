@@ -35,6 +35,7 @@ char live_html[] =  R"_raw_html_(
         // config
         const UPDATE_MS = 100;          // update interval
         const MOUSE_JITTER = 5;         // allow this much mouse motion for a touch
+        const LONGPRESS_MS = 500;       // press and hold duration in ms to trigger tooltip
         const APP_W = 800;              // app coord system width
         const nonan_chars =             // supported non-alnum chars
           ['Tab', 'Enter', 'Space', 'Escape', 'Backspace', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'ArrowRight'];
@@ -51,6 +52,8 @@ char live_html[] =  R"_raw_html_(
         var pointerdown_x = 0;          // location of pointerdown event
         var pointerdown_y = 0;          // location of pointerdown event
         var pointermove_ms = 0;         // Date.now when pointermove event
+        var longpress_timer = null;     // timer for long-press detection
+        var longpress_fired = false;    // whether long-press triggered tooltip
         var want_fs, tried_fs;          // whether user wants full screen and has succeeded once
         var wsclose_reload = 1;         // whether to reload if lose ws connection
         var cvs, ctx;                   // handy
@@ -463,7 +466,14 @@ char live_html[] =  R"_raw_html_(
             ctx = cvs.getContext('2d', { alpha: false });       // faster w/o alpha
             ctx.translate(0.5, 0.5);                            // a tiny bit less blurry?
 
-            // pointerdown: record time and position
+            function cancelLongPress() {
+                if (longpress_timer !== null) {
+                    clearTimeout (longpress_timer);
+                    longpress_timer = null;
+                }
+            }
+
+            // pointerdown: record time and position, start long-press timer
             cvs.addEventListener ('pointerdown', function(event) {
                 // check if user wants to go full screen
                 checkFullScreen();
@@ -477,27 +487,56 @@ char live_html[] =  R"_raw_html_(
                     return;
                 }
 
+                cancelLongPress();
+                longpress_fired = false;
+
                 pointermove_ms = Date.now();
                 pointerdown_x = m.x;
                 pointerdown_y = m.y;
                 if (event_verbose)
                     console.log ('pointer down');
+
+                // start long-press timer for primary button/touch without modifiers
+                var mods = event.ctrlKey || event.metaKey;
+                if (event.button === 0 && !mods) {
+                    longpress_timer = setTimeout (function() {
+                        longpress_timer = null;
+                        longpress_fired = true;
+                        if (event_verbose)
+                            console.log ('long press at ' + m.x + ',' + m.y);
+                        // trigger tooltip / secondary tap (button 1)
+                        sendWSMsg ('set_touch?x=' + m.x + '&y=' + m.y + '&button=1');
+                    }, LONGPRESS_MS);
+                }
             });
 
-            // pointerleave: send illegal mouse location 
+            // pointerleave: cancel long-press and send illegal mouse location 
             cvs.addEventListener ('pointerleave', function(event) {
                 // all ours
                 event.preventDefault();
+                cancelLongPress();
 
                 // send location well outside app
                 sendWSMsg ('set_mouse?x=-1&y=-1');
 
             });
 
-            // pointerup: send set_touch
+            // pointercancel: cancel long-press
+            cvs.addEventListener ('pointercancel', function(event) {
+                event.preventDefault();
+                cancelLongPress();
+            });
+
+            // pointerup: send set_touch unless long-press already handled
             cvs.addEventListener ('pointerup', function(event) {
                 // all ours
                 event.preventDefault();
+                cancelLongPress();
+
+                if (longpress_fired) {
+                    longpress_fired = false;
+                    return;
+                }
 
                 // extract application coords
                 const m = getAppCoords (event);
@@ -536,14 +575,19 @@ char live_html[] =  R"_raw_html_(
                 // all ours
                 event.preventDefault();
 
+                // cancel long press if pointer moves beyond jitter
+                const m = getAppCoords (event);
+                if (longpress_timer !== null && m) {
+                    if (Math.abs(m.x-pointerdown_x) > MOUSE_JITTER || Math.abs(m.y-pointerdown_y) > MOUSE_JITTER)
+                        cancelLongPress();
+                }
+
                 // not crazy fast
                 let now = Date.now();
                 if (pointermove_ms + UPDATE_MS > now)
                     return;
                 pointermove_ms = now;
 
-                // extract application coords
-                const m = getAppCoords (event);
                 if (!m) {
                     console.log("pointermove: don't know app_scale yet");
                     return;
