@@ -43,6 +43,37 @@
         android:textSize="14sp"
         android:buttonTint="@color/hamclock_accent" />
 
+    <LinearLayout
+        android:id="@+id/ll_autostart_helper"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:padding="8dp"
+        android:background="#22FFFFFF"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tv_autostart_notice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/autostart_oem_notice"
+            android:textColor="#FFB74D"
+            android:textSize="12sp"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_open_autostart"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/open_autostart_settings"
+            android:textColor="@color/hamclock_text"
+            android:textSize="12sp"
+            android:backgroundTint="#455A64" />
+    </LinearLayout>
+
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"

@@ -107,10 +107,36 @@ class MainActivity : AppCompatActivity() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_backend_settings, null)
         val etBackendHost = dialogView.findViewById<EditText>(R.id.et_backend_host)
         val cbStartOnBoot = dialogView.findViewById<CheckBox>(R.id.cb_start_on_boot)
+        val llAutostartHelper = dialogView.findViewById<LinearLayout>(R.id.ll_autostart_helper)
+        val tvAutostartNotice = dialogView.findViewById<TextView>(R.id.tv_autostart_notice)
+        val btnOpenAutostart = dialogView.findViewById<Button>(R.id.btn_open_autostart)
 
         etBackendHost.setText(currentHost)
         etBackendHost.setSelection(etBackendHost.text.length)
         cbStartOnBoot.isChecked = currentStartOnBoot
+
+        // Check if the current device OS has specific background or OEM auto-start requirements
+        val specialSetting = AutoStartHelper.getSpecialSetting(this)
+        fun updateHelperVisibility(isChecked: Boolean) {
+            if (isChecked && specialSetting != null) {
+                tvAutostartNotice.text = specialSetting.message
+                btnOpenAutostart.setOnClickListener {
+                    try {
+                        startActivity(specialSetting.intent)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to launch special setting intent: ${e.message}")
+                    }
+                }
+                llAutostartHelper.visibility = View.VISIBLE
+            } else {
+                llAutostartHelper.visibility = View.GONE
+            }
+        }
+
+        updateHelperVisibility(currentStartOnBoot)
+        cbStartOnBoot.setOnCheckedChangeListener { _, isChecked ->
+            updateHelperVisibility(isChecked)
+        }
 
         val dialog = AlertDialog.Builder(this, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
             .setTitle(getString(R.string.settings_title))

@@ -9,6 +9,9 @@
     <string name="backend_server_label">Backend Host (host:port):</string>
     <string name="backend_hint">host:port</string>
     <string name="start_on_boot_label">Start automatically on device boot</string>
+    <string name="autostart_oem_notice">This device includes a background Auto-start manager. You may need to enable HamClock there for boot startup to work.</string>
+    <string name="background_restricted_notice">Background activity is restricted for this app in Android Battery settings.</string>
+    <string name="open_autostart_settings">Configure System Settings</string>
     <string name="save_and_restart">Save &amp; Restart</string>
     <string name="save">Save</string>
     <string name="open_setup">Open HamClock Setup</string>
