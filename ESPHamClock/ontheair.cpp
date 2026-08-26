@@ -966,12 +966,6 @@ static void runONTASortMenu (const SBox &box)
 
     SBox menu_b = box;                          // copy, not ref!
     menu_b.y = box.y + 7;
-    if (!narrow && show_bio_enabled)
-        menu_b.y -= 11;                          // one row height (MENU_RH in menu.cpp, not
-                                                  // exported) -- 3-col layout is one row taller
-                                                  // with Bio shown (its row isn't removed the
-                                                  // way it is when Bio is off) -- shift up to
-                                                  // compensate so it doesn't overlap the pane
     if (narrow) {
         // 2-col layout has plenty of slack (~104px content in a 139px pane) -- a small
         // inset stays comfortably clear of the map without risking any auto-widen
