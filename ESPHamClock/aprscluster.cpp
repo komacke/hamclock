@@ -1618,7 +1618,7 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
 
             if (s.x < dist_x) {
                 tooltip (s, "Stations heard nearby. Tap a row for full detail. Tap KM/MI to sort "
-                            "by distance or by time heard.");
+                            "by distance or by time heard.", &box);
                 return (true);
             }
 
@@ -1631,7 +1631,7 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
                 tooltip (s, aprs_sort_recent ? "Sorted by most recently heard. Tap KM/MI again to "
                                                 "sort by distance instead."
                                               : "Sorted by distance, nearest first. Tap KM/MI again "
-                                                "to sort by time heard instead.");
+                                                "to sort by time heard instead.", &box);
                 return (true);
             }
 
@@ -1642,14 +1642,14 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
                 tooltip (s, "Most APRS symbols show as small icons. \"-\" means either the "
                             "alternate symbol table (not decoded) or one of a handful of unused/"
                             "reserved primary-table codes. Tap KM/MI to sort by distance or by "
-                            "time heard.");
+                            "time heard.", &box);
                 return (true);
             }
 
             if (s.x >= age_x) {
                 tooltip (s, "Time since last heard: counts up in seconds, then switches to "
                             "whole minutes, hours, days, etc. Tap KM/MI to sort by distance or "
-                            "by time heard.");
+                            "by time heard.", &box);
                 return (true);
             }
         }
@@ -1673,7 +1673,7 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
 
             selectFontStyle (LIGHT_FONT, FAST_FONT);
             if (s.x < dist_x && getTextWidth (sp.call) > call_w) {
-                tooltip (s, sp.call);
+                tooltip (s, sp.call, &box);
                 return (true);
             }
 
@@ -1726,7 +1726,7 @@ bool checkAPRSClusterTouch (const SCoord &s, const SBox &box)
             } else {
                 snprintf (tip, sizeof(tip), "%s  position unknown  heard %s ago", sp.call, age);
             }
-            tooltip (s, tip);
+            tooltip (s, tip, &box);
             return (true);
         }
     }

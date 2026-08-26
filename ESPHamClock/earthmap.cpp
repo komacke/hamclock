@@ -1363,6 +1363,13 @@ void drawMoreEarth()
 
         // draw goodies unless showing CM_USER
         if (core_map != CM_USER) {
+            // country/state borders (Clouds/Terrain only) must be the lowest-Z overlay --
+            // draw them here, before the grid/sat-path/DX-path/PSK-path lines below, since
+            // those are painted directly on the just-swept map and NOT through drawAllSymbols()
+            // until a few lines later. Without this, drawAllSymbols()'s own (correctly early)
+            // drawCountryBorders() call would run *after* these and paint the border lines
+            // right over the satellite ground track/footprint, DX path and PSK paths.
+            drawCountryBorders();
             drawMapGrid();
             drawSatPathAndFoot();
             if (waiting4DXPath())
