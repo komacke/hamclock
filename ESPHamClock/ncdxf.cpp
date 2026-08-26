@@ -108,14 +108,47 @@ static void drawBeacon (NCDXFBeacon &nb)
     drawMapTag (nb.call, nb.call_b);
 }
 
+/* erase every beacon symbol and call sign tag from the map by restoring the underlying map
+ * pixels. called once, right when beacons transition from on to off, so they don't linger
+ * on screen until the next unrelated full map redraw happens to paint over them.
+ */
+static void eraseBeacons (void)
+{
+    for (NCDXFBeacon *bp = blist; bp < &blist[NBEACONS]; bp++) {
+        if (!overMap (bp->s))
+            continue;
+
+        // triangle symbol
+        SCircle sym_c;
+        sym_c.s = bp->s;
+        sym_c.r = BEACONR;
+        eraseSCircle (sym_c);
+
+        // call sign tag beneath it
+        for (uint16_t dy = 0; dy < bp->call_b.h; dy++)
+            for (uint16_t dx = 0; dx < bp->call_b.w; dx++)
+                drawMapCoord (bp->call_b.x + dx, bp->call_b.y + dy);
+    }
+}
+
 /* update map beacons, typically on each 10 second period unless immediate.
  */
 void updateBeacons (bool immediate)
 {
     // counts as on as long as in rotation set, need not be in front now
     bool beacons_on = brb_rotset & (1 << BRB_SHOW_BEACONS);
-    if (!beacons_on)
+
+    // if just turned off, erase immediately instead of leaving stale symbols on the map
+    // until whatever next unrelated event happens to trigger a full map redraw
+    static bool was_on;
+    if (!beacons_on) {
+        if (was_on) {
+            eraseBeacons();
+            was_on = false;
+        }
         return;
+    }
+    was_on = true;
 
     // process if immediate or it's a new time period
     static uint8_t prev_sec10;
