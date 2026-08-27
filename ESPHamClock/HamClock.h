@@ -381,6 +381,9 @@ typedef enum {
     // N.B. appended so existing bit-mask/table indices for prior entries remain unchanged
     BORDERS_CSPR,
     STATES_CSPR,
+    // N.B. also appended, same reason -- 630m is spectrally below 160m but must not be
+    // inserted there, else every BAND160_CSPR..BAND2_CSPR value below it shifts by one
+    BAND630_CSPR,
     N_CSPR
 } ColorSelection;
 
@@ -1071,7 +1074,12 @@ extern void getLunarRS (const time_t t0, const LatLong &ll, time_t *riset, time_
  */
 
 
-/* consolidated list of supported bands
+/* consolidated list of supported bands.
+ * N.B. HamBandSetting values double as bit positions in persisted band-filter bitmasks
+ * (NV_DXC_BANDS, NV_PSK_BANDS), so new bands must always be appended at the end here, never
+ * inserted in frequency order, or every existing user's saved bitmask silently reinterprets
+ * to the wrong bands. This is why 630m (longer wavelength than 160m) is listed last instead
+ * of first. Same reasoning applies to each entry's *_CSPR value -- see ColorSelection below.
  */
 #define SUPPORTED_BANDS                                 \
     X(HAMBAND_160M, 160, "160",  90, BAND160_CSPR)      \
@@ -1085,7 +1093,8 @@ extern void getLunarRS (const time_t t0, const LatLong &ll, time_t *riset, time_
     X(HAMBAND_12M,   12,  "12",  25, BAND12_CSPR)       \
     X(HAMBAND_10M,   10,  "10",  12, BAND10_CSPR)       \
     X(HAMBAND_6M,     6,   "6",   4, BAND6_CSPR)        \
-    X(HAMBAND_2M,     2,   "2",   0, BAND2_CSPR)
+    X(HAMBAND_2M,     2,   "2",   0, BAND2_CSPR)        \
+    X(HAMBAND_630M, 630, "630",  96, BAND630_CSPR)
 
 #define X(a,b,c,d,e) a,                         // expands SUPPORTED_BANDS to each enum and comma
 typedef enum {

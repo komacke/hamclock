@@ -124,6 +124,14 @@ static const BandEdge band_es[] = {
     { 160, "FT8",       1840,   1843},
     { 160, "RTTY",      1838,   1841},
     { 160, "SSB",       1831,   2000},
+    // 630m -- appended here (not sorted in among the other bands) to match band_info[]'s
+    // own append-only ordering (see SUPPORTED_BANDS in HamClock.h) and to keep every other
+    // band's bandes_idx unchanged. Only the overall allocation is listed -- CW/FT8/WSPR
+    // sub-band edges deliberately omitted rather than guessed here; this whole file is
+    // machine-generated from an external bands.pl source (see file header) that this repo
+    // doesn't have -- get the real sub-edges from mkbands.pl's actual source data instead
+    // of hand-adding them, the way every other row here was produced.
+    { 630, "BAND",       472,    479},
 };
 
 #define N_BE NARRAY(band_es)

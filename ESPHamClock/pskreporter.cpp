@@ -41,11 +41,53 @@ static time_t psk_backoff;                      // current failure backoff, secs
 #define SUBHEAD_DYUP 15                         // distance up from bottom to subheading
 #define TBLHGAP (PLOTBOX123_W/20)               // table horizontal gap
 #define TBLCOLW (43*PLOTBOX123_W/100)           // table column width
-#define TBLROWH ((PLOTBOX123_H-LISTING_Y0-SUBHEAD_DYUP)/(HAMBAND_N/2))      // table row height
 
-// handy test and set whether a band is in use
+// handy test and set whether a band is in use -- defined here (moved up) since pskGridCount()
+// below needs TST_PSKBAND
 #define SET_PSKBAND(b)  (psk_bands |= (1 << (b)))               // record that band b paths are displayed
 #define TST_PSKBAND(b)  ((b) != HAMBAND_NONE && (psk_bands & (1 << (b))) != 0)  // test if band b displayed
+
+// display order for the 2-column band summary grid -- deliberately NOT the same as HamBandSetting's
+// own enum order. HamBandSetting order has to stay append-only (160..2, then 630 tacked on at the
+// end) because its values double as bit positions in persisted filter bitmasks -- see SUPPORTED_BANDS
+// in HamClock.h. But there's no reason the on-screen GRID has to mirror that storage order, and
+// grouping 630m with its nearest neighbor by wavelength (160m) reads better than leaving it stranded
+// as the 13th/last cell. 630m sits first here so it lands directly above 160m whenever it's shown --
+// see pskGridCount() just below for why it only occupies a slot at all once the user enables it.
+static const HamBandSetting psk_grid_order[HAMBAND_N] = {
+    HAMBAND_630M, HAMBAND_160M, HAMBAND_80M, HAMBAND_60M, HAMBAND_40M, HAMBAND_30M, HAMBAND_20M,
+    HAMBAND_17M,  HAMBAND_15M,  HAMBAND_12M, HAMBAND_10M, HAMBAND_6M,  HAMBAND_2M,
+};
+
+/* how many bands the summary grid currently shows. 630m only claims a grid slot -- and shrinks
+ * every row height slightly to make room, since the pane's total height is fixed -- once the
+ * user has actually enabled it; otherwise the grid quietly stays exactly as tall and roomy as
+ * it was before 630m existed. This is why row count/height below are runtime functions rather
+ * than compile-time HAMBAND_N-based macros: they now depend on user state, not just band count.
+ */
+static int pskGridCount (void)
+{
+    return (TST_PSKBAND(HAMBAND_630M) ? HAMBAND_N : HAMBAND_N - 1);
+}
+
+/* rows needed per column for the current grid count, given the fixed 2-column layout. N.B. must
+ * be ceil(n/2): with n always even before 630m existed, floor and ceil were identical, which is
+ * how a plain "/2" went unnoticed for years. Shared by drawPSKPane() and getMaxDistPSK() so their
+ * row/column math can never drift apart the way two independent copies of this once did.
+ */
+static int pskBandRows (void)
+{
+    return ((pskGridCount() + 1) / 2);
+}
+
+/* pixel height of one grid row -- the fixed vertical pane budget divided across however many
+ * rows pskBandRows() currently needs, so adding a row (630m enabled) shrinks every row slightly
+ * rather than overflowing the pane, and removing it (630m disabled) grows them back to normal.
+ */
+static int pskRowHeight (void)
+{
+    return ((PLOTBOX123_H-LISTING_Y0-SUBHEAD_DYUP) / pskBandRows());
+}
 
 
 /* draw a distance target marker at Raw s with the given fill color.
@@ -188,11 +230,18 @@ static void drawPSKPane (const SBox &box)
     tft.print (where_how);
 
     // table
-    for (int i = 0; i < HAMBAND_N; i++) {
-        int row = i % (HAMBAND_N/2);
-        int col = i / (HAMBAND_N/2);
+    const int n_show = pskGridCount();                         // 12, or 13 once 630m is enabled
+    const int show_630 = TST_PSKBAND(HAMBAND_630M);
+    const int n_rows = pskBandRows();
+    const int row_h = pskRowHeight();
+    for (int gi = 0; gi < n_show; gi++) {
+        // skip psk_grid_order[0] (630m) entirely while it's disabled, so the remaining 12
+        // bands render in their original positions at their original (taller) row height
+        HamBandSetting i = psk_grid_order[show_630 ? gi : gi+1];
+        int row = gi % n_rows;
+        int col = gi / n_rows;
         uint16_t x = box.x + TBLHGAP + col*(TBLCOLW+TBLHGAP);
-        uint16_t y = box.y + LISTING_Y0 + row*TBLROWH;
+        uint16_t y = box.y + LISTING_Y0 + row*row_h;
         char report[30];
         if (psk_showdist) {
             float d = bstats[i].maxkm;
@@ -204,13 +253,13 @@ static void drawPSKPane (const SBox &box)
         if (TST_PSKBAND(i)) {
             uint16_t map_col = getMapColor(findColSel((HamBandSetting)i));
             uint16_t txt_col = getGoodTextColor(map_col);
-            tft.fillRect (x, y-LISTING_OS+1, TBLCOLW, TBLROWH-3, map_col);      // leave black below
+            tft.fillRect (x, y-LISTING_OS+1, TBLCOLW, row_h-3, map_col);      // leave black below
             tft.setTextColor (txt_col);
             tft.setCursor (x+2, y);
             tft.print (report);
         } else {
             // disabled, always show but diminished
-            tft.fillRect (x, y-LISTING_OS+1, TBLCOLW, TBLROWH-3, RA8875_BLACK);
+            tft.fillRect (x, y-LISTING_OS+1, TBLCOLW, row_h-3, RA8875_BLACK);
             tft.setTextColor (GRAY);
             tft.setCursor (x+2, y);
             tft.print (report);
@@ -530,10 +579,24 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
     // handy menu entry indices
     // N.B. must be in column-major order
     // N.B. keep in sync!
+    // N.B. runMenu() assigns column/row purely from (array index / n_tblrows), where
+    // n_tblrows = ceil(total items / n_cols) -- it is NOT "fill column 1, then column 2, ...
+    // with whatever's left over". That means the 3 columns here only stay cleanly parallel
+    // (RBN's group above 160/80/60/40, PSK's above 30/20/17/15, WSPR's above 12/10/6/2)
+    // because 33 items / 3 cols happens to divide evenly at 11 rows each. Simply appending
+    // one more item for 630m would push the total to 34, bump n_tblrows to ceil(34/3)=12,
+    // and reflow *every* column's boundaries (eg the item currently at index 11, "15 min",
+    // would shift from being column 2's first row to column 1's last row) -- not just add
+    // a trailing row to whichever column 630m landed in. So 630m is added to column 1's
+    // band group, and one MENU_BLANK pad item is added to the end of each of the other two
+    // columns' band groups, keeping all three columns at a clean 12 rows apiece (36 total).
     enum {
         _M_RBN,  _M_SPOT, _M_WHAT, _M_SHOW, _M_PATH, _M_AGE, _M_1HR, _M_160, _M_80, _M_60, _M_40,
+                 _M_630,
         _M_PSK,  _M_OFDE, _M_CALL, _M_DIST, _M_PON,  _M_15M, _M_6HR, _M_30,  _M_20, _M_17, _M_15,
+                 _M_PAD2,
         _M_WSPR, _M_BYDE, _M_GRID, _M_CNT,  _M_POFF, _M_30M, _M_24H, _M_12,  _M_10, _M_6,  _M_2,
+                 _M_PAD3,
         _M_N
     };
 
@@ -549,7 +612,7 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
     // menu
     #define PRI_INDENT 2
     #define SEC_INDENT 12
-    #define MI_N (HAMBAND_N + 21)                                // ham_bands + controls
+    #define MI_N (HAMBAND_N + 21 + 2)          // ham_bands + controls + 2 column-balancing pads
     MenuItem mitems[MI_N];
 
     if (MI_N != _M_N)
@@ -568,6 +631,7 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
     mitems[_M_80]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_80M),  4, SEC_INDENT, findBandName(HAMBAND_80M), 0};
     mitems[_M_60]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_60M),  4, SEC_INDENT, findBandName(HAMBAND_60M), 0};
     mitems[_M_40]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_40M),  4, SEC_INDENT, findBandName(HAMBAND_40M), 0};
+    mitems[_M_630]  = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_630M), 4, SEC_INDENT, findBandName(HAMBAND_630M), 0};
 
     mitems[_M_PSK]  = {MENU_1OFN, ispsk,     1, PRI_INDENT, "PSK", 0};
     mitems[_M_OFDE] = {MENU_1OFN, of_de,     2, PRI_INDENT, "of DE", 0};
@@ -580,6 +644,7 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
     mitems[_M_20]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_20M),  4, SEC_INDENT, findBandName(HAMBAND_20M), 0};
     mitems[_M_17]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_17M),  4, SEC_INDENT, findBandName(HAMBAND_17M), 0};
     mitems[_M_15]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_15M),  4, SEC_INDENT, findBandName(HAMBAND_15M), 0};
+    mitems[_M_PAD2] = {MENU_BLANK, false,    0, SEC_INDENT, NULL, 0};
 
     mitems[_M_WSPR] = {MENU_1OFN, iswspr,    1, PRI_INDENT, "WSPR", 0};
     mitems[_M_BYDE] = {MENU_1OFN, !of_de,    2, PRI_INDENT, "by DE", 0};
@@ -592,6 +657,7 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
     mitems[_M_10]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_10M),  4, SEC_INDENT, findBandName(HAMBAND_10M), 0};
     mitems[_M_6]    = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_6M),   4, SEC_INDENT, findBandName(HAMBAND_6M), 0};
     mitems[_M_2]    = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_2M),   4, SEC_INDENT, findBandName(HAMBAND_2M), 0};
+    mitems[_M_PAD3] = {MENU_BLANK, false,    0, SEC_INDENT, NULL, 0};
 
     // set age
     switch (psk_maxage_mins) {
@@ -652,6 +718,7 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
             if (mitems[_M_10].set)  SET_PSKBAND(HAMBAND_10M);
             if (mitems[_M_6].set)   SET_PSKBAND(HAMBAND_6M);
             if (mitems[_M_2].set)   SET_PSKBAND(HAMBAND_2M);
+            if (mitems[_M_630].set) SET_PSKBAND(HAMBAND_630M);
 
             // get new age
             if (mitems[_M_15M].set)
@@ -843,12 +910,16 @@ bool getMaxDistPSK (const SCoord &ms, DXSpot *sp, LatLong *mark_ll)
     const SBox &box = plot_b[pp];
     SBox band_box;
     band_box.w = TBLCOLW;
-    band_box.h = TBLROWH;
-    for (int i = 0; i < HAMBAND_N; i++) {
-        int row = i % (HAMBAND_N/2);
-        int col = i / (HAMBAND_N/2);
+    band_box.h = pskRowHeight();
+    const int n_show = pskGridCount();
+    const int show_630 = TST_PSKBAND(HAMBAND_630M);
+    const int n_rows = pskBandRows();
+    for (int gi = 0; gi < n_show; gi++) {
+        HamBandSetting i = psk_grid_order[show_630 ? gi : gi+1];
+        int row = gi % n_rows;
+        int col = gi / n_rows;
         band_box.x = box.x + TBLHGAP + col*(TBLCOLW+TBLHGAP);
-        band_box.y = box.y + LISTING_Y0 + row*TBLROWH;
+        band_box.y = box.y + LISTING_Y0 + row*band_box.h;
         if (TST_PSKBAND(i) && inBox (ms, band_box) && bstats[i].maxkm > 0) {
             // report farthest spot on this band
             *sp = reports[spot_maxrpt[i]];
