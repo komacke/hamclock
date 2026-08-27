@@ -571,12 +571,17 @@ typedef struct {
 #define NV_ONAIR_LEN            30      // max ONAIR text, including EOS
 #define NV_TITLE_LEN            70      // max alternate callsign, including EOS
 
+// title field may contain up to this many ';'-separated entries that rotate in turn.
+// N.B. kept within the existing NV_TITLE_LEN budget so NVRAM/EEPROM layout, and thus
+// compatibility with previously-saved settings, is unaffected.
+#define MAX_TITLE_ENTRIES        6
+
 
 // manage callsign display area and alternate uses
 typedef enum {
     CT_CALL,                            // display real call
     CT_TITLE,                           // display title text
-    CT_BOTH,                            // alternate between call and title
+    CT_BOTH,                            // alternate among call and each title entry
     CT_ONAIR,                           // display ON AIR message
 } Call_t;
 typedef struct {
@@ -586,7 +591,11 @@ typedef struct {
 typedef struct {
     char call[NV_CALLSIGN_LEN];         // real callsign for CT_CALL, used by setup.cpp
     char onair[NV_ONAIR_LEN];           // real on-air message for CT_ONAIR, used by setup.cpp
-    char title[NV_TITLE_LEN];           // CT_TITLE text if used
+    char title[NV_TITLE_LEN];           // CT_TITLE text as stored/edited, ';'-separated entries
+    char title_parsed[NV_TITLE_LEN];    // working copy of title with ';' -> '\0' for tokenizing
+    char *title_list[MAX_TITLE_ENTRIES];// pointers into title_parsed, one per entry
+    int n_titles;                       // number of valid entries in title_list, may be 0
+    int title_idx;                      // index into title_list currently shown for CT_TITLE
     Call_t ct_prefer;                   // CT_CALL CT_TITLE or CT_BOTH set via menu
     Call_t now_showing;                 // displaying CT_CALL CT_TITLE or CT_ONAIR
     time_t next_update;                 // when to rotate if ct_prefer is CT_BOTH
