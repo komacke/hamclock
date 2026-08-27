@@ -381,7 +381,20 @@ typedef enum {
     // N.B. appended so existing bit-mask/table indices for prior entries remain unchanged
     BORDERS_CSPR,
     STATES_CSPR,
-    N_CSPR
+    N_CSPR,                  // csel_pr[] in setup.cpp is sized to exactly this many editable colors
+
+    // 630m is deliberately declared AFTER N_CSPR, not folded into the editable csel_pr[] table
+    // above it: the Color Editor's page 6 is already exactly full (12 tightly-packed rows, no
+    // spare vertical room on real hardware -- confirmed, not just a layout guess), so there's no
+    // row to give it. Rather than reflow that whole page, 630m gets a single hardcoded color that
+    // isn't user-editable. Because its value is >= N_CSPR, it must NEVER be used to index
+    // csel_pr[N_CSPR] directly (that's one past the end of the array) -- every function that reads
+    // a ColorSelection by indexing csel_pr[] (getMapColor, getMapColorThin, getMapColorName,
+    // getRawPathWidth, getRawSpotRadius, getPathDashed) has an explicit early check for this value
+    // before it ever touches csel_pr[]. findColSel(HAMBAND_630M) returns this value, and spot/path
+    // drawing code calls those functions with it via findColSel() just like every other band, so
+    // this guard has to be airtight, not best-effort.
+    BAND630_CSPR
 } ColorSelection;
 
 
@@ -1071,7 +1084,12 @@ extern void getLunarRS (const time_t t0, const LatLong &ll, time_t *riset, time_
  */
 
 
-/* consolidated list of supported bands
+/* consolidated list of supported bands.
+ * N.B. HamBandSetting values double as bit positions in persisted band-filter bitmasks
+ * (NV_DXC_BANDS, NV_PSK_BANDS), so new bands must always be appended at the end here, never
+ * inserted in frequency order, or every existing user's saved bitmask silently reinterprets
+ * to the wrong bands. This is why 630m (longer wavelength than 160m) is listed last instead
+ * of first. Same reasoning applies to each entry's *_CSPR value -- see ColorSelection below.
  */
 #define SUPPORTED_BANDS                                 \
     X(HAMBAND_160M, 160, "160",  90, BAND160_CSPR)      \
@@ -1085,7 +1103,8 @@ extern void getLunarRS (const time_t t0, const LatLong &ll, time_t *riset, time_
     X(HAMBAND_12M,   12,  "12",  25, BAND12_CSPR)       \
     X(HAMBAND_10M,   10,  "10",  12, BAND10_CSPR)       \
     X(HAMBAND_6M,     6,   "6",   4, BAND6_CSPR)        \
-    X(HAMBAND_2M,     2,   "2",   0, BAND2_CSPR)
+    X(HAMBAND_2M,     2,   "2",   0, BAND2_CSPR)        \
+    X(HAMBAND_630M, 630, "630",  96, BAND630_CSPR)
 
 #define X(a,b,c,d,e) a,                         // expands SUPPORTED_BANDS to each enum and comma
 typedef enum {

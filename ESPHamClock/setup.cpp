@@ -6035,6 +6035,8 @@ bool useMagBearing()
  */
 int getRawPathWidth (ColorSelection id)
 {
+    if (id == BAND630_CSPR)
+        return (RAWTHINPATHSZ);            // always on, always thin -- no editable on/off state
     ColSelPrompt &csp = csel_pr[id];
     return (csp.o_state ? (csp.t_state ? RAWTHINPATHSZ : RAWWIDEPATHSZ) : 0);
 }
@@ -6045,6 +6047,8 @@ int getRawPathWidth (ColorSelection id)
  */
 int getRawSpotRadius (ColorSelection id)
 {
+    if (id == BAND630_CSPR)
+        return (2*RAWTHINPATHSZ);          // matches the ColSelPrompt-overload's own formula, thin
     ColSelPrompt &csp = csel_pr[id];
     return (getRawSpotRadius (csp));
 }
@@ -6354,10 +6358,19 @@ bool setDXCluster (char *host, char *port_str, Message &ynot)
     return(true);
 }
 
+// hardcoded 630m color, since it has no editable Setup page slot -- see the BAND630_CSPR
+// comment in HamClock.h for why. Used by every getMapColor()/getRawPathWidth()/etc accessor
+// below, all of which must check for this id BEFORE indexing csel_pr[], since BAND630_CSPR's
+// enum value is N_CSPR (one past the end of that array).
+#define BAND630_HARDCODED_COLOR RGB565(120,80,220)      // dark violet -- distinct from all 12
+                                                          // other band colors and from borders/states
+
 /* return current rgb565 color for the given ColorSelection
  */
 uint16_t getMapColor (ColorSelection id)
 {
+    if (id == BAND630_CSPR)
+        return (BAND630_HARDCODED_COLOR);
     uint16_t c;
     if (id >= 0 && id < N_CSPR) {
         ColSelPrompt &p = csel_pr[id];
@@ -6373,6 +6386,8 @@ uint16_t getMapColor (ColorSelection id)
  */
 bool getMapColorThin (ColorSelection id)
 {
+    if (id == BAND630_CSPR)
+        return (true);                                   // always drawn thin, matches most bands' default
     return (id >= 0 && id < N_CSPR) ? csel_pr[id].t_state : true;
 }
 
@@ -6380,6 +6395,8 @@ bool getMapColorThin (ColorSelection id)
  */
 const char* getMapColorName (ColorSelection id)
 {
+    if (id == BAND630_CSPR)
+        return ("630 m");
     const char *n;
     if (id >= 0 && id < N_CSPR)
         n = csel_pr[id].p_str;
@@ -6416,6 +6433,8 @@ bool setMapColor (const char *name, uint16_t rgb565)
  */
 bool getPathDashed (ColorSelection id)
 {
+    if (id == BAND630_CSPR)
+        return (false);                    // no editable dash control -- solid, like most bands' default
     return (csel_pr[id].a_state);
 }
 
