@@ -1216,18 +1216,6 @@ static ColSelPrompt csel_pr[N_CSPR] = {
             false, true, true, RGB565(255,250,0), NV_20M_COLOR, "20 m",
             {CSEL_COL1X+CSEL_ADX, R2Y(12)+CSEL_TBDY, CSEL_TBSZ, CSEL_TBSZ}, false, 0, 0, 0},
 
-    // N.B. row 13 is new -- this page was previously exactly 12 rows tall (R2Y(13) was only
-    // ever used as the RGB-slider divider lines' bottom endpoint, not real row content, see
-    // drawCSelInitGUI() below). Verify this still fits the physical screen before shipping;
-    // the divider-line height calc just below is extended to R2Y(14) to match.
-    {{CSEL_COL1X+CSEL_PDX, R2Y(13), CSEL_PW, PR_H},
-            {CSEL_COL1X+CSEL_TDX, R2Y(13)+CSEL_TBDY, CSEL_TBSZ, CSEL_TBSZ},
-            {CSEL_COL1X+CSEL_EDX, R2Y(13)+CSEL_TBDY, CSEL_TBSZ, CSEL_TBSZ},
-            {CSEL_COL1X, R2Y(13)+CSEL_TBDY, CSEL_TBSZ, CSEL_TBSZ},
-            {CSEL_COL1X+CSEL_DDX1, R2Y(13)+CSEL_DDY, CSEL_DW, CSEL_DH},
-            false, true, true, RGB565(120,80,220), NV_630M_COLOR, "630 m",
-            {CSEL_COL1X+CSEL_ADX, R2Y(13)+CSEL_TBDY, CSEL_TBSZ, CSEL_TBSZ}, false, 0, 0, 0},
-
     {{CSEL_COL2X+CSEL_PDX, R2Y(7), CSEL_PW, PR_H},
             {CSEL_COL2X+CSEL_TDX, R2Y(7)+CSEL_TBDY, CSEL_TBSZ, CSEL_TBSZ},
             {CSEL_COL2X+CSEL_EDX, R2Y(7)+CSEL_TBDY, CSEL_TBSZ, CSEL_TBSZ},
@@ -3068,8 +3056,8 @@ static void drawCSelInitGUI()
     for (int dx = 0; dx < CSEL_DW; dx++) {
         int v = 255 * powf ((float)dx / (CSEL_DW-1), CSEL_GAMMA);
         uint16_t c = RGB565 (v, v, v);
-        tft.fillRect (CSEL_COL1X+CSEL_DDX1+dx, R2Y(1), 1, R2Y(14)-R2Y(1)-5, c);   // now 13 rows in col1
-        tft.fillRect (CSEL_COL2X+CSEL_DDX2+dx, R2Y(4), 1, R2Y(13)-R2Y(4)-5, c);   // col2 still 12 rows
+        tft.fillRect (CSEL_COL1X+CSEL_DDX1+dx, R2Y(1), 1, R2Y(13)-R2Y(1)-5, c);
+        tft.fillRect (CSEL_COL2X+CSEL_DDX2+dx, R2Y(4), 1, R2Y(13)-R2Y(4)-5, c);
     }
 
     // draw tick boxes, their prompts and set color editing sliders from the one that is set
@@ -6047,6 +6035,8 @@ bool useMagBearing()
  */
 int getRawPathWidth (ColorSelection id)
 {
+    if (id == BAND630_CSPR)
+        return (RAWTHINPATHSZ);            // always on, always thin -- no editable on/off state
     ColSelPrompt &csp = csel_pr[id];
     return (csp.o_state ? (csp.t_state ? RAWTHINPATHSZ : RAWWIDEPATHSZ) : 0);
 }
@@ -6057,6 +6047,8 @@ int getRawPathWidth (ColorSelection id)
  */
 int getRawSpotRadius (ColorSelection id)
 {
+    if (id == BAND630_CSPR)
+        return (2*RAWTHINPATHSZ);          // matches the ColSelPrompt-overload's own formula, thin
     ColSelPrompt &csp = csel_pr[id];
     return (getRawSpotRadius (csp));
 }
@@ -6366,10 +6358,19 @@ bool setDXCluster (char *host, char *port_str, Message &ynot)
     return(true);
 }
 
+// hardcoded 630m color, since it has no editable Setup page slot -- see the BAND630_CSPR
+// comment in HamClock.h for why. Used by every getMapColor()/getRawPathWidth()/etc accessor
+// below, all of which must check for this id BEFORE indexing csel_pr[], since BAND630_CSPR's
+// enum value is N_CSPR (one past the end of that array).
+#define BAND630_HARDCODED_COLOR RGB565(120,80,220)      // dark violet -- distinct from all 12
+                                                          // other band colors and from borders/states
+
 /* return current rgb565 color for the given ColorSelection
  */
 uint16_t getMapColor (ColorSelection id)
 {
+    if (id == BAND630_CSPR)
+        return (BAND630_HARDCODED_COLOR);
     uint16_t c;
     if (id >= 0 && id < N_CSPR) {
         ColSelPrompt &p = csel_pr[id];
@@ -6385,6 +6386,8 @@ uint16_t getMapColor (ColorSelection id)
  */
 bool getMapColorThin (ColorSelection id)
 {
+    if (id == BAND630_CSPR)
+        return (true);                                   // always drawn thin, matches most bands' default
     return (id >= 0 && id < N_CSPR) ? csel_pr[id].t_state : true;
 }
 
@@ -6392,6 +6395,8 @@ bool getMapColorThin (ColorSelection id)
  */
 const char* getMapColorName (ColorSelection id)
 {
+    if (id == BAND630_CSPR)
+        return ("630 m");
     const char *n;
     if (id >= 0 && id < N_CSPR)
         n = csel_pr[id].p_str;
@@ -6428,6 +6433,8 @@ bool setMapColor (const char *name, uint16_t rgb565)
  */
 bool getPathDashed (ColorSelection id)
 {
+    if (id == BAND630_CSPR)
+        return (false);                    // no editable dash control -- solid, like most bands' default
     return (csel_pr[id].a_state);
 }
 

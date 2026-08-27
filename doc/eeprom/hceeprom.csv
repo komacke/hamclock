@@ -244,4 +244,3 @@ Addr,Name,Len,Type,Description
 0xD28,NV_APRSCATFILTER,2,i,bitmask of APRSCategory values currently shown in the pane
 0xD2B,NV_HAMALERT_PASSWD,32,s,HamAlert.org telnet password; blank means HamAlert pane is unused
 0xD4C,NV_HAMALERT_LOGIN,64,s,HamAlert.org telnet login call sign; blank means use station call
-0xD8D,NV_630M_COLOR,2,RGB,630 m path color as RGB 565

@@ -427,9 +427,6 @@ static const uint8_t nv_sizes[NV_N] = {
     NV_HAMALERT_PASSWD_LEN,     // NV_HAMALERT_PASSWD
     NV_HAMALERT_LOGIN_LEN,      // NV_HAMALERT_LOGIN
 
-    // 265
-    2,                          // NV_630M_COLOR
-
 };
 
 #endif // _NVRAMSIZE_H

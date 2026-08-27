@@ -381,10 +381,20 @@ typedef enum {
     // N.B. appended so existing bit-mask/table indices for prior entries remain unchanged
     BORDERS_CSPR,
     STATES_CSPR,
-    // N.B. also appended, same reason -- 630m is spectrally below 160m but must not be
-    // inserted there, else every BAND160_CSPR..BAND2_CSPR value below it shifts by one
-    BAND630_CSPR,
-    N_CSPR
+    N_CSPR,                  // csel_pr[] in setup.cpp is sized to exactly this many editable colors
+
+    // 630m is deliberately declared AFTER N_CSPR, not folded into the editable csel_pr[] table
+    // above it: the Color Editor's page 6 is already exactly full (12 tightly-packed rows, no
+    // spare vertical room on real hardware -- confirmed, not just a layout guess), so there's no
+    // row to give it. Rather than reflow that whole page, 630m gets a single hardcoded color that
+    // isn't user-editable. Because its value is >= N_CSPR, it must NEVER be used to index
+    // csel_pr[N_CSPR] directly (that's one past the end of the array) -- every function that reads
+    // a ColorSelection by indexing csel_pr[] (getMapColor, getMapColorThin, getMapColorName,
+    // getRawPathWidth, getRawSpotRadius, getPathDashed) has an explicit early check for this value
+    // before it ever touches csel_pr[]. findColSel(HAMBAND_630M) returns this value, and spot/path
+    // drawing code calls those functions with it via findColSel() just like every other band, so
+    // this guard has to be airtight, not best-effort.
+    BAND630_CSPR
 } ColorSelection;
 
 

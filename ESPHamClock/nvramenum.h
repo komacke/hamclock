@@ -424,9 +424,6 @@ typedef enum {
     NV_HAMALERT_PASSWD,             // HamAlert.org telnet password; blank means HamAlert pane is unused
     NV_HAMALERT_LOGIN,              // HamAlert.org telnet login call sign; blank means use station call
 
-    // 265
-    NV_630M_COLOR,                  // 630 m path color as RGB 565
-
     NV_N
 
 } NV_Name;
