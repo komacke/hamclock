@@ -579,24 +579,20 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
     // handy menu entry indices
     // N.B. must be in column-major order
     // N.B. keep in sync!
-    // N.B. runMenu() assigns column/row purely from (array index / n_tblrows), where
-    // n_tblrows = ceil(total items / n_cols) -- it is NOT "fill column 1, then column 2, ...
-    // with whatever's left over". That means the 3 columns here only stay cleanly parallel
-    // (RBN's group above 160/80/60/40, PSK's above 30/20/17/15, WSPR's above 12/10/6/2)
-    // because 33 items / 3 cols happens to divide evenly at 11 rows each. Simply appending
-    // one more item for 630m would push the total to 34, bump n_tblrows to ceil(34/3)=12,
-    // and reflow *every* column's boundaries (eg the item currently at index 11, "15 min",
-    // would shift from being column 2's first row to column 1's last row) -- not just add
-    // a trailing row to whichever column 630m landed in. So 630m is added to column 1's
-    // band group, and one MENU_BLANK pad item is added to the end of each of the other two
-    // columns' band groups, keeping all three columns at a clean 12 rows apiece (36 total).
+    // N.B. band checkboxes are now split into their own 4-column block (rows 7-10) instead of
+    // being folded 1-per-row into the 3 control columns. Control rows above (0-6) still only use
+    // columns 1-3, exactly as before -- column 4 is left MENU_BLANK there so no unrelated control
+    // row (eg "Age:", "Path:") ever gets a stray band checkbox tacked onto its end. This keeps every
+    // row's meaning as before (see old_str-era comment history) while giving bands 4 slots/row
+    // instead of 1, bringing the total table back down to 11 rows -- the same height as before
+    // 630m existed -- rather than the 12 rows a naive single-column append produces. Band checkbox
+    // menu_b.w below is explicitly padded a couple px past the tightest fit -- see that comment
+    // for why (a zero-gap column boundary was letting one row's checkboxes overlap each other).
     enum {
-        _M_RBN,  _M_SPOT, _M_WHAT, _M_SHOW, _M_PATH, _M_AGE, _M_1HR, _M_160, _M_80, _M_60, _M_40,
-                 _M_630,
-        _M_PSK,  _M_OFDE, _M_CALL, _M_DIST, _M_PON,  _M_15M, _M_6HR, _M_30,  _M_20, _M_17, _M_15,
-                 _M_PAD2,
-        _M_WSPR, _M_BYDE, _M_GRID, _M_CNT,  _M_POFF, _M_30M, _M_24H, _M_12,  _M_10, _M_6,  _M_2,
-                 _M_PAD3,
+        _M_RBN,  _M_SPOT, _M_WHAT, _M_SHOW, _M_PATH, _M_AGE, _M_1HR, _M_630, _M_40, _M_15, _M_2,
+        _M_PSK,  _M_OFDE, _M_CALL, _M_DIST, _M_PON,  _M_15M, _M_6HR, _M_160, _M_30, _M_12, _M_PADA,
+        _M_WSPR, _M_BYDE, _M_GRID, _M_CNT,  _M_POFF, _M_30M, _M_24H, _M_80,  _M_20, _M_10, _M_PADB,
+        _M_PADC0,_M_PADC1,_M_PADC2,_M_PADC3,_M_PADC4,_M_PADC5,_M_PADC6,_M_60, _M_17, _M_6,  _M_PADD,
         _M_N
     };
 
@@ -611,8 +607,8 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
 
     // menu
     #define PRI_INDENT 2
-    #define SEC_INDENT 12
-    #define MI_N (HAMBAND_N + 21 + 2)          // ham_bands + controls + 2 column-balancing pads
+    #define SEC_INDENT 8            // was 12 -- see width-gutter comment above
+    #define MI_N (4*11)                        // 4 cols x 11 rows -- see enum comment above
     MenuItem mitems[MI_N];
 
     if (MI_N != _M_N)
@@ -621,43 +617,56 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
     // runMenu() expects column-major entries
 
     mitems[_M_RBN]  = {MENU_1OFN,  isrbn,    1, PRI_INDENT, "RBN", 0};
-    mitems[_M_SPOT] = {MENU_LABEL, false,    0, PRI_INDENT, "Spot:", 0};
-    mitems[_M_WHAT] = {MENU_LABEL, false,    0, PRI_INDENT, "What:", 0};
-    mitems[_M_SHOW] = {MENU_LABEL, false,    0, PRI_INDENT, "Show:", 0};
-    mitems[_M_PATH] = {MENU_LABEL, false,    0, PRI_INDENT, "Path:", 0};
+    mitems[_M_SPOT] = {MENU_LABEL, false,    0, PRI_INDENT, "Spt:", 0};   // was "Spot:" -- see below
+    mitems[_M_WHAT] = {MENU_LABEL, false,    0, PRI_INDENT, "Wht:", 0};   // was "What:"
+    mitems[_M_SHOW] = {MENU_LABEL, false,    0, PRI_INDENT, "Shw:", 0};   // was "Show:"
+    mitems[_M_PATH] = {MENU_LABEL, false,    0, PRI_INDENT, "Pth:", 0};   // was "Path:"
     mitems[_M_AGE]  = {MENU_LABEL, false,    0, PRI_INDENT, "Age:", 0};
-    mitems[_M_1HR]  = {MENU_1OFN,  false,    6, 5, "1 hr", 0};
-    mitems[_M_160]  = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_160M), 4, SEC_INDENT, findBandName(HAMBAND_160M), 0};
-    mitems[_M_80]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_80M),  4, SEC_INDENT, findBandName(HAMBAND_80M), 0};
-    mitems[_M_60]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_60M),  4, SEC_INDENT, findBandName(HAMBAND_60M), 0};
-    mitems[_M_40]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_40M),  4, SEC_INDENT, findBandName(HAMBAND_40M), 0};
+    mitems[_M_1HR]  = {MENU_1OFN,  false,    6, 5, "1hr", 0};    // was "1 hr" -- see width-gutter comment
     mitems[_M_630]  = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_630M), 4, SEC_INDENT, findBandName(HAMBAND_630M), 0};
+    mitems[_M_40]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_40M),  4, SEC_INDENT, findBandName(HAMBAND_40M), 0};
+    mitems[_M_15]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_15M),  4, SEC_INDENT, findBandName(HAMBAND_15M), 0};
+    mitems[_M_2]    = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_2M),   4, SEC_INDENT, findBandName(HAMBAND_2M), 0};
 
     mitems[_M_PSK]  = {MENU_1OFN, ispsk,     1, PRI_INDENT, "PSK", 0};
-    mitems[_M_OFDE] = {MENU_1OFN, of_de,     2, PRI_INDENT, "of DE", 0};
+    mitems[_M_OFDE] = {MENU_1OFN, of_de,     2, PRI_INDENT, "ofDE", 0};   // was "of DE" -- see enum comment
     mitems[_M_CALL] = {MENU_1OFN, use_call,  3, PRI_INDENT, "Call", 0};
-    mitems[_M_DIST] = {MENU_1OFN, show_dist, 7, PRI_INDENT, "MaxDst", 0};
+    mitems[_M_DIST] = {MENU_1OFN, show_dist, 7, PRI_INDENT, "MaxD", 0};   // was "MaxDst" -- shortened,
+                                                                          // see enum comment above
     mitems[_M_PON]  = {MENU_1OFN, show_path, 8, PRI_INDENT, "On", 0};
-    mitems[_M_15M]  = {MENU_1OFN, false,     6, PRI_INDENT, "15 min", 0};
-    mitems[_M_6HR]  = {MENU_1OFN, false,     6, PRI_INDENT, "6 hrs", 0};
+    mitems[_M_15M]  = {MENU_1OFN, false,     6, PRI_INDENT, "15m", 0};    // was "15 min" -- shortened
+                                                                          // to keep 4-col width in bounds
+    mitems[_M_6HR]  = {MENU_1OFN, false,     6, PRI_INDENT, "6hr", 0};    // was "6 hrs"
+    mitems[_M_160]  = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_160M), 4, SEC_INDENT, findBandName(HAMBAND_160M), 0};
     mitems[_M_30]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_30M),  4, SEC_INDENT, findBandName(HAMBAND_30M), 0};
-    mitems[_M_20]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_20M),  4, SEC_INDENT, findBandName(HAMBAND_20M), 0};
-    mitems[_M_17]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_17M),  4, SEC_INDENT, findBandName(HAMBAND_17M), 0};
-    mitems[_M_15]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_15M),  4, SEC_INDENT, findBandName(HAMBAND_15M), 0};
-    mitems[_M_PAD2] = {MENU_BLANK, false,    0, SEC_INDENT, NULL, 0};
+    mitems[_M_12]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_12M),  4, SEC_INDENT, findBandName(HAMBAND_12M), 0};
+    mitems[_M_PADA] = {MENU_BLANK, false,    0, SEC_INDENT, NULL, 0};
 
     mitems[_M_WSPR] = {MENU_1OFN, iswspr,    1, PRI_INDENT, "WSPR", 0};
-    mitems[_M_BYDE] = {MENU_1OFN, !of_de,    2, PRI_INDENT, "by DE", 0};
+    mitems[_M_BYDE] = {MENU_1OFN, !of_de,    2, PRI_INDENT, "byDE", 0};   // was "by DE"
     mitems[_M_GRID] = {MENU_1OFN, !use_call, 3, PRI_INDENT, "Grid", 0};
-    mitems[_M_CNT]  = {MENU_1OFN, !show_dist,7, PRI_INDENT, "Count", 0};
+    mitems[_M_CNT]  = {MENU_1OFN, !show_dist,7, PRI_INDENT, "Cnt", 0};    // was "Count"
     mitems[_M_POFF] = {MENU_1OFN, !show_path,8, PRI_INDENT, "Off", 0};
-    mitems[_M_30M]  = {MENU_1OFN, false,     6, PRI_INDENT, "30 min", 0};
-    mitems[_M_24H]  = {MENU_1OFN, false,     6, PRI_INDENT, "24 hrs", 0};
-    mitems[_M_12]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_12M),  4, SEC_INDENT, findBandName(HAMBAND_12M), 0};
+    mitems[_M_30M]  = {MENU_1OFN, false,     6, PRI_INDENT, "30m", 0};    // was "30 min"
+    mitems[_M_24H]  = {MENU_1OFN, false,     6, PRI_INDENT, "24hr", 0};   // was "24 hrs"
+    mitems[_M_80]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_80M),  4, SEC_INDENT, findBandName(HAMBAND_80M), 0};
+    mitems[_M_20]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_20M),  4, SEC_INDENT, findBandName(HAMBAND_20M), 0};
     mitems[_M_10]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_10M),  4, SEC_INDENT, findBandName(HAMBAND_10M), 0};
-    mitems[_M_6]    = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_6M),   4, SEC_INDENT, findBandName(HAMBAND_6M), 0};
-    mitems[_M_2]    = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_2M),   4, SEC_INDENT, findBandName(HAMBAND_2M), 0};
-    mitems[_M_PAD3] = {MENU_BLANK, false,    0, SEC_INDENT, NULL, 0};
+    mitems[_M_PADB] = {MENU_BLANK, false,    0, SEC_INDENT, NULL, 0};
+
+    // 4th column: blank alongside the control rows (0-6) so no control row picks up a stray
+    // band checkbox, then real band entries for rows 7-9, blank again on the final row (10)
+    mitems[_M_PADC0] = {MENU_BLANK, false,   0, PRI_INDENT, NULL, 0};
+    mitems[_M_PADC1] = {MENU_BLANK, false,   0, PRI_INDENT, NULL, 0};
+    mitems[_M_PADC2] = {MENU_BLANK, false,   0, PRI_INDENT, NULL, 0};
+    mitems[_M_PADC3] = {MENU_BLANK, false,   0, PRI_INDENT, NULL, 0};
+    mitems[_M_PADC4] = {MENU_BLANK, false,   0, PRI_INDENT, NULL, 0};
+    mitems[_M_PADC5] = {MENU_BLANK, false,   0, PRI_INDENT, NULL, 0};
+    mitems[_M_PADC6] = {MENU_BLANK, false,   0, PRI_INDENT, NULL, 0};
+    mitems[_M_60]    = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_60M), 4, SEC_INDENT, findBandName(HAMBAND_60M), 0};
+    mitems[_M_17]    = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_17M), 4, SEC_INDENT, findBandName(HAMBAND_17M), 0};
+    mitems[_M_6]     = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_6M),  4, SEC_INDENT, findBandName(HAMBAND_6M), 0};
+    mitems[_M_PADD]  = {MENU_BLANK, false,   0, SEC_INDENT, NULL, 0};
 
     // set age
     switch (psk_maxage_mins) {
@@ -671,13 +680,25 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
 
     // create a box for the menu
     SBox menu_b;
-    menu_b.x = box.x+9;
-    menu_b.y = box.y + 5;
-    menu_b.w = 0;               // shrink to fit
+    menu_b.x = box.x+2;                 // was +9; trimmed for headroom now menu is 4 cols wide
+    menu_b.y = box.y + 1;               // was +5; trimmed to claw back a few px against
+                                        // the map border now that 630m makes this 12 rows tall
+    // runMenu() sizes each column to EXACTLY the widest item in the whole menu, with zero gap
+    // to the next column. That's invisible almost everywhere because most items are shorter
+    // than whatever item is driving the max -- but row 7 (630 | 160) has two items that are
+    // BOTH tied for that max, sitting side by side, so that one pair has zero slack and the
+    // checkbox for the next column visibly notches into the previous column's last character.
+    // Fix: explicitly request 2px more per column than the tightest possible fit (runMenu()
+    // only ever grows menu_b.w from what's requested here, never shrinks it), so every column,
+    // including 630|160, gets a small real gap. Verified against real content widths: 35px is
+    // the true widest item at the labels/indents below, so 37px/col (150px total) is requested.
+    // If any label or indent here changes, recompute (label_chars*6 + indent + 9) for every
+    // item and make sure this stays a couple px above the new max before assuming it still fits.
+    menu_b.w = 150;
 
     // run
     SBox ok_b;
-    MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 3, MI_N, mitems};
+    MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 4, MI_N, mitems};
     if (runMenu (menu)) {
 
         // handy
