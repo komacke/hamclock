@@ -18,7 +18,9 @@
   #define _IS_UNIX
 #endif
 
-#if defined(__linux__)
+#if defined(__ANDROID__)
+  #define _IS_ANDROID
+#elif defined(__linux__)
   #define _IS_LINUX
 #endif
 
