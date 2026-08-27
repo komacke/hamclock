@@ -20,4 +20,5 @@ object HamClockNative {
 
 
     external fun isDaemonRunning(): Boolean
+    external fun setAllowExternalAccess(allow: Boolean)
 }

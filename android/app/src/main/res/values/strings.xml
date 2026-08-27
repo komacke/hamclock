@@ -16,6 +16,13 @@
     <string name="save">Save</string>
     <string name="open_setup">Open HamClock Setup</string>
     <string name="cancel">Cancel</string>
+
+    <string name="allow_external_label">Allow local network access (Wi-Fi / LAN)</string>
+    <string name="mdns_name_label">Device Name for mDNS (.local):</string>
+    <string name="mdns_name_hint">hamclock</string>
+    <string name="local_url_label">Access from browser on your local network:</string>
+    <string name="copy_url">Copy URL</string>
+    <string name="copied_to_clipboard">Copied URL to clipboard</string>
 </resources>
 
 

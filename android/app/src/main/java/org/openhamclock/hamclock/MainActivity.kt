@@ -37,6 +37,13 @@ import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.net.wifi.WifiManager
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
+import android.text.Editable
+import android.text.TextWatcher
+import android.widget.Toast
 import java.io.File
 import java.net.Socket
 import java.util.concurrent.Executors
@@ -48,12 +55,18 @@ class MainActivity : AppCompatActivity() {
     private val PREF_BACKEND_HOST = "backend_host"
     private val PREF_FORCE_SETUP = "force_setup"
     private val PREF_START_ON_BOOT = "start_on_boot"
+    private val PREF_ALLOW_EXTERNAL = "allow_external_access"
+    private val PREF_MDNS_NAME = "mdns_name"
 
     private val REST_PORT = 8080
     private val RW_PORT = 8081
     private val RO_PORT = 8082
 
     private var wifiLock: WifiManager.WifiLock? = null
+    private var nsdManager: NsdManager? = null
+    private var nsdRegistrationListener: NsdManager.RegistrationListener? = null
+    private var mdnsResponder: MdnsResponder? = null
+    private var registeredMdnsName: String? = null
 
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
@@ -86,7 +99,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupWebView()
-        acquireWifiLock()
 
         // Check or request location permissions to obtain host coordinates
         if (hasLocationPermission()) {
@@ -111,6 +123,8 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val currentHost = getSelectedBackendHost()
         val currentStartOnBoot = prefs.getBoolean(PREF_START_ON_BOOT, false)
+        val currentAllowExternal = prefs.getBoolean(PREF_ALLOW_EXTERNAL, false)
+        val currentMdnsName = prefs.getString(PREF_MDNS_NAME, "") ?: ""
 
         val dialogView = layoutInflater.inflate(R.layout.dialog_backend_settings, null)
         val etBackendHost = dialogView.findViewById<EditText>(R.id.et_backend_host)
@@ -119,9 +133,52 @@ class MainActivity : AppCompatActivity() {
         val tvAutostartNotice = dialogView.findViewById<TextView>(R.id.tv_autostart_notice)
         val btnOpenAutostart = dialogView.findViewById<Button>(R.id.btn_open_autostart)
 
+        val cbAllowExternal = dialogView.findViewById<CheckBox>(R.id.cb_allow_external)
+        val llLocalAccessDetails = dialogView.findViewById<LinearLayout>(R.id.ll_local_access_details)
+        val etMdnsName = dialogView.findViewById<EditText>(R.id.et_mdns_name)
+        val tvLocalUrlValue = dialogView.findViewById<TextView>(R.id.tv_local_url_value)
+        val btnCopyLocalUrl = dialogView.findViewById<Button>(R.id.btn_copy_local_url)
+
         etBackendHost.setText(currentHost)
         etBackendHost.setSelection(etBackendHost.text.length)
         cbStartOnBoot.isChecked = currentStartOnBoot
+
+        cbAllowExternal.isChecked = currentAllowExternal
+        etMdnsName.setText(currentMdnsName)
+
+        fun formatMdnsUrl(name: String): String {
+            val trimmed = name.trim()
+            val host = if (trimmed.isNotEmpty()) trimmed else (registeredMdnsName ?: "hamclock")
+            val ip = getDeviceIpAddress()
+            val ipText = if (!ip.isNullOrEmpty()) "\nIP: http://$ip:$RW_PORT/live.html" else ""
+            return "http://$host.local:$RW_PORT/live.html$ipText"
+        }
+
+        fun updateLocalAccessVisibility(isChecked: Boolean) {
+            llLocalAccessDetails.visibility = if (isChecked) View.VISIBLE else View.GONE
+            tvLocalUrlValue.text = formatMdnsUrl(etMdnsName.text.toString())
+        }
+
+        updateLocalAccessVisibility(currentAllowExternal)
+        cbAllowExternal.setOnCheckedChangeListener { _, isChecked ->
+            updateLocalAccessVisibility(isChecked)
+        }
+
+        etMdnsName.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                tvLocalUrlValue.text = formatMdnsUrl(s?.toString() ?: "")
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        btnCopyLocalUrl.setOnClickListener {
+            val url = tvLocalUrlValue.text.toString()
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            val clip = ClipData.newPlainText("HamClock URL", url)
+            clipboard?.setPrimaryClip(clip)
+            Toast.makeText(this, getString(R.string.copied_to_clipboard), Toast.LENGTH_SHORT).show()
+        }
 
         // Check if the current device OS has specific background or OEM auto-start requirements
         val specialSetting = AutoStartHelper.getSpecialSetting(this)
@@ -153,13 +210,29 @@ class MainActivity : AppCompatActivity() {
                 val entered = etBackendHost.text.toString().trim()
                 val newHost = if (entered.isNotEmpty()) entered else getString(R.string.backend_default)
                 val newStartOnBoot = cbStartOnBoot.isChecked
+                val newAllowExternal = cbAllowExternal.isChecked
+                val newMdnsName = etMdnsName.text.toString().trim()
 
-                Log.i(TAG, "Saving settings: backend=$newHost, startOnBoot=$newStartOnBoot")
+                Log.i(TAG, "Saving settings: backend=$newHost, startOnBoot=$newStartOnBoot, allowExternal=$newAllowExternal, mdnsName=$newMdnsName")
                 val hostChanged = newHost != currentHost
+                val externalChanged = (newAllowExternal != currentAllowExternal) || (newMdnsName != currentMdnsName)
+
                 prefs.edit()
                     .putString(PREF_BACKEND_HOST, newHost)
                     .putBoolean(PREF_START_ON_BOOT, newStartOnBoot)
+                    .putBoolean(PREF_ALLOW_EXTERNAL, newAllowExternal)
+                    .putString(PREF_MDNS_NAME, newMdnsName)
                     .commit()
+
+                if (externalChanged) {
+                    HamClockNative.setAllowExternalAccess(newAllowExternal)
+                    updateMdnsService(newAllowExternal, newMdnsName)
+                    if (newAllowExternal) {
+                        acquireWifiLock()
+                    } else {
+                        releaseWifiLock()
+                    }
+                }
 
                 if (hostChanged) {
                     // Clear cached files while preserving the eeprom file (holds config), configurations, and .mac_address
@@ -342,7 +415,20 @@ class MainActivity : AppCompatActivity() {
                 val lat = location?.first ?: 0.0
                 val lng = location?.second ?: 0.0
 
-                Log.i(TAG, "Launching native HamClock in ${dataDir.absolutePath} (hasLocation=$hasLocation, lat=$lat, lng=$lng, backend=$backendHost, forceSetup=$forceSetup)")
+                val allowExternal = prefs.getBoolean(PREF_ALLOW_EXTERNAL, false)
+                HamClockNative.setAllowExternalAccess(allowExternal)
+                val mdnsName = prefs.getString(PREF_MDNS_NAME, "")
+
+                mainHandler.post {
+                    updateMdnsService(allowExternal, mdnsName)
+                    if (allowExternal) {
+                        acquireWifiLock()
+                    } else {
+                        releaseWifiLock()
+                    }
+                }
+
+                Log.i(TAG, "Launching native HamClock in ${dataDir.absolutePath} (hasLocation=$hasLocation, lat=$lat, lng=$lng, backend=$backendHost, forceSetup=$forceSetup, allowExternal=$allowExternal)")
                 HamClockNative.startDaemon(
                     dataDir = dataDir.absolutePath,
                     rwPort = RW_PORT,
@@ -395,6 +481,88 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun getDeviceIpAddress(): String? {
+        try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return null
+            for (iface in interfaces) {
+                if (iface.isLoopback || !iface.isUp) continue
+                for (addr in iface.inetAddresses) {
+                    if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
+                        return addr.hostAddress
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error getting device IP: ${e.message}")
+        }
+        return null
+    }
+
+    private fun updateMdnsService(enable: Boolean, customName: String?) {
+        unregisterMdnsService()
+        if (!enable) return
+
+        val rawName = customName?.trim()
+        val serviceName = if (!rawName.isNullOrEmpty()) rawName else "hamclock"
+
+        // 1. Start dedicated mDNS A-record responder for direct hostname queries (e.g. <name>.local)
+        mdnsResponder = MdnsResponder(this).apply {
+            start(serviceName)
+        }
+
+        // 2. Also register DNS-SD service via Android NsdManager
+        val serviceInfo = NsdServiceInfo().apply {
+            this.serviceName = serviceName
+            this.serviceType = "_http._tcp"
+            this.port = RW_PORT
+        }
+
+        val nsd = getSystemService(Context.NSD_SERVICE) as? NsdManager ?: return
+        nsdManager = nsd
+
+        val listener = object : NsdManager.RegistrationListener {
+            override fun onServiceRegistered(registeredInfo: NsdServiceInfo) {
+                registeredMdnsName = registeredInfo.serviceName
+                Log.i(TAG, "mDNS DNS-SD service registered: ${registeredInfo.serviceName}._http._tcp on port $RW_PORT")
+            }
+
+            override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                Log.w(TAG, "mDNS DNS-SD registration failed: errorCode=$errorCode")
+            }
+
+            override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {
+                Log.i(TAG, "mDNS DNS-SD service unregistered")
+                registeredMdnsName = null
+            }
+
+            override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                Log.w(TAG, "mDNS DNS-SD unregistration failed: errorCode=$errorCode")
+            }
+        }
+
+        try {
+            nsd.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, listener)
+            nsdRegistrationListener = listener
+        } catch (e: Exception) {
+            Log.w(TAG, "Error registering mDNS service: ${e.message}")
+        }
+    }
+
+    private fun unregisterMdnsService() {
+        mdnsResponder?.stop()
+        mdnsResponder = null
+
+        nsdRegistrationListener?.let { listener ->
+            try {
+                nsdManager?.unregisterService(listener)
+            } catch (e: Exception) {
+                Log.w(TAG, "Error unregistering mDNS service: ${e.message}")
+            }
+        }
+        nsdRegistrationListener = null
+        registeredMdnsName = null
+    }
+
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         hideSystemUI()
@@ -441,6 +609,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        unregisterMdnsService()
         releaseWifiLock()
         executor.shutdown()
     }

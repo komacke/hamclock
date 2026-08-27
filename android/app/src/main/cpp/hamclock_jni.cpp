@@ -99,6 +99,8 @@ extern "C" std::string __wrap__ZN4WiFi10macAddressEv() {
     return std::string(mac_buf);
 }
 
+static bool allow_external_access = false;
+
 static bool is_local_address(const struct sockaddr *addr, socklen_t addrlen) {
     if (!addr) return false;
 
@@ -106,8 +108,11 @@ static bool is_local_address(const struct sockaddr *addr, socklen_t addrlen) {
         const struct sockaddr_in *sin = reinterpret_cast<const struct sockaddr_in *>(addr);
         uint32_t ip = ntohl(sin->sin_addr.s_addr);
 
-        // Loopback: 127.0.0.0/8
+        // Loopback: 127.0.0.0/8 (always allowed for local WebView)
         if ((ip & 0xFF000000) == 0x7F000000) return true;
+
+        // If external local network access is disabled, reject all non-loopback IPs
+        if (!allow_external_access) return false;
 
         // RFC 1918 Private ranges:
         // 10.0.0.0/8
@@ -125,8 +130,11 @@ static bool is_local_address(const struct sockaddr *addr, socklen_t addrlen) {
         const struct sockaddr_in6 *sin6 = reinterpret_cast<const struct sockaddr_in6 *>(addr);
         const uint8_t *bytes = sin6->sin6_addr.s6_addr;
 
-        // IPv6 Loopback: ::1
+        // IPv6 Loopback: ::1 (always allowed)
         if (IN6_IS_ADDR_LOOPBACK(&sin6->sin6_addr)) return true;
+
+        // If external local network access is disabled, reject all non-loopback IPs
+        if (!allow_external_access) return false;
 
         // IPv6 Link-Local: fe80::/10
         if (IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr)) return true;
@@ -141,6 +149,7 @@ static bool is_local_address(const struct sockaddr *addr, socklen_t addrlen) {
                           (static_cast<uint32_t>(bytes[14]) << 8)  |
                           (static_cast<uint32_t>(bytes[15]));
             if ((ip & 0xFF000000) == 0x7F000000) return true;
+            if (!allow_external_access) return false;
             if ((ip & 0xFF000000) == 0x0A000000) return true;
             if ((ip & 0xFFF00000) == 0xAC100000) return true;
             if ((ip & 0xFFFF0000) == 0xC0A80000) return true;
@@ -367,4 +376,13 @@ Java_org_openhamclock_hamclock_HamClockNative_isDaemonRunning(
         JNIEnv * /* env */,
         jobject /* this */) {
     return daemon_running ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_openhamclock_hamclock_HamClockNative_setAllowExternalAccess(
+        JNIEnv * /* env */,
+        jobject /* this */,
+        jboolean allow) {
+    allow_external_access = (allow == JNI_TRUE);
+    LOGI("External local network access restriction set to: %s", allow_external_access ? "ENABLED (RFC1918 Private LANs allowed)" : "DISABLED (Loopback 127.0.0.1 only)");
 }

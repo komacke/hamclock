@@ -81,6 +81,83 @@
         android:layout_marginBottom="16dp"
         android:background="#33FFFFFF" />
 
+    <CheckBox
+        android:id="@+id/cb_allow_external"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/allow_external_label"
+        android:textColor="@color/hamclock_text"
+        android:textSize="14sp"
+        android:buttonTint="@color/hamclock_accent" />
+
+    <LinearLayout
+        android:id="@+id/ll_local_access_details"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:padding="8dp"
+        android:background="#15FFFFFF"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/mdns_name_label"
+            android:textColor="@color/hamclock_text"
+            android:textSize="12sp"
+            android:layout_marginBottom="4dp" />
+
+        <EditText
+            android:id="@+id/et_mdns_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/mdns_name_hint"
+            android:importantForAutofill="no"
+            android:inputType="textNoSuggestions"
+            android:singleLine="true"
+            android:textSize="13sp"
+            android:textColor="@color/hamclock_text"
+            android:textColorHint="#888888" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/local_url_label"
+            android:textColor="@color/hamclock_text"
+            android:textSize="12sp"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:id="@+id/tv_local_url_value"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="http://hamclock.local:8081/live.html"
+            android:textColor="#80D8FF"
+            android:textIsSelectable="true"
+            android:textSize="13sp"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_copy_local_url"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/copy_url"
+            android:textColor="@color/hamclock_text"
+            android:textSize="12sp"
+            android:backgroundTint="#37474F" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
+        android:background="#33FFFFFF" />
+
     <Button
         android:id="@+id/btn_open_setup"
         android:layout_width="match_parent"
