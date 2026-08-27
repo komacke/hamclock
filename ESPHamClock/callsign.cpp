@@ -166,6 +166,42 @@ static void setCallColors (CallColors_t &cu, uint16_t *fg, uint16_t *bg, uint8_t
     }
 }
 
+/* (re)build cs_info.title_list from cs_info.title, splitting on ';'.
+ * trims surrounding whitespace from each entry and skips empty entries.
+ * resets title_idx to 0 so rotation restarts at the first entry.
+ * safe to call whenever cs_info.title changes.
+ */
+static void parseTitleList (void)
+{
+    memcpy (cs_info.title_parsed, cs_info.title, sizeof(cs_info.title_parsed));
+
+    cs_info.n_titles = 0;
+    cs_info.title_idx = 0;
+
+    char *entry = cs_info.title_parsed;
+    while (entry && cs_info.n_titles < MAX_TITLE_ENTRIES) {
+
+        char *semi = strchr (entry, ';');
+        if (semi)
+            *semi = '\0';
+
+        // trim leading whitespace
+        while (isspace((int)*entry))
+            entry++;
+
+        // trim trailing whitespace
+        int len = strlen (entry);
+        while (len > 0 && isspace((int)entry[len-1]))
+            entry[--len] = '\0';
+
+        // keep only if something is left
+        if (len > 0)
+            cs_info.title_list[cs_info.n_titles++] = entry;
+
+        entry = semi ? semi + 1 : NULL;
+    }
+}
+
 /* draw callsign using cs_info.
  * draw everything if all, else just fg text as when just changing text color.
  */
@@ -185,7 +221,7 @@ static void drawCallsign (bool all)
         fg_c = cs_info.title_col.fg;
         bg_c = cs_info.title_col.bg;
         rainbow = cs_info.title_col.rainbow != 0;
-        text = cs_info.title;
+        text = cs_info.n_titles > 0 ? cs_info.title_list[cs_info.title_idx] : cs_info.title;
         break;
     case CT_ONAIR:
         fg_c = cs_info.onair_col.fg;
@@ -287,7 +323,7 @@ static void runCallsignMenu (void)
     // set up the title field
     MenuText title_mt;
     memset (&title_mt, 0, sizeof(title_mt));
-    char title_label[] = "Title:";
+    char title_label[] = "Title(s):";
     char new_title[NV_TITLE_LEN];
     memcpy (new_title, cs_info.title, sizeof(new_title));
     title_mt.text = new_title;
@@ -331,6 +367,7 @@ static void runCallsignMenu (void)
             Serial.printf ("CALL: new title: %s\n", new_title);
             memcpy (cs_info.title, new_title, NV_TITLE_LEN);
             NVWriteString (NV_TITLE, cs_info.title);
+            parseTitleList();
         }
 
         // set preferred type
@@ -362,7 +399,22 @@ void updateCallsign (bool force_draw)
     if (cs_info.ct_prefer == CT_BOTH && cs_info.now_showing != CT_ONAIR) {
         time_t now = myNow();
         if (now > cs_info.next_update || force_draw) {
-            cs_info.now_showing = cs_info.now_showing == CT_CALL ? CT_TITLE : CT_CALL;  // toggle
+
+            // cycle CT_CALL -> title[0] -> title[1] -> ... -> title[n-1] -> CT_CALL -> ...
+            // if there are no title entries this just leaves it showing CT_CALL.
+            if (cs_info.now_showing == CT_CALL) {
+                if (cs_info.n_titles > 0) {
+                    cs_info.now_showing = CT_TITLE;
+                    cs_info.title_idx = 0;
+                }
+            } else {
+                cs_info.title_idx++;
+                if (cs_info.title_idx >= cs_info.n_titles) {
+                    cs_info.now_showing = CT_CALL;
+                    cs_info.title_idx = 0;
+                }
+            }
+
             cs_info.next_update = now + ROTATION_INTERVAL;                              // same rate as panes
             force_draw = true;
         }
@@ -428,6 +480,7 @@ void initCallsignInfo()
         cs_info.title[0] = '\0';
         NVWriteString (NV_TITLE, cs_info.title);
     }
+    parseTitleList();
 
 
     // get preferred and current display when not PTT
@@ -473,6 +526,7 @@ void setCallsignInfo (Call_t t, const char *text, uint16_t *fg, uint16_t *bg, ui
         if (text && strlen(text) > 0) {
             quietStrncpy (cs_info.title, text, sizeof(cs_info.title));
             NVWriteString (NV_TITLE, cs_info.title);
+            parseTitleList();
         }
 
         setCallColors (cs_info.title_col, fg, bg, rainbow);
