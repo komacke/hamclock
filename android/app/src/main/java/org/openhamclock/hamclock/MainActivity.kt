@@ -36,6 +36,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.net.wifi.WifiManager
 import java.io.File
 import java.net.Socket
 import java.util.concurrent.Executors
@@ -51,6 +52,8 @@ class MainActivity : AppCompatActivity() {
     private val REST_PORT = 8080
     private val RW_PORT = 8081
     private val RO_PORT = 8082
+
+    private var wifiLock: WifiManager.WifiLock? = null
 
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
@@ -83,6 +86,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupWebView()
+        acquireWifiLock()
 
         // Check or request location permissions to obtain host coordinates
         if (hasLocationPermission()) {
@@ -410,8 +414,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun acquireWifiLock() {
+        if (wifiLock == null) {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            @Suppress("DEPRECATION")
+            wifiLock = wifiManager?.createWifiLock(
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                "HamClock:WifiLock"
+            )?.apply {
+                setReferenceCounted(false)
+                acquire()
+                Log.i(TAG, "Acquired high-performance WifiLock")
+            }
+        }
+    }
+
+    private fun releaseWifiLock() {
+        wifiLock?.let {
+            if (it.isHeld) {
+                it.release()
+                Log.i(TAG, "Released WifiLock")
+            }
+        }
+        wifiLock = null
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        releaseWifiLock()
         executor.shutdown()
     }
 }

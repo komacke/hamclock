@@ -4,6 +4,10 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <android/log.h>
 
 #include "HamClock.h"
@@ -93,6 +97,117 @@ extern "C" std::string __wrap__ZN4WiFi10macAddressEv() {
 
     LOGI("Generated persistent Android MAC: %s", mac_buf);
     return std::string(mac_buf);
+}
+
+static bool is_local_address(const struct sockaddr *addr, socklen_t addrlen) {
+    if (!addr) return false;
+
+    if (addr->sa_family == AF_INET) {
+        const struct sockaddr_in *sin = reinterpret_cast<const struct sockaddr_in *>(addr);
+        uint32_t ip = ntohl(sin->sin_addr.s_addr);
+
+        // Loopback: 127.0.0.0/8
+        if ((ip & 0xFF000000) == 0x7F000000) return true;
+
+        // RFC 1918 Private ranges:
+        // 10.0.0.0/8
+        if ((ip & 0xFF000000) == 0x0A000000) return true;
+        // 172.16.0.0/12
+        if ((ip & 0xFFF00000) == 0xAC100000) return true;
+        // 192.168.0.0/16
+        if ((ip & 0xFFFF0000) == 0xC0A80000) return true;
+
+        // Link-Local: 169.254.0.0/16
+        if ((ip & 0xFFFF0000) == 0xA9FE0000) return true;
+
+        return false;
+    } else if (addr->sa_family == AF_INET6) {
+        const struct sockaddr_in6 *sin6 = reinterpret_cast<const struct sockaddr_in6 *>(addr);
+        const uint8_t *bytes = sin6->sin6_addr.s6_addr;
+
+        // IPv6 Loopback: ::1
+        if (IN6_IS_ADDR_LOOPBACK(&sin6->sin6_addr)) return true;
+
+        // IPv6 Link-Local: fe80::/10
+        if (IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr)) return true;
+
+        // IPv6 Unique Local Address (ULA): fc00::/7
+        if ((bytes[0] & 0xFE) == 0xFC) return true;
+
+        // IPv4-mapped IPv6 address: ::ffff:a.b.c.d
+        if (IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) {
+            uint32_t ip = (static_cast<uint32_t>(bytes[12]) << 24) |
+                          (static_cast<uint32_t>(bytes[13]) << 16) |
+                          (static_cast<uint32_t>(bytes[14]) << 8)  |
+                          (static_cast<uint32_t>(bytes[15]));
+            if ((ip & 0xFF000000) == 0x7F000000) return true;
+            if ((ip & 0xFF000000) == 0x0A000000) return true;
+            if ((ip & 0xFFF00000) == 0xAC100000) return true;
+            if ((ip & 0xFFFF0000) == 0xC0A80000) return true;
+            if ((ip & 0xFFFF0000) == 0xA9FE0000) return true;
+            return false;
+        }
+
+        return false;
+    }
+
+    return false;
+}
+
+extern "C" int __real_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+extern "C" int __wrap_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
+    struct sockaddr_storage ss;
+    socklen_t sslen = sizeof(ss);
+    struct sockaddr *target_addr = addr ? addr : reinterpret_cast<struct sockaddr *>(&ss);
+    socklen_t *target_len = addrlen ? addrlen : &sslen;
+
+    int client_fd = __real_accept(sockfd, target_addr, target_len);
+    if (client_fd < 0) {
+        return client_fd;
+    }
+
+    if (!is_local_address(target_addr, *target_len)) {
+        char ip_buf[INET6_ADDRSTRLEN] = {0};
+        if (target_addr->sa_family == AF_INET) {
+            inet_ntop(AF_INET, &(reinterpret_cast<struct sockaddr_in *>(target_addr)->sin_addr), ip_buf, sizeof(ip_buf));
+        } else if (target_addr->sa_family == AF_INET6) {
+            inet_ntop(AF_INET6, &(reinterpret_cast<struct sockaddr_in6 *>(target_addr)->sin6_addr), ip_buf, sizeof(ip_buf));
+        }
+        LOGI("Access restricted: Rejected connection from non-local IP %s (fd=%d)", ip_buf, client_fd);
+        close(client_fd);
+        errno = ECONNABORTED;
+        return -1;
+    }
+
+    return client_fd;
+}
+
+extern "C" int __real_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags);
+extern "C" int __wrap_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
+    struct sockaddr_storage ss;
+    socklen_t sslen = sizeof(ss);
+    struct sockaddr *target_addr = addr ? addr : reinterpret_cast<struct sockaddr *>(&ss);
+    socklen_t *target_len = addrlen ? addrlen : &sslen;
+
+    int client_fd = __real_accept4(sockfd, target_addr, target_len, flags);
+    if (client_fd < 0) {
+        return client_fd;
+    }
+
+    if (!is_local_address(target_addr, *target_len)) {
+        char ip_buf[INET6_ADDRSTRLEN] = {0};
+        if (target_addr->sa_family == AF_INET) {
+            inet_ntop(AF_INET, &(reinterpret_cast<struct sockaddr_in *>(target_addr)->sin_addr), ip_buf, sizeof(ip_buf));
+        } else if (target_addr->sa_family == AF_INET6) {
+            inet_ntop(AF_INET6, &(reinterpret_cast<struct sockaddr_in6 *>(target_addr)->sin6_addr), ip_buf, sizeof(ip_buf));
+        }
+        LOGI("Access restricted: Rejected connection from non-local IP %s (fd=%d)", ip_buf, client_fd);
+        close(client_fd);
+        errno = ECONNABORTED;
+        return -1;
+    }
+
+    return client_fd;
 }
 
 static void *daemon_worker(void *arg) {

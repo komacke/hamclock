@@ -60,6 +60,8 @@ target_link_options(
     PRIVATE
     "-Wl,-z,max-page-size=16384"
     "-Wl,--wrap=_ZN4WiFi10macAddressEv"
+    "-Wl,--wrap=accept"
+    "-Wl,--wrap=accept4"
 )
 
 
