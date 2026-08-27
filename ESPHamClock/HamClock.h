@@ -381,7 +381,20 @@ typedef enum {
     // N.B. appended so existing bit-mask/table indices for prior entries remain unchanged
     BORDERS_CSPR,
     STATES_CSPR,
-    N_CSPR
+    N_CSPR,                  // csel_pr[] in setup.cpp is sized to exactly this many editable colors
+
+    // 630m is deliberately declared AFTER N_CSPR, not folded into the editable csel_pr[] table
+    // above it: the Color Editor's page 6 is already exactly full (12 tightly-packed rows, no
+    // spare vertical room on real hardware -- confirmed, not just a layout guess), so there's no
+    // row to give it. Rather than reflow that whole page, 630m gets a single hardcoded color that
+    // isn't user-editable. Because its value is >= N_CSPR, it must NEVER be used to index
+    // csel_pr[N_CSPR] directly (that's one past the end of the array) -- every function that reads
+    // a ColorSelection by indexing csel_pr[] (getMapColor, getMapColorThin, getMapColorName,
+    // getRawPathWidth, getRawSpotRadius, getPathDashed) has an explicit early check for this value
+    // before it ever touches csel_pr[]. findColSel(HAMBAND_630M) returns this value, and spot/path
+    // drawing code calls those functions with it via findColSel() just like every other band, so
+    // this guard has to be airtight, not best-effort.
+    BAND630_CSPR
 } ColorSelection;
 
 
@@ -558,12 +571,17 @@ typedef struct {
 #define NV_ONAIR_LEN            30      // max ONAIR text, including EOS
 #define NV_TITLE_LEN            70      // max alternate callsign, including EOS
 
+// title field may contain up to this many ';'-separated entries that rotate in turn.
+// N.B. kept within the existing NV_TITLE_LEN budget so NVRAM/EEPROM layout, and thus
+// compatibility with previously-saved settings, is unaffected.
+#define MAX_TITLE_ENTRIES        6
+
 
 // manage callsign display area and alternate uses
 typedef enum {
     CT_CALL,                            // display real call
     CT_TITLE,                           // display title text
-    CT_BOTH,                            // alternate between call and title
+    CT_BOTH,                            // alternate among call and each title entry
     CT_ONAIR,                           // display ON AIR message
 } Call_t;
 typedef struct {
@@ -573,7 +591,11 @@ typedef struct {
 typedef struct {
     char call[NV_CALLSIGN_LEN];         // real callsign for CT_CALL, used by setup.cpp
     char onair[NV_ONAIR_LEN];           // real on-air message for CT_ONAIR, used by setup.cpp
-    char title[NV_TITLE_LEN];           // CT_TITLE text if used
+    char title[NV_TITLE_LEN];           // CT_TITLE text as stored/edited, ';'-separated entries
+    char title_parsed[NV_TITLE_LEN];    // working copy of title with ';' -> '\0' for tokenizing
+    char *title_list[MAX_TITLE_ENTRIES];// pointers into title_parsed, one per entry
+    int n_titles;                       // number of valid entries in title_list, may be 0
+    int title_idx;                      // index into title_list currently shown for CT_TITLE
     Call_t ct_prefer;                   // CT_CALL CT_TITLE or CT_BOTH set via menu
     Call_t now_showing;                 // displaying CT_CALL CT_TITLE or CT_ONAIR
     time_t next_update;                 // when to rotate if ct_prefer is CT_BOTH
@@ -1071,7 +1093,12 @@ extern void getLunarRS (const time_t t0, const LatLong &ll, time_t *riset, time_
  */
 
 
-/* consolidated list of supported bands
+/* consolidated list of supported bands.
+ * N.B. HamBandSetting values double as bit positions in persisted band-filter bitmasks
+ * (NV_DXC_BANDS, NV_PSK_BANDS), so new bands must always be appended at the end here, never
+ * inserted in frequency order, or every existing user's saved bitmask silently reinterprets
+ * to the wrong bands. This is why 630m (longer wavelength than 160m) is listed last instead
+ * of first. Same reasoning applies to each entry's *_CSPR value -- see ColorSelection below.
  */
 #define SUPPORTED_BANDS                                 \
     X(HAMBAND_160M, 160, "160",  90, BAND160_CSPR)      \
@@ -1085,7 +1112,8 @@ extern void getLunarRS (const time_t t0, const LatLong &ll, time_t *riset, time_
     X(HAMBAND_12M,   12,  "12",  25, BAND12_CSPR)       \
     X(HAMBAND_10M,   10,  "10",  12, BAND10_CSPR)       \
     X(HAMBAND_6M,     6,   "6",   4, BAND6_CSPR)        \
-    X(HAMBAND_2M,     2,   "2",   0, BAND2_CSPR)
+    X(HAMBAND_2M,     2,   "2",   0, BAND2_CSPR)        \
+    X(HAMBAND_630M, 630, "630",  96, BAND630_CSPR)
 
 #define X(a,b,c,d,e) a,                         // expands SUPPORTED_BANDS to each enum and comma
 typedef enum {

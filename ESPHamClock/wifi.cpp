@@ -1741,7 +1741,7 @@ static bool updateXRay(const SBox &box)
         } else {
             // overlay short over long with fixed y axis
             char level_str[10];
-            plotXYstr (box, xray.x, xray.l, XRAY_NV, "Hours", "GOES 16 X-Ray", XRAY_LCOLOR, -9, -2, NULL)
+            plotXYstr (box, xray.x, xray.l, XRAY_NV, "Hours", "GOES-18 X-Ray", XRAY_LCOLOR, -9, -2, NULL)
                  && plotXYstr (box, xray.x, xray.s, XRAY_NV, NULL, NULL, XRAY_SCOLOR, -9, -2,
                                 xrayLevel(level_str, space_wx[SPCWX_XRAY]));
         }
