@@ -48,9 +48,9 @@ class MainActivity : AppCompatActivity() {
     private val PREF_FORCE_SETUP = "force_setup"
     private val PREF_START_ON_BOOT = "start_on_boot"
 
-    private val RW_PORT = 8080
-    private val RO_PORT = 8081
-    private val REST_PORT = 8082
+    private val REST_PORT = 8080
+    private val RW_PORT = 8081
+    private val RO_PORT = 8082
 
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
