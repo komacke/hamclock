@@ -5,6 +5,28 @@ object HamClockNative {
         System.loadLibrary("hamclock")
     }
 
+    interface AppControlListener {
+        fun onExitRequested()
+        fun onRestartRequested()
+    }
+
+    @Volatile
+    private var appControlListener: AppControlListener? = null
+
+    fun setAppControlListener(listener: AppControlListener?) {
+        appControlListener = listener
+    }
+
+    @JvmStatic
+    fun notifyExitRequested() {
+        appControlListener?.onExitRequested()
+    }
+
+    @JvmStatic
+    fun notifyRestartRequested() {
+        appControlListener?.onRestartRequested()
+    }
+
     external fun startDaemon(
         dataDir: String,
         rwPort: Int,
@@ -16,8 +38,6 @@ object HamClockNative {
         lng: Double = 0.0,
         forceSetup: Boolean = false
     ): Boolean
-
-
 
     external fun isDaemonRunning(): Boolean
     external fun setAllowExternalAccess(allow: Boolean)

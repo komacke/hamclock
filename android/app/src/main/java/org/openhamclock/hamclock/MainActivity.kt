@@ -100,6 +100,22 @@ class MainActivity : AppCompatActivity() {
 
         setupWebView()
 
+        HamClockNative.setAppControlListener(object : HamClockNative.AppControlListener {
+            override fun onExitRequested() {
+                mainHandler.post {
+                    Log.i(TAG, "Exit requested by native HamClock engine")
+                    finishAndRemoveTask()
+                }
+            }
+
+            override fun onRestartRequested() {
+                mainHandler.post {
+                    Log.i(TAG, "Restart requested by native HamClock engine")
+                    restartApp()
+                }
+            }
+        })
+
         // Check or request location permissions to obtain host coordinates
         if (hasLocationPermission()) {
             startNativeBackend()
@@ -252,6 +268,13 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putBoolean(PREF_FORCE_SETUP, true).commit()
             dialog.dismiss()
             restartApp()
+        }
+
+        val btnExitApp = dialogView.findViewById<Button>(R.id.btn_exit_app)
+        btnExitApp?.setOnClickListener {
+            Log.i(TAG, "User requested Exit HamClock from settings dialog")
+            dialog.dismiss()
+            finishAndRemoveTask()
         }
 
         dialog.show()
@@ -586,8 +609,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        HamClockNative.setAppControlListener(null)
         unregisterMdnsService()
         releaseWifiLock()
         executor.shutdown()
+        android.os.Process.killProcess(android.os.Process.myPid())
     }
 }

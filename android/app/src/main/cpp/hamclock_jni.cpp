@@ -386,3 +386,65 @@ Java_org_openhamclock_hamclock_HamClockNative_setAllowExternalAccess(
     allow_external_access = (allow == JNI_TRUE);
     LOGI("External local network access restriction set to: %s", allow_external_access ? "ENABLED (RFC1918 Private LANs allowed)" : "DISABLED (Loopback 127.0.0.1 only)");
 }
+
+static JavaVM *g_jvm = nullptr;
+static jclass g_native_class = nullptr;
+static jmethodID g_exit_method = nullptr;
+static jmethodID g_restart_method = nullptr;
+
+jint JNI_OnLoad(JavaVM *vm, void * /* reserved */) {
+    g_jvm = vm;
+    JNIEnv *env = nullptr;
+    if (vm->GetEnv((void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+        return JNI_ERR;
+    }
+    jclass localClass = env->FindClass("org/openhamclock/hamclock/HamClockNative");
+    if (localClass) {
+        g_native_class = (jclass) env->NewGlobalRef(localClass);
+        g_exit_method = env->GetStaticMethodID(g_native_class, "notifyExitRequested", "()V");
+        g_restart_method = env->GetStaticMethodID(g_native_class, "notifyRestartRequested", "()V");
+    }
+    return JNI_VERSION_1_6;
+}
+
+extern "C" void android_request_exit() {
+    LOGI("android_request_exit invoked from C++");
+    if (g_jvm && g_native_class && g_exit_method) {
+        JNIEnv *env = nullptr;
+        bool attached = false;
+        if (g_jvm->GetEnv((void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+            if (g_jvm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+                attached = true;
+            }
+        }
+        if (env) {
+            env->CallStaticVoidMethod(g_native_class, g_exit_method);
+            if (attached) {
+                g_jvm->DetachCurrentThread();
+            }
+            return;
+        }
+    }
+    _exit(0);
+}
+
+extern "C" void android_request_restart() {
+    LOGI("android_request_restart invoked from C++");
+    if (g_jvm && g_native_class && g_restart_method) {
+        JNIEnv *env = nullptr;
+        bool attached = false;
+        if (g_jvm->GetEnv((void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+            if (g_jvm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+                attached = true;
+            }
+        }
+        if (env) {
+            env->CallStaticVoidMethod(g_native_class, g_restart_method);
+            if (attached) {
+                g_jvm->DetachCurrentThread();
+            }
+            return;
+        }
+    }
+}
+

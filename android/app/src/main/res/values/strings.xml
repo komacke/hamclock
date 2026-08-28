@@ -15,6 +15,7 @@
     <string name="save_and_restart">Save &amp; Restart</string>
     <string name="save">Save</string>
     <string name="open_setup">Open HamClock Setup</string>
+    <string name="exit_hamclock">Exit HamClock</string>
     <string name="cancel">Cancel</string>
 
     <string name="allow_external_label">Allow local network access (Wi-Fi / LAN)</string>

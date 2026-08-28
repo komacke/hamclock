@@ -9,7 +9,6 @@ add_compile_definitions(
     _CLOCK_1600x960
     NO_UPGRADE
     NO_SYSTEM_CONTROLS
-    NO_HAMCLOCK_CONTROLS
 )
 
 include_directories(

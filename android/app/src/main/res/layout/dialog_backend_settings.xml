@@ -163,13 +163,31 @@
         android:layout_marginBottom="12dp"
         android:background="#33FFFFFF" />
 
-    <Button
-        android:id="@+id/btn_open_setup"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/open_setup"
-        android:textColor="@color/hamclock_text"
-        android:backgroundTint="#2C3E50" />
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_open_setup"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:text="@string/open_setup"
+            android:textColor="@color/hamclock_text"
+            android:backgroundTint="#2C3E50" />
+
+        <Button
+            android:id="@+id/btn_exit_app"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:text="@string/exit_hamclock"
+            android:textColor="@color/hamclock_text"
+            android:backgroundTint="#8B0000" />
+    </LinearLayout>
 
 </LinearLayout>
 </ScrollView>
