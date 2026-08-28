@@ -63,6 +63,9 @@ void openURL (const char *url)
 
     } else {
 
+#if defined (_IS_ANDROID)
+        android_open_url (url);
+#else
         StackMalloc cmd_mem(strlen(url) + 50);
         char *cmd = (char *) cmd_mem.getMem();
         #if defined (_IS_APPLE)
@@ -74,5 +77,6 @@ void openURL (const char *url)
             Serial.printf ("URL local: fail: %s\n", cmd);
         else
             Serial.printf ("URL local: ok: %s\n", cmd);
+#endif
     }
 }
