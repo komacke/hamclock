@@ -163,6 +163,39 @@
         android:layout_marginBottom="12dp"
         android:background="#33FFFFFF" />
 
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/server_ports_label"
+        android:textColor="@color/hamclock_text"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/tv_ports_info"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#80D8FF"
+        android:textSize="13sp"
+        android:lineSpacingExtra="3dp"
+        android:layout_marginTop="3dp" />
+
+    <TextView
+        android:id="@+id/tv_rest_port_conflict"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/rest_port_conflict_warning"
+        android:textColor="#FFB74D"
+        android:textSize="12sp"
+        android:layout_marginTop="3dp"
+        android:visibility="gone" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="12dp"
+        android:background="#33FFFFFF" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

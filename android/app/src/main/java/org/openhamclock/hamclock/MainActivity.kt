@@ -67,6 +67,9 @@ class MainActivity : AppCompatActivity() {
     private val RW_PORT = 8081
     private val RO_PORT = 8082
 
+    private var actualRestPort = 8080
+    private var restPortConflict = false
+
     private var wifiLock: WifiManager.WifiLock? = null
     private var nsdManager: NsdManager? = null
     private var nsdRegistrationListener: NsdManager.RegistrationListener? = null
@@ -228,6 +231,23 @@ class MainActivity : AppCompatActivity() {
         updateHelperVisibility(currentStartOnBoot)
         cbStartOnBoot.setOnCheckedChangeListener { _, isChecked ->
             updateHelperVisibility(isChecked)
+        }
+
+        val tvPortsInfo = dialogView.findViewById<TextView>(R.id.tv_ports_info)
+        val tvRestPortConflict = dialogView.findViewById<TextView>(R.id.tv_rest_port_conflict)
+
+        val restText = if (actualRestPort > 0) "Port $actualRestPort" else getString(R.string.rest_port_disabled)
+        tvPortsInfo.text = getString(R.string.server_ports_format, RW_PORT, RO_PORT, restText)
+
+        if (restPortConflict) {
+            tvRestPortConflict.visibility = View.VISIBLE
+            tvRestPortConflict.text = if (actualRestPort > 0) {
+                getString(R.string.rest_port_conflict_warning, actualRestPort)
+            } else {
+                getString(R.string.rest_port_conflict_disabled)
+            }
+        } else {
+            tvRestPortConflict.visibility = View.GONE
         }
 
         val dialog = AlertDialog.Builder(this, androidx.appcompat.R.style.Theme_AppCompat_Dialog_Alert)
@@ -501,12 +521,27 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                Log.i(TAG, "Launching native HamClock in ${dataDir.absolutePath} (hasLocation=$hasLocation, lat=$lat, lng=$lng, backend=$backendHost, forceSetup=$forceSetup, allowExternal=$allowExternal)")
+                val (selectedRestPort, conflict) = findAvailableRestPort(REST_PORT)
+                actualRestPort = selectedRestPort
+                restPortConflict = conflict
+
+                if (conflict) {
+                    mainHandler.post {
+                        val msg = if (actualRestPort > 0) {
+                            getString(R.string.rest_port_conflict_toast, actualRestPort)
+                        } else {
+                            getString(R.string.rest_port_disabled_toast)
+                        }
+                        Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                    }
+                }
+
+                Log.i(TAG, "Launching native HamClock in ${dataDir.absolutePath} (hasLocation=$hasLocation, lat=$lat, lng=$lng, backend=$backendHost, forceSetup=$forceSetup, allowExternal=$allowExternal, restPort=$actualRestPort, restConflict=$conflict)")
                 HamClockNative.startDaemon(
                     dataDir = dataDir.absolutePath,
                     rwPort = RW_PORT,
                     roPort = RO_PORT,
-                    restPort = REST_PORT,
+                    restPort = actualRestPort,
                     backendHost = backendHost,
                     hasLocation = hasLocation,
                     lat = lat,
@@ -518,6 +553,34 @@ class MainActivity : AppCompatActivity() {
 
             // Wait for local HTTP/WebSocket port to become available
             waitForServerReady()
+        }
+    }
+
+    private fun findAvailableRestPort(preferredPort: Int): Pair<Int, Boolean> {
+        if (preferredPort > 0 && isPortAvailable(preferredPort)) {
+            return Pair(preferredPort, false)
+        }
+        val fallbacks = listOf(8088, 8085, 8089, 8090)
+        for (port in fallbacks) {
+            if (isPortAvailable(port)) {
+                Log.w(TAG, "Port $preferredPort was in use. Using fallback port $port")
+                return Pair(port, true)
+            }
+        }
+        Log.w(TAG, "Neither port $preferredPort nor fallback ports were available. Disabling REST server (-1).")
+        return Pair(-1, true)
+    }
+
+    private fun isPortAvailable(port: Int): Boolean {
+        return try {
+            java.net.ServerSocket().apply {
+                reuseAddress = true
+                bind(java.net.InetSocketAddress(port))
+                close()
+            }
+            true
+        } catch (e: Exception) {
+            false
         }
     }
 

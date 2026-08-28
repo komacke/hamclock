@@ -24,6 +24,15 @@
     <string name="local_url_label">Access from browser on your local network:</string>
     <string name="copy_url">Copy URL</string>
     <string name="copied_to_clipboard">Copied URL to clipboard</string>
+    <string name="server_ports_label">Server Ports:</string>
+    <string name="server_ports_format">Live Web (R/W): %1$d   •   Live Web (R/O): %2$d\nRESTful API: %3$s</string>
+    <string name="rest_port_label">RESTful API Port:</string>
+    <string name="rest_port_active">Port %1$d</string>
+    <string name="rest_port_disabled">Disabled</string>
+    <string name="rest_port_conflict_warning">⚠️ Port 8080 was in use by another app. Using fallback port %1$d.</string>
+    <string name="rest_port_conflict_disabled">⚠️ Port 8080 was in use by another app. REST API is disabled.</string>
+    <string name="rest_port_conflict_toast">Notice: Port 8080 is in use by another app. REST API switched to port %1$d.</string>
+    <string name="rest_port_disabled_toast">Notice: Port 8080 is in use by another app. REST API has been disabled.</string>
 </resources>
 
 
