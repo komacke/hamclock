@@ -2617,8 +2617,13 @@ static void runShutdownMenu(void)
 void doReboot(bool minus_K, bool minus_0)
 {
     defaultState();
+#if defined(_IS_ANDROID)
+    android_request_restart();
+    for(;;);
+#else
     ESP.restart (minus_K, minus_0);
     for(;;);
+#endif
 }
 
 /* do exit, as best we can
@@ -2631,7 +2636,12 @@ void doExit()
         // X11 calls doExit on window close, so drawing would be recursive back to that thread
         eraseScreen();
     #endif
+#if defined(_IS_ANDROID)
+    android_request_exit();
+    for(;;);
+#else
     _exit(0);
+#endif
 }
 
 /* call to display one final message, never returns
