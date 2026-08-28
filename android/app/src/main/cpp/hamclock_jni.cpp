@@ -219,6 +219,31 @@ extern "C" int __wrap_accept4(int sockfd, struct sockaddr *addr, socklen_t *addr
     return client_fd;
 }
 
+static void *setup_injector_worker(void * /* arg */) {
+    LOGI("Setup injector started: waiting for displayReady...");
+    // Wait until tft.begin() has initialized the display
+    for (int i = 0; i < 50; i++) {
+        if (tft.displayReady()) break;
+        usleep(50000); // 50ms
+    }
+    // Now display is ready, give askRun() time to enter its countdown loop
+    usleep(150000); // 150ms
+    LOGI("Setup injector: injecting virtual tap to enter Setup");
+    for (int i = 0; i < 20; i++) {
+        if (wifi_tt == TT_NONE) {
+            wifi_tt_s.x = 200;
+            wifi_tt_s.y = 200;
+            wifi_tt = TT_TAP;
+        }
+        usleep(50000); // 50ms
+        if (wifi_tt == TT_NONE) {
+            LOGI("Setup injector: virtual tap consumed by askRun()");
+            break;
+        }
+    }
+    return nullptr;
+}
+
 static void *daemon_worker(void *arg) {
     DaemonArgs *dargs = static_cast<DaemonArgs *>(arg);
     cached_data_dir = dargs->dataDir;
@@ -269,7 +294,11 @@ static void *daemon_worker(void *arg) {
     bool forceSetup = dargs->forceSetup;
 
     if (forceSetup) {
-        LOGI("Setup requested: omitting -k flag so setup countdown screen runs");
+        LOGI("Setup requested: omitting -k flag and starting setup injector thread");
+        pthread_t injector_thread;
+        if (pthread_create(&injector_thread, nullptr, setup_injector_worker, nullptr) == 0) {
+            pthread_detach(injector_thread);
+        }
     }
 
     delete dargs;
