@@ -201,6 +201,7 @@ extern void doExit(void);
 #if defined(_IS_ANDROID)
 extern "C" void android_request_restart(void);
 extern "C" void android_request_exit(void);
+extern "C" void android_open_url(const char *url);
 #endif
 extern bool testPassword (const char *category, const char *candidate_pw);
 extern const char *pw_file;
