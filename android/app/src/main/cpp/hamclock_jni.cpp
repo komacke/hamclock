@@ -421,6 +421,7 @@ static jclass g_native_class = nullptr;
 static jmethodID g_exit_method = nullptr;
 static jmethodID g_restart_method = nullptr;
 static jmethodID g_open_url_method = nullptr;
+static jmethodID g_fetch_url_method = nullptr;
 
 jint JNI_OnLoad(JavaVM *vm, void * /* reserved */) {
     g_jvm = vm;
@@ -434,6 +435,7 @@ jint JNI_OnLoad(JavaVM *vm, void * /* reserved */) {
         g_exit_method = env->GetStaticMethodID(g_native_class, "notifyExitRequested", "()V");
         g_restart_method = env->GetStaticMethodID(g_native_class, "notifyRestartRequested", "()V");
         g_open_url_method = env->GetStaticMethodID(g_native_class, "notifyOpenUrl", "(Ljava/lang/String;)V");
+        g_fetch_url_method = env->GetStaticMethodID(g_native_class, "fetchHttpsUrlToFd", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V");
     }
     return JNI_VERSION_1_6;
 }
@@ -498,4 +500,118 @@ extern "C" void android_open_url(const char *url) {
         }
     }
 }
+
+extern "C" bool android_connect_http(const char *cmd, int *read_fd) {
+    if (!cmd || !read_fd) return false;
+    LOGI("android_connect_http parsing command: %s", cmd);
+
+    std::string cmdStr(cmd);
+    std::string url;
+    std::string userAgent;
+    std::string header;
+
+    // Find URL (http:// or https://)
+    size_t urlPos = cmdStr.find("https://");
+    if (urlPos == std::string::npos) {
+        urlPos = cmdStr.find("http://");
+    }
+    if (urlPos != std::string::npos) {
+        size_t endPos = cmdStr.find_first_of(" \t\r\n\"", urlPos);
+        if (endPos == std::string::npos) {
+            url = cmdStr.substr(urlPos);
+        } else {
+            url = cmdStr.substr(urlPos, endPos - urlPos);
+        }
+    }
+
+    if (url.empty()) {
+        LOGE("android_connect_http: No URL found in command: %s", cmd);
+        return false;
+    }
+
+    // Find User-Agent (-A "..." or -A '...' or -A ...)
+    size_t uaFlag = cmdStr.find("-A ");
+    if (uaFlag != std::string::npos) {
+        size_t start = uaFlag + 3;
+        while (start < cmdStr.size() && (cmdStr[start] == ' ' || cmdStr[start] == '\t')) start++;
+        if (start < cmdStr.size()) {
+            char quote = cmdStr[start];
+            if (quote == '"' || quote == '\'') {
+                size_t end = cmdStr.find(quote, start + 1);
+                if (end != std::string::npos) {
+                    userAgent = cmdStr.substr(start + 1, end - start - 1);
+                }
+            } else {
+                size_t end = cmdStr.find_first_of(" \t", start);
+                userAgent = (end == std::string::npos) ? cmdStr.substr(start) : cmdStr.substr(start, end - start);
+            }
+        }
+    }
+
+    // Find Header (-H "..." or -H '...')
+    size_t hFlag = cmdStr.find("-H ");
+    if (hFlag != std::string::npos) {
+        size_t start = hFlag + 3;
+        while (start < cmdStr.size() && (cmdStr[start] == ' ' || cmdStr[start] == '\t')) start++;
+        if (start < cmdStr.size()) {
+            char quote = cmdStr[start];
+            if (quote == '"' || quote == '\'') {
+                size_t end = cmdStr.find(quote, start + 1);
+                if (end != std::string::npos) {
+                    header = cmdStr.substr(start + 1, end - start - 1);
+                }
+            } else {
+                size_t end = cmdStr.find_first_of(" \t", start);
+                header = (end == std::string::npos) ? cmdStr.substr(start) : cmdStr.substr(start, end - start);
+            }
+        }
+    }
+
+    int pipefds[2];
+    if (pipe(pipefds) != 0) {
+        LOGE("android_connect_http: pipe failed: %s", strerror(errno));
+        return false;
+    }
+
+    if (!g_jvm || !g_native_class || !g_fetch_url_method) {
+        LOGE("android_connect_http: JNI not initialized");
+        close(pipefds[0]);
+        close(pipefds[1]);
+        return false;
+    }
+
+    JNIEnv *env = nullptr;
+    bool attached = false;
+    if (g_jvm->GetEnv((void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+        if (g_jvm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+            attached = true;
+        }
+    }
+
+    if (!env) {
+        LOGE("android_connect_http: could not attach to JVM");
+        close(pipefds[0]);
+        close(pipefds[1]);
+        return false;
+    }
+
+    jstring jUrl = env->NewStringUTF(url.c_str());
+    jstring jUserAgent = userAgent.empty() ? nullptr : env->NewStringUTF(userAgent.c_str());
+    jstring jHeader = header.empty() ? nullptr : env->NewStringUTF(header.c_str());
+
+    LOGI("android_connect_http: Dispatching fetch for URL %s (writeFd=%d, readFd=%d)", url.c_str(), pipefds[1], pipefds[0]);
+    env->CallStaticVoidMethod(g_native_class, g_fetch_url_method, jUrl, jUserAgent, jHeader, (jint)pipefds[1]);
+
+    env->DeleteLocalRef(jUrl);
+    if (jUserAgent) env->DeleteLocalRef(jUserAgent);
+    if (jHeader) env->DeleteLocalRef(jHeader);
+
+    if (attached) {
+        g_jvm->DetachCurrentThread();
+    }
+
+    *read_fd = pipefds[0];
+    return true;
+}
+
 

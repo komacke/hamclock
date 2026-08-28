@@ -1,5 +1,11 @@
 package org.openhamclock.hamclock
 
+import android.os.ParcelFileDescriptor
+import android.util.Log
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.Executors
+
 object HamClockNative {
     init {
         System.loadLibrary("hamclock")
@@ -13,6 +19,8 @@ object HamClockNative {
 
     @Volatile
     private var appControlListener: AppControlListener? = null
+
+    private val httpExecutor = Executors.newCachedThreadPool()
 
     fun setAppControlListener(listener: AppControlListener?) {
         appControlListener = listener
@@ -31,6 +39,43 @@ object HamClockNative {
     @JvmStatic
     fun notifyOpenUrl(url: String) {
         appControlListener?.onOpenUrlRequested(url)
+    }
+
+    @JvmStatic
+    fun fetchHttpsUrlToFd(urlString: String, userAgent: String?, header: String?, writeFdInt: Int) {
+        val pfd = ParcelFileDescriptor.adoptFd(writeFdInt)
+        httpExecutor.execute {
+            try {
+                ParcelFileDescriptor.AutoCloseOutputStream(pfd).use { outStream ->
+                    val url = URL(urlString)
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 15000
+                    conn.instanceFollowRedirects = true
+                    if (!userAgent.isNullOrEmpty()) {
+                        conn.setRequestProperty("User-Agent", userAgent)
+                    }
+                    if (!header.isNullOrEmpty()) {
+                        val colon = header.indexOf(':')
+                        if (colon > 0) {
+                            val name = header.substring(0, colon).trim()
+                            val value = header.substring(colon + 1).trim()
+                            conn.setRequestProperty(name, value)
+                        }
+                    }
+                    conn.connect()
+                    val code = conn.responseCode
+                    val inStream = if (code in 200..299) conn.inputStream else conn.errorStream
+                    val bytesCopied = inStream?.use { input ->
+                        input.copyTo(outStream)
+                    } ?: 0L
+                    Log.i("HamClockHttp", "Successfully streamed $bytesCopied bytes (HTTP $code) for $urlString")
+                    conn.disconnect()
+                }
+            } catch (e: Exception) {
+                Log.w("HamClockHttp", "Error streaming HTTPS $urlString: ${e.message}")
+            }
+        }
     }
 
     external fun startDaemon(
