@@ -420,6 +420,7 @@ static JavaVM *g_jvm = nullptr;
 static jclass g_native_class = nullptr;
 static jmethodID g_exit_method = nullptr;
 static jmethodID g_restart_method = nullptr;
+static jmethodID g_open_url_method = nullptr;
 
 jint JNI_OnLoad(JavaVM *vm, void * /* reserved */) {
     g_jvm = vm;
@@ -432,6 +433,7 @@ jint JNI_OnLoad(JavaVM *vm, void * /* reserved */) {
         g_native_class = (jclass) env->NewGlobalRef(localClass);
         g_exit_method = env->GetStaticMethodID(g_native_class, "notifyExitRequested", "()V");
         g_restart_method = env->GetStaticMethodID(g_native_class, "notifyRestartRequested", "()V");
+        g_open_url_method = env->GetStaticMethodID(g_native_class, "notifyOpenUrl", "(Ljava/lang/String;)V");
     }
     return JNI_VERSION_1_6;
 }
@@ -473,6 +475,26 @@ extern "C" void android_request_restart() {
                 g_jvm->DetachCurrentThread();
             }
             return;
+        }
+    }
+}
+
+extern "C" void android_open_url(const char *url) {
+    LOGI("android_open_url invoked from C++ with: %s", url ? url : "(null)");
+    if (!url || !g_jvm || !g_native_class || !g_open_url_method) return;
+    JNIEnv *env = nullptr;
+    bool attached = false;
+    if (g_jvm->GetEnv((void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+        if (g_jvm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+            attached = true;
+        }
+    }
+    if (env) {
+        jstring jUrl = env->NewStringUTF(url);
+        env->CallStaticVoidMethod(g_native_class, g_open_url_method, jUrl);
+        env->DeleteLocalRef(jUrl);
+        if (attached) {
+            g_jvm->DetachCurrentThread();
         }
     }
 }

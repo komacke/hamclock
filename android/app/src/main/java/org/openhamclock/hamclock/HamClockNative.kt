@@ -8,6 +8,7 @@ object HamClockNative {
     interface AppControlListener {
         fun onExitRequested()
         fun onRestartRequested()
+        fun onOpenUrlRequested(url: String)
     }
 
     @Volatile
@@ -25,6 +26,11 @@ object HamClockNative {
     @JvmStatic
     fun notifyRestartRequested() {
         appControlListener?.onRestartRequested()
+    }
+
+    @JvmStatic
+    fun notifyOpenUrl(url: String) {
+        appControlListener?.onOpenUrlRequested(url)
     }
 
     external fun startDaemon(

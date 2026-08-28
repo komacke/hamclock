@@ -24,6 +24,11 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.net.Uri
+import android.os.Message
+import android.webkit.ConsoleMessage
+import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -112,6 +117,12 @@ class MainActivity : AppCompatActivity() {
                 mainHandler.post {
                     Log.i(TAG, "Restart requested by native HamClock engine")
                     restartApp()
+                }
+            }
+
+            override fun onOpenUrlRequested(url: String) {
+                mainHandler.post {
+                    openExternalUrl(url)
                 }
             }
         })
@@ -357,6 +368,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun openExternalUrl(url: String) {
+        try {
+            val uri = Uri.parse(url)
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            Log.i(TAG, "Opened external URL: $url")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open URL $url: ${e.message}")
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView() {
         webView.settings.apply {
@@ -367,10 +391,44 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_NO_CACHE
             mediaPlaybackRequiresUserGesture = false
             setSupportZoom(false)
+            javaScriptCanOpenWindowsAutomatically = true
+            setSupportMultipleWindows(true)
         }
 
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         webView.setBackgroundColor(0xFF000000.toInt())
+
+        webView.addJavascriptInterface(object {
+            @JavascriptInterface
+            fun openUrl(url: String) {
+                mainHandler.post {
+                    openExternalUrl(url)
+                }
+            }
+        }, "AndroidApp")
+
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: Message?
+            ): Boolean {
+                val href = view?.handler?.obtainMessage()
+                view?.requestFocusNodeHref(href)
+                val url = href?.data?.getString("url")
+                if (!url.isNullOrEmpty()) {
+                    openExternalUrl(url)
+                    return true
+                }
+                return false
+            }
+
+            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                Log.d("HamClockJS", "${consoleMessage?.message()} -- line ${consoleMessage?.lineNumber()}")
+                return true
+            }
+        }
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -378,6 +436,21 @@ class MainActivity : AppCompatActivity() {
                 progressBar.visibility = View.GONE
                 statusText.visibility = View.GONE
                 webView.visibility = View.VISIBLE
+
+                view?.evaluateJavascript(
+                    """
+                    (function() {
+                        window.open = function(url, target, features) {
+                            if (window.AndroidApp && window.AndroidApp.openUrl) {
+                                window.AndroidApp.openUrl(url);
+                                return { close: function() {}, closed: false, focus: function() {} };
+                            }
+                            return null;
+                        };
+                    })();
+                    """.trimIndent(),
+                    null
+                )
             }
 
             override fun onReceivedError(
