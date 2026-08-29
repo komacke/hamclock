@@ -427,6 +427,21 @@ static const uint8_t nv_sizes[NV_N] = {
     NV_HAMALERT_PASSWD_LEN,     // NV_HAMALERT_PASSWD
     NV_HAMALERT_LOGIN_LEN,      // NV_HAMALERT_LOGIN
 
+    // 265
+    1,                          // NV_MARINE_ON
+    1,                          // NV_MARINE_AUTOPOP
+    2,                          // NV_MARINE_RADIUS
+
+    // 266
+    1,                          // NV_FIREWX_ON
+    1,                          // NV_FIREWX_AUTOPOP
+    2,                          // NV_FIREWX_RADIUS
+
+    // 267
+    1,                          // NV_QUAKE_ON
+    1,                          // NV_QUAKE_AUTOPOP
+    2,                          // NV_QUAKE_RADIUS
+
 };
 
 #endif // _NVRAMSIZE_H

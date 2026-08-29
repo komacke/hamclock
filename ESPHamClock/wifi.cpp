@@ -2283,6 +2283,9 @@ void updateWiFi(PlotPane skip_pp)
             if (pc == PLOT_CH_ACTIVENETS) fresh_redraw[PLOT_CH_ACTIVENETS] = true;
             if (pc == PLOT_CH_DXPEDS)    fresh_redraw[PLOT_CH_DXPEDS] = true;
             if (pc == PLOT_CH_STORMS)    fresh_redraw[PLOT_CH_STORMS] = true;
+            if (pc == PLOT_CH_MARINE)    fresh_redraw[PLOT_CH_MARINE] = true;
+            if (pc == PLOT_CH_FIREWX)    fresh_redraw[PLOT_CH_FIREWX] = true;
+            if (pc == PLOT_CH_QUAKES)    fresh_redraw[PLOT_CH_QUAKES] = true;
             if (pc == PLOT_CH_LAUNCHES)  fresh_redraw[PLOT_CH_LAUNCHES] = true;
             if (pc == PLOT_CH_BALLOONS)  fresh_redraw[PLOT_CH_BALLOONS] = true;
             if (pc == PLOT_CH_APRSCLUSTER) fresh_redraw[PLOT_CH_APRSCLUSTER] = true;
@@ -2595,6 +2598,36 @@ void updateWiFi(PlotPane skip_pp)
             }
             break;
 
+        case PLOT_CH_MARINE:
+            if (t0 >= next_update[pp]) {
+                if (updateMarineWarnings(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, MARINEWARN_INTERVAL);
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
+        case PLOT_CH_FIREWX:
+            if (t0 >= next_update[pp]) {
+                if (updateFireWx(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, FIREWX_INTERVAL);
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
+        case PLOT_CH_QUAKES:
+            if (t0 >= next_update[pp]) {
+                if (updateQuakes(box, fresh_redraw[pc])) {
+                    next_update[pp] = nextPaneUpdate (pc, QUAKES_INTERVAL);
+                    fresh_redraw[pc] = false;
+                } else
+                    next_update[pp] = nextWiFiRetry(pc);
+            }
+            break;
+
 	case PLOT_CH_LAUNCHES:
             if (t0 >= next_update[pp]) {
                 if (updateLaunches(box, fresh_redraw[pc])) {
@@ -2644,6 +2677,12 @@ void updateWiFi(PlotPane skip_pp)
     updateLightning();
 
     checkStormsData();
+
+    // unlike checkStormsData(), this must run even when the Marine pane isn't on screen
+    // anywhere -- the geofence/auto-popup check depends on it
+    checkMarineWarningsData();
+    checkFireWxData();
+    checkQuakesData();
 
     // maps are checked after each full earth draw -- see drawMoreEarth()
 
@@ -2862,6 +2901,9 @@ void forcePaneRotationPrev (PlotPane pp)
     if (pc == PLOT_CH_ACTIVENETS) fresh_redraw[PLOT_CH_ACTIVENETS] = true;
     if (pc == PLOT_CH_DXPEDS)     fresh_redraw[PLOT_CH_DXPEDS] = true;
     if (pc == PLOT_CH_STORMS)     fresh_redraw[PLOT_CH_STORMS] = true;
+    if (pc == PLOT_CH_MARINE)     fresh_redraw[PLOT_CH_MARINE] = true;
+    if (pc == PLOT_CH_FIREWX)     fresh_redraw[PLOT_CH_FIREWX] = true;
+    if (pc == PLOT_CH_QUAKES)     fresh_redraw[PLOT_CH_QUAKES] = true;
     if (pc == PLOT_CH_LAUNCHES)   fresh_redraw[PLOT_CH_LAUNCHES] = true;
     if (pc == PLOT_CH_BALLOONS)   fresh_redraw[PLOT_CH_BALLOONS] = true;
 

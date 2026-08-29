@@ -652,6 +652,9 @@ void setup()
     NVReadUInt8 (NV_RSS_ON, &rss_on);
     initLightning();
     initStorms();
+    initMarineWarnings();
+    initFireWx();
+    initQuakes();
     initWefax();
     if (!NVReadUInt8 (NV_RSS_INTERVAL, &rss_interval) || rss_interval < RSS_MIN_INT) {
         rss_interval = RSS_DEF_INT;
@@ -944,6 +947,8 @@ static void checkTouch()
         drawSatPass();
     } else if (checkPlanetMapTouch (s)) {
         // handled entirely within checkPlanetMapTouch
+    } else if (checkQuakeMapTouch (s)) {
+        // handled entirely within checkQuakeMapTouch
     } else if (!overViewBtn(s, DX_R) && s2ll (s, ll)) {
         // tapped map: set flag to run popup after map finishes or set newDX here if special-tap
         if (names_on)
@@ -1815,6 +1820,9 @@ void drawAllSymbols()
     drawFarthestPSKSpots();
     drawLightningOnMap();
     drawStormsOnMap();
+    drawMarineWarningsOnMap();
+    drawFireWxOnMap();
+    drawQuakesOnMap();
     drawSatPathAndFoot();
     drawSanta ();
     drawEnterprise ();
