@@ -21,6 +21,13 @@ jobs:
             ref: ${{ github.ref_name }}
             fetch-depth: 0
 
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
       - name: Prepare assets
         run: |
           echo "Running on branch: ${{ github.ref_name }}"
@@ -55,7 +62,42 @@ jobs:
           # zip file for HamClock upgrades
           zip -r "dist/ESPHamClock-V$HC_TAG.zip" ESPHamClock -x "dist/*"
           zip -r "dist/hamclock-contrib-V$HC_TAG.zip" hamclock-contrib -x "dist/*"
-          zip -r "dist/hamclock-contrib-V$HC_TAG.zip" hamclock-contrib -x "dist/*"
+
+      - name: Build Android Release APK and AAB
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          TAG="${{ github.event.inputs.tag_name }}"
+          cd android
+          chmod +x gradlew
+
+          # If keystore secret is provided, decode to temporary keystore file
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "Configuring release keystore from secrets..."
+            export ANDROID_KEYSTORE_FILE="$(pwd)/release.keystore"
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE_FILE"
+          fi
+
+          ./gradlew assembleRelease bundleRelease
+
+          # Clean up temporary keystore file immediately after build
+          if [ -f "release.keystore" ]; then
+            rm -f "release.keystore"
+          fi
+
+          # Copy generated release APK into dist directory
+          cp app/build/outputs/apk/release/org.openhamclock-*.apk ../dist/
+
+          # Copy generated release AAB into dist directory with matching version naming
+          AAB_SRC=$(find app/build/outputs/bundle/release/ -name "*.aab" | head -n 1)
+          if [ -n "$AAB_SRC" ]; then
+            APK_NAME=$(basename $(ls ../dist/org.openhamclock-*.apk | head -n 1))
+            AAB_NAME="${APK_NAME%.apk}.aab"
+            cp "$AAB_SRC" "../dist/$AAB_NAME"
+          fi
 
       - name: Create Release and Upload Asset
         env:
@@ -66,15 +108,31 @@ jobs:
           HC_TAG=${HC_TAG#v}
           HC_TAG=${HC_TAG#V}
 
-          # Grabs file from repo tree and uploads with a label
+          # Locate the built Android APK and AAB
+          APK_PATH=$(ls dist/org.openhamclock-*.apk 2>/dev/null | head -n 1)
+          AAB_PATH=$(ls dist/org.openhamclock-*.aab 2>/dev/null | head -n 1)
+
+          ASSETS=(
+            "docker/manage-hc-docker-$TAG.sh#Manage HamClock Docker Installs"
+            "debian/install-hc-rpi#Installer for RPi and other Debian distros"
+            "dist/ESPHamClock-V$HC_TAG.zip#HamClock Source Zip with version"
+            "old-versions/ESPHamClock-V3.10.zip#HamClock Source Zip for ESP devices"
+            "old-versions/ohb.hamclock.app_ESPHamClock-V3.10.ino.bin#HamClock ino.bin for ESP devices on OHB"
+            "dist/hamclock-contrib-V$HC_TAG.zip#HamClock 3rd party contributions"
+            "doc/HamClockUserGuide.pdf#HamClock User Guide"
+          )
+
+          if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+            ASSETS+=("$APK_PATH#HamClock Android APK")
+          fi
+          if [ -n "$AAB_PATH" ] && [ -f "$AAB_PATH" ]; then
+            ASSETS+=("$AAB_PATH#HamClock Android App Bundle (Google Play)")
+          fi
+
+          # Grabs files from repo tree and uploads with labels
           gh release create $TAG \
-            "docker/manage-hc-docker-$TAG.sh#Manage HamClock Docker Installs" \
-            "debian/install-hc-rpi#Installer for RPi and other Debian distros" \
-            "dist/ESPHamClock-V$HC_TAG.zip#HamClock Source Zip with version" \
-            "old-versions/ESPHamClock-V3.10.zip#HamClock Source Zip for ESP devices" \
-            "old-versions/ohb.hamclock.app_ESPHamClock-V3.10.ino.bin#HamClock ino.bin for ESP devices on OHB" \
-            "dist/hamclock-contrib-V$HC_TAG.zip#HamClock 3rd party contributions" \
-            "doc/HamClockUserGuide.pdf#HamClock User Guide" \
+            "${ASSETS[@]}" \
             --title "HamClock Release: $TAG" \
             --target ${{ github.ref_name }} \
             --generate-notes
+

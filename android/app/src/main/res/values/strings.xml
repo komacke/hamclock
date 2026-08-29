@@ -1,0 +1,38 @@
+<resources>
+    <string name="app_name">HamClock</string>
+    <string name="starting_engine">Starting HamClock Engine…</string>
+    <string name="loading_interface">Loading HamClock Interface…</string>
+    <string name="start_failed">Unable to connect to HamClock local server</string>
+    <string name="backend_default">ohb.hamclock.app:80</string>
+
+    <string name="settings_title">HamClock Settings</string>
+    <string name="backend_server_label">Backend Host (host:port):</string>
+    <string name="backend_hint">host:port</string>
+    <string name="start_on_boot_label">Start automatically on device boot</string>
+    <string name="autostart_oem_notice">This device includes a background Auto-start manager. You may need to enable HamClock there for boot startup to work.</string>
+    <string name="background_restricted_notice">Background activity is restricted for this app in Android Battery settings.</string>
+    <string name="open_autostart_settings">Configure System Settings</string>
+    <string name="save_and_restart">Save &amp; Restart</string>
+    <string name="save">Save</string>
+    <string name="open_setup">Setup HamClock</string>
+    <string name="exit_hamclock">Exit HamClock</string>
+    <string name="cancel">Cancel</string>
+
+    <string name="allow_external_label">Allow local network access (Wi-Fi / LAN)</string>
+    <string name="mdns_name_label">Device Name for mDNS (.local):</string>
+    <string name="mdns_name_hint">hamclock</string>
+    <string name="local_url_label">Access from browser on your local network:</string>
+    <string name="copy_url">Copy URL</string>
+    <string name="copied_to_clipboard">Copied URL to clipboard</string>
+    <string name="server_ports_label">Server Ports:</string>
+    <string name="server_ports_format">Live Web (R/W): %1$d   •   Live Web (R/O): %2$d\nRESTful API: %3$s</string>
+    <string name="rest_port_label">RESTful API Port:</string>
+    <string name="rest_port_active">Port %1$d</string>
+    <string name="rest_port_disabled">Disabled</string>
+    <string name="rest_port_conflict_warning">⚠️ Port 8080 was in use by another app. Using fallback port %1$d.</string>
+    <string name="rest_port_conflict_disabled">⚠️ Port 8080 was in use by another app. REST API is disabled.</string>
+    <string name="rest_port_conflict_toast">Notice: Port 8080 is in use by another app. REST API switched to port %1$d.</string>
+    <string name="rest_port_disabled_toast">Notice: Port 8080 is in use by another app. REST API has been disabled.</string>
+</resources>
+
+

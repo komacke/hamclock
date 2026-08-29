@@ -558,10 +558,38 @@ char live_html[] =  R"_raw_html_(
                 var button = ((event.button == 0 && mods) || event.button == 1 || event.button == 2) ? 1 : 0;
                 console.log ("button " + event.button + " + " + mods + " -> " + button);
 
+                // if tapping on virtual keyboard Paste button in non-Android browser, read browser clipboard
+                if (m.x >= 16 && m.x <= 155 && m.y >= 404 && m.y <= 470 && !window.AndroidApp) {
+                    if (navigator.clipboard && navigator.clipboard.readText) {
+                        navigator.clipboard.readText().then(text => {
+                            if (text)
+                                pasteString(text);
+                        }).catch(err => {
+                            console.log("clipboard read denied: ", err);
+                            let text = prompt("Paste text here (Ctrl+V):", "");
+                            if (text)
+                                pasteString(text);
+                        });
+                    } else {
+                        let text = prompt("Paste text here (Ctrl+V):", "");
+                        if (text)
+                            pasteString(text);
+                    }
+                }
+
                 // compose and send
                 let msg = 'set_touch?x=' + m.x + '&y=' + m.y + '&button=' + button;
                 sendWSMsg (msg);
             });
+
+            // helper to paste string into HamClock
+            function pasteString(str) {
+                if (!str) return;
+                for (let i = 0; i < str.length; i++) {
+                    sendKey(str[i]);
+                }
+            }
+            window.pasteString = pasteString;
 
             // suppress the browser's native right-click context menu on the canvas so a right-click
             // reaches pointerup above (as an 'other button' tap) instead of popping the OS/browser menu
@@ -600,9 +628,7 @@ char live_html[] =  R"_raw_html_(
 
             document.addEventListener('paste', e => {
                 let str = e.clipboardData.getData('text/plain');
-                for (let i = 0; i < str.length; i++) {
-                    sendKey(str[i]);
-                }
+                pasteString(str);
             });
 
 

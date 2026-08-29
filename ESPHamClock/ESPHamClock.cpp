@@ -181,8 +181,16 @@ static void showDefines(void)
         _PR_MAC(_IS_UNIX);
     #endif
 
+    #if defined(_IS_ANDROID)
+        _PR_MAC(_IS_ANDROID);
+    #endif
+
     #if defined(_IS_LINUX)
         _PR_MAC(_IS_LINUX);
+    #endif
+
+    #if defined(_IS_APPLE)
+        _PR_MAC(_IS_APPLE);
     #endif
 
     #if defined(_IS_FREEBSD)
@@ -2618,7 +2626,7 @@ void doReboot(bool minus_K, bool minus_0)
 {
     defaultState();
 #if defined(_IS_ANDROID)
-    android_request_restart();
+    android_request_restart(minus_K);
     for(;;);
 #else
     ESP.restart (minus_K, minus_0);

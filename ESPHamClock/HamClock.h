@@ -2828,6 +2828,7 @@ class ScrollBar {
         void init (int mv, int nd, SBox &b);
         bool checkTouch (char kb, SCoord &s);
         int getTop(void) {return (top_vis); };
+        void draw();
 
     private:
 
@@ -2841,7 +2842,6 @@ class ScrollBar {
         bool okToScrollUp (void) {return (top_vis > 0); }
         void scrollUp();
         void scrollDown();
-        void draw();
 
         bool canScrollUp(void);
         bool canScrollDw(void);

@@ -531,9 +531,9 @@ static StringPrompt string_pr[N_SPR] = {
 
     // "page 4" -- index 3
 
-    {3, { 10, R2Y(0), 140, PR_H}, {160, R2Y(0), 490, PR_H}, "hams.at key:  ", hamsat_key, NV_HAMSATKEY_LEN, 0, 0,
-                "Enter your hams.at API key for personalized satellite activation match%/visibility, "
-                "or leave blank"},
+    {3, { 10, R2Y(0), 175, PR_H}, {190, R2Y(0), 460, PR_H}, "hams.at api key: ", hamsat_key, NV_HAMSATKEY_LEN, 0, 0,
+                "Enter your hams.at API key (from your hams.at account settings) for personalized satellite "
+                "activation match%/visibility, or leave blank"},
 
     {3, {10,  R2Y(1), 240, PR_H}, {250, R2Y(1), 100, PR_H}, "Map center longitude:", NULL, 0, 0, 0,
                 "Enter the desired center longitude for the Mercator map projection in decimal degrees; "
@@ -1334,6 +1334,7 @@ static const uint8_t qroff[NQR] = {
 };
 
 // special virtual keyboard chars
+static const SBox paste_b  = {KB_INDENT, KB_SPC_Y, (uint16_t)(SBAR_X - KB_INDENT - 12), KB_SPC_H};
 static const SBox space_b  = {SBAR_X, KB_SPC_Y, SBAR_W, KB_SPC_H};
 static const SBox page_b   = {800-PAGE_W-KB_INDENT-1, 1, PAGE_W, PAGE_H};
 static const SBox delete_b = {KB_INDENT+12*KB_CHAR_W, KB_Y0+2*KB_CHAR_H, KB_CHAR_W, KB_CHAR_H};
@@ -2501,6 +2502,7 @@ static void drawKeyboard()
         }
     }
 
+    drawStringInBox ("Paste", paste_b, false, RA8875_CYAN);
     drawStringInBox ("", space_b, false, KF_C);
     drawStringInBox ("Del", delete_b, false, DEL_C);
     drawStringInBox ("<==", left_b, false, DEL_C);
@@ -5217,6 +5219,45 @@ static void runSetup()
                 continue;
         }
 
+        // check tapping on Paste button on keyboard pages
+        if (((cur_page >= KBPAGE_FIRST && cur_page <= KBPAGE_LAST) || cur_page == HAMALERT_PAGE)
+                        && inBox (ui.tap, paste_b)) {
+            StringPrompt *sp = cur_focus[cur_page].sp;
+            if (sp) {
+                drawStringInBox ("Paste", paste_b, true, RA8875_CYAN);
+                char paste_buf[128];
+                bool got_clip = false;
+#if defined(_IS_ANDROID)
+                got_clip = android_get_clipboard (paste_buf, sizeof(paste_buf));
+#endif
+                if (got_clip) {
+                    strTrimAll (paste_buf);
+                    for (int i = 0; paste_buf[i] != '\0'; i++) {
+                        char c = paste_buf[i];
+                        if (isprint (c)) {
+                            if (sp == &string_pr[CALL_SPR])
+                                c = toupper (c);
+                            size_t vl = strlen (sp->v_str);
+                            if (vl < sp->v_len - 1U) {
+                                eraseSPValue (sp);
+                                memmove (&sp->v_str[sp->v_ci+1], &sp->v_str[sp->v_ci], vl - sp->v_ci + 1);
+                                sp->v_str[sp->v_ci++] = c;
+                                drawSPValue (sp);
+                                drawCursor ();
+                            }
+                        }
+                    }
+                    if (cur_page == LATLNG_PAGE)
+                        checkLLGEdit (sp);
+                } else {
+                    tft.pasteClipboard();
+                }
+                wdDelay (150);
+                drawStringInBox ("Paste", paste_b, false, RA8875_CYAN);
+            }
+            continue;
+        }
+
         // proceed with normal fields processing
 
         if (ui.kb_char == CHAR_TAB || ui.kb_char == CHAR_UP || ui.kb_char == CHAR_DOWN) {
@@ -5747,7 +5788,7 @@ void drawStringInBox (const char str[], const SBox &b, bool inverted, uint16_t c
     FontWeight fw;
     FontSize fs;
     getFontStyle (&fw, &fs);
-    uint16_t fy = b.y + (fs == FAST_FONT ? b.h/5 : 3*b.h/4);
+    uint16_t fy = b.y + (fs == FAST_FONT ? b.h/5 : 3*b.h/4 + (b.h <= 36 ? 3 : 0));
     tft.setCursor (b.x+(b.w-sw)/2, fy);
 
     // draw
