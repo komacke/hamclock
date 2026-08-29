@@ -8,10 +8,47 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:descendantFocusability="beforeDescendants"
         android:paddingStart="24dp"
         android:paddingEnd="24dp"
         android:paddingTop="12dp"
         android:paddingBottom="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <Button
+            android:id="@+id/btn_open_setup"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:text="@string/open_setup"
+            android:textColor="@color/hamclock_text"
+            android:backgroundTint="#2C3E50" />
+
+        <Button
+            android:id="@+id/btn_exit_app"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:text="@string/exit_hamclock"
+            android:textColor="@color/hamclock_text"
+            android:backgroundTint="#8B0000" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="12dp"
+        android:background="#33FFFFFF" />
 
     <TextView
         android:layout_width="match_parent"
@@ -28,6 +65,7 @@
         android:hint="@string/backend_hint"
         android:importantForAutofill="no"
         android:inputType="textUri"
+        android:imeOptions="flagNoExtractUi|actionDone"
         android:singleLine="true"
         android:textColor="@color/hamclock_text"
         android:textColorHint="#888888" />
@@ -122,6 +160,7 @@
             android:hint="@string/mdns_name_hint"
             android:importantForAutofill="no"
             android:inputType="textNoSuggestions"
+            android:imeOptions="flagNoExtractUi|actionDone"
             android:singleLine="true"
             android:textSize="13sp"
             android:textColor="@color/hamclock_text"
@@ -188,39 +227,6 @@
         android:textSize="12sp"
         android:layout_marginTop="3dp"
         android:visibility="gone" />
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginTop="12dp"
-        android:layout_marginBottom="12dp"
-        android:background="#33FFFFFF" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/btn_open_setup"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginEnd="6dp"
-            android:text="@string/open_setup"
-            android:textColor="@color/hamclock_text"
-            android:backgroundTint="#2C3E50" />
-
-        <Button
-            android:id="@+id/btn_exit_app"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="6dp"
-            android:text="@string/exit_hamclock"
-            android:textColor="@color/hamclock_text"
-            android:backgroundTint="#8B0000" />
-    </LinearLayout>
 
 </LinearLayout>
 </ScrollView>

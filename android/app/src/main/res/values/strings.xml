@@ -14,7 +14,7 @@
     <string name="open_autostart_settings">Configure System Settings</string>
     <string name="save_and_restart">Save &amp; Restart</string>
     <string name="save">Save</string>
-    <string name="open_setup">Open HamClock Setup</string>
+    <string name="open_setup">Setup HamClock</string>
     <string name="exit_hamclock">Exit HamClock</string>
     <string name="cancel">Cancel</string>
 
