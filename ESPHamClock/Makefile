@@ -122,6 +122,9 @@ OBJS = \
 	hamqsl.o \
 	hamsat.o \
 	hurricane.o \
+	marinewarnings.o \
+	firewx.o \
+	quakes.o \
 	earthmap.o \
 	earthsat.o \
 	eclipsepane.o \

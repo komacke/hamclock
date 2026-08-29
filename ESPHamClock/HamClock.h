@@ -446,7 +446,10 @@ typedef enum {
     X(PLOT_CH_APRSCLUSTER,  "Nearby_APRS")       \
     X(PLOT_CH_BALLOONS,     "Balloons")          \
     X(PLOT_CH_HAMALERT,     "HamAlert")          \
-    X(PLOT_CH_BANDACT,      "Band_Act")
+    X(PLOT_CH_BANDACT,      "Band_Act")          \
+    X(PLOT_CH_MARINE,       "Marine_Wx")         \
+    X(PLOT_CH_FIREWX,       "Fire_Wx")           \
+    X(PLOT_CH_QUAKES,       "Quakes")
 
 #define PLOTNAMES PLOTNAMES_LOW PLOTNAMES_HIGH
 
@@ -2508,7 +2511,9 @@ extern PlotMask plot_rotset[PANE_N];       // each pane's PlotChoice rotation ch
                                  PLOTBIT(PLOT_CH_DXPEDS) | PLOTBIT(PLOT_CH_ACTIVENETS) | \
                                  PLOTBIT(PLOT_CH_LAUNCHES) | PLOTBIT(PLOT_CH_SATACT) | \
                                  PLOTBIT(PLOT_CH_APRSCLUSTER) | \
-                                 PLOTBIT(PLOT_CH_BALLOONS) | PLOTBIT(PLOT_CH_BANDACT))
+                                 PLOTBIT(PLOT_CH_BALLOONS) | PLOTBIT(PLOT_CH_BANDACT) | \
+                                 PLOTBIT(PLOT_CH_MARINE) | PLOTBIT(PLOT_CH_FIREWX) | \
+                                 PLOTBIT(PLOT_CH_QUAKES))
 
 // compute number of bits set in PANE_0_CH_MASK at compile time :-)
 // https://stackoverflow.com/questions/109023/count-the-number-of-set-bits-in-a-32-bit-integer
@@ -2757,6 +2762,58 @@ extern bool getStormTropicalTidbitsURL (const LatLong &ll, char *url, size_t url
 extern bool getStormMapMenuInfo (const LatLong &ll, char *line1, size_t line1_len,
         char *line2, size_t line2_len, char *line3, size_t line3_len);
 extern uint16_t stormCategoryColor (uint8_t cat, uint16_t wind_kt);
+
+/*
+ * marinewarnings.cpp
+ */
+
+#define MARINEWARN_INTERVAL      (2)
+
+extern void initMarineWarnings (void);
+extern bool checkMarineWarningsData (void);
+extern bool updateMarineWarnings (const SBox &box, bool fresh);
+extern void drawMarineWarningsPane (const SBox &box);
+extern void drawMarineWarningsOnMap (void);
+extern bool checkMarineWarningsTouch (const SCoord &s, const SBox &box);
+extern bool marineWarningsActive (void);
+extern bool injectTestMarineWarning (const char *id, const char *office, float lat, float lng,
+                                      int minutes, const char *headline);
+extern void clearTestMarineWarnings (void);
+
+/*
+ * firewx.cpp
+ */
+
+#define FIREWX_INTERVAL      (2)
+
+extern void initFireWx (void);
+extern bool checkFireWxData (void);
+extern bool updateFireWx (const SBox &box, bool fresh);
+extern void drawFireWxPane (const SBox &box);
+extern void drawFireWxOnMap (void);
+extern bool checkFireWxTouch (const SCoord &s, const SBox &box);
+extern bool fireWxActive (void);
+extern bool injectTestFireWx (const char *id, const char *office, float lat, float lng,
+                               int minutes, const char *headline);
+extern void clearTestFireWx (void);
+
+/*
+ * quakes.cpp
+ */
+
+#define QUAKES_INTERVAL      (2)
+
+extern void initQuakes (void);
+extern bool checkQuakesData (void);
+extern bool updateQuakes (const SBox &box, bool fresh);
+extern void drawQuakesPane (const SBox &box);
+extern void drawQuakesOnMap (void);
+extern bool checkQuakesTouch (const SCoord &s, const SBox &box);
+extern bool quakesActive (void);
+extern bool injectTestQuake (const char *id, float mag, float depth_km, float lat, float lng,
+                              const char *place);
+extern void clearTestQuakes (void);
+extern bool checkQuakeMapTouch (const SCoord &s);
 
 /* 
  * launches.cpp

@@ -3113,6 +3113,157 @@ static bool setWiFiNewDE (WiFiClient &client, char line[], size_t line_len)
     return (setWiFiNewDEDX_helper (client, false, line, line_len));
 }
 
+/* inject (or clear) a synthetic marine warning for testing the geofence + auto-popup logic
+ * without needing a live NWS alert. runs through the exact same code path real backend data
+ * would -- it's not just a fake pane switch.
+ */
+static bool setWiFiMarineTest (WiFiClient &client, char line[], size_t line_len)
+{
+    WebArgs wa;
+    wa.nargs = 0;
+    wa.name[wa.nargs++] = "id";
+    wa.name[wa.nargs++] = "lat";
+    wa.name[wa.nargs++] = "lng";
+    wa.name[wa.nargs++] = "minutes";
+    wa.name[wa.nargs++] = "headline";
+    wa.name[wa.nargs++] = "office";
+    wa.name[wa.nargs++] = "clear";
+
+    if (!parseWebCommand (wa, line, line_len))
+        return (false);
+
+    if (wa.found[6]) {
+        clearTestMarineWarnings();
+        startPlainText (client);
+        client.println ("marine test warnings cleared");
+        return (true);
+    }
+
+    const char *id_s     = wa.value[0];
+    const char *lat_s    = wa.value[1];
+    const char *lng_s    = wa.value[2];
+    const char *min_s    = wa.value[3];
+    const char *headline = wa.value[4];
+    const char *office   = wa.value[5];
+
+    if (!id_s || !lat_s || !lng_s) {
+        strcpy (line, "require id, lat, lng (or clear)");
+        return (false);
+    }
+
+    float lat = atof (lat_s);
+    float lng = atof (lng_s);
+    int minutes = min_s ? atoi (min_s) : 15;
+
+    if (!injectTestMarineWarning (id_s, office, lat, lng, minutes, headline)) {
+        strcpy (line, "inject failed");
+        return (false);
+    }
+
+    startPlainText (client);
+    client.println ("ok");
+    return (true);
+}
+
+/* same as setWiFiMarineTest but for Fire Wx */
+static bool setWiFiFireTest (WiFiClient &client, char line[], size_t line_len)
+{
+    WebArgs wa;
+    wa.nargs = 0;
+    wa.name[wa.nargs++] = "id";
+    wa.name[wa.nargs++] = "lat";
+    wa.name[wa.nargs++] = "lng";
+    wa.name[wa.nargs++] = "minutes";
+    wa.name[wa.nargs++] = "headline";
+    wa.name[wa.nargs++] = "office";
+    wa.name[wa.nargs++] = "clear";
+
+    if (!parseWebCommand (wa, line, line_len))
+        return (false);
+
+    if (wa.found[6]) {
+        clearTestFireWx();
+        startPlainText (client);
+        client.println ("fire wx test warnings cleared");
+        return (true);
+    }
+
+    const char *id_s     = wa.value[0];
+    const char *lat_s    = wa.value[1];
+    const char *lng_s    = wa.value[2];
+    const char *min_s    = wa.value[3];
+    const char *headline = wa.value[4];
+    const char *office   = wa.value[5];
+
+    if (!id_s || !lat_s || !lng_s) {
+        strcpy (line, "require id, lat, lng (or clear)");
+        return (false);
+    }
+
+    float lat = atof (lat_s);
+    float lng = atof (lng_s);
+    int minutes = min_s ? atoi (min_s) : 15;
+
+    if (!injectTestFireWx (id_s, office, lat, lng, minutes, headline)) {
+        strcpy (line, "inject failed");
+        return (false);
+    }
+
+    startPlainText (client);
+    client.println ("ok");
+    return (true);
+}
+
+/* inject (or clear) a synthetic earthquake for testing the Quakes pane */
+static bool setWiFiQuakeTest (WiFiClient &client, char line[], size_t line_len)
+{
+    WebArgs wa;
+    wa.nargs = 0;
+    wa.name[wa.nargs++] = "id";
+    wa.name[wa.nargs++] = "lat";
+    wa.name[wa.nargs++] = "lng";
+    wa.name[wa.nargs++] = "mag";
+    wa.name[wa.nargs++] = "depth";
+    wa.name[wa.nargs++] = "place";
+    wa.name[wa.nargs++] = "clear";
+
+    if (!parseWebCommand (wa, line, line_len))
+        return (false);
+
+    if (wa.found[6]) {
+        clearTestQuakes();
+        startPlainText (client);
+        client.println ("quake test events cleared");
+        return (true);
+    }
+
+    const char *id_s    = wa.value[0];
+    const char *lat_s   = wa.value[1];
+    const char *lng_s   = wa.value[2];
+    const char *mag_s   = wa.value[3];
+    const char *depth_s = wa.value[4];
+    const char *place   = wa.value[5];
+
+    if (!id_s || !lat_s || !lng_s) {
+        strcpy (line, "require id, lat, lng (or clear)");
+        return (false);
+    }
+
+    float lat   = atof (lat_s);
+    float lng   = atof (lng_s);
+    float mag   = mag_s ? atof (mag_s) : 4.0;
+    float depth = depth_s ? atof (depth_s) : 10.0;
+
+    if (!injectTestQuake (id_s, mag, depth, lat, lng, place)) {
+        strcpy (line, "inject failed");
+        return (false);
+    }
+
+    startPlainText (client);
+    client.println ("ok");
+    return (true);
+}
+
 /* set DX from grid or lat/lng
  */
 static bool setWiFiNewDX (WiFiClient &client, char line[], size_t line_len)
@@ -4815,6 +4966,9 @@ static const CmdTble command_table[] = {
     { "set_mapcenter?",     setWiFiMapCenter,      "lng=X" },
     { "set_mapcolor?",      setWiFiMapColor,       "setup=name&color=R,G,B" },
     { "set_mapview?",       setWiFiMapView,        "Style=S&Grid=G&Projection=P&RSS=on|off&Night=on|off" },
+    { "set_marine_test?",   setWiFiMarineTest,     "id=X&lat=Y&lng=Z&minutes=N&headline=TEXT&office=OFF | clear" },
+    { "set_firewx_test?",   setWiFiFireTest,       "id=X&lat=Y&lng=Z&minutes=N&headline=TEXT&office=OFF | clear" },
+    { "set_quake_test?",    setWiFiQuakeTest,      "id=X&lat=Y&lng=Z&mag=M&depth=D&place=TEXT | clear" },
     { "set_newde?",         setWiFiNewDE,          "grid=AB12&lat=X&lng=Y&call=AA0XYZ" },
     { "set_newdx?",         setWiFiNewDX,          "grid=AB12&lat=X&lng=Y" },
     { "set_once_alarm?",    setWiFiOnceAlarm,      "state=off|armed&time=YYYY-MM-DDTHR:MN&tz=DE|UTC" },

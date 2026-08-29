@@ -142,6 +142,9 @@ bool plotChoiceIsAvailable (PlotChoice pc)
     case PLOT_CH_DXPEDS:        // fallthru
     case PLOT_CH_DST:           // fallthru
     case PLOT_CH_STORMS:        // fallthru
+    case PLOT_CH_MARINE:        // fallthru
+    case PLOT_CH_FIREWX:        // fallthru
+    case PLOT_CH_QUAKES:        // fallthru
     case PLOT_CH_ACTIVENETS:    // fallthru
     case PLOT_CH_LAUNCHES:	// fallthru
     case PLOT_CH_HFCOND:        // fallthru
@@ -236,7 +239,8 @@ static int categoryOfChoice (PlotChoice pc)
     case PLOT_CH_HAMALERT: case PLOT_CH_BANDACT:
         return 1;   // DX & Contest
 
-    case PLOT_CH_DEWX: case PLOT_CH_DXWX: case PLOT_CH_STORMS:
+    case PLOT_CH_DEWX: case PLOT_CH_DXWX: case PLOT_CH_STORMS: case PLOT_CH_MARINE:
+    case PLOT_CH_FIREWX: case PLOT_CH_QUAKES:
         return 2;   // Weather
 
     case PLOT_CH_MOON: case PLOT_CH_SDO: case PLOT_CH_SATACT: case PLOT_CH_ECLIPSE:
@@ -1007,10 +1011,16 @@ PlotChoice getNextRotationChoice (PlotPane pp, PlotChoice pc)
                 // is false and we never get here, so it always shows in that case.
                 if (j == PLOT_CH_STORMS && !stormsActive())
                     continue;
+                if (j == PLOT_CH_MARINE && !marineWarningsActive())
+                    continue;
+                if (j == PLOT_CH_FIREWX && !fireWxActive())
+                    continue;
+                if (j == PLOT_CH_QUAKES && !quakesActive())
+                    continue;
                 return ((PlotChoice)j);
             }
         }
-        // only an (empty) Storms choice remained besides us -- stay on the current choice
+        // only an (empty) Storms/Marine choice remained besides us -- stay on the current choice
         return (pc);
     } else
         return (pc);
@@ -1026,6 +1036,12 @@ PlotChoice getPrevRotationChoice (PlotPane pp, PlotChoice pc)
             int j = (pc - i + PLOT_CH_N) % PLOT_CH_N;
             if (plot_rotset[pp] & PLOTBIT(j)) {
                 if (j == PLOT_CH_STORMS && !stormsActive())
+                    continue;
+                if (j == PLOT_CH_MARINE && !marineWarningsActive())
+                    continue;
+                if (j == PLOT_CH_FIREWX && !fireWxActive())
+                    continue;
+                if (j == PLOT_CH_QUAKES && !quakesActive())
                     continue;
                 return ((PlotChoice)j);
             }
@@ -1239,6 +1255,24 @@ bool checkPlotTouch (TouchType tt, const SCoord &s, PlotPane pp)
 
     case PLOT_CH_STORMS:
         if (checkStormsTouch (s, box))
+            return (true);
+        in_top = true;
+        break;
+
+    case PLOT_CH_MARINE:
+        if (checkMarineWarningsTouch (s, box))
+            return (true);
+        in_top = true;
+        break;
+
+    case PLOT_CH_FIREWX:
+        if (checkFireWxTouch (s, box))
+            return (true);
+        in_top = true;
+        break;
+
+    case PLOT_CH_QUAKES:
+        if (checkQuakesTouch (s, box))
             return (true);
         in_top = true;
         break;
@@ -1567,6 +1601,7 @@ bool overHoverPane (const SCoord &s)
         if (inBox (s, plot_b[i])) {
             PlotChoice ch = plot_ch[i];
             if (ch == PLOT_CH_ACTIVENETS || ch == PLOT_CH_LAUNCHES || ch == PLOT_CH_STORMS ||
+                ch == PLOT_CH_MARINE || ch == PLOT_CH_FIREWX || ch == PLOT_CH_QUAKES ||
                 ch == PLOT_CH_DXCLUSTER || ch == PLOT_CH_PSK || ch == PLOT_CH_ONTA ||
                 ch == PLOT_CH_ADIF || ch == PLOT_CH_DXPEDS || ch == PLOT_CH_SDO ||
                 ch == PLOT_CH_MOON || ch == PLOT_CH_SATACT || ch == PLOT_CH_HAMALERT) {

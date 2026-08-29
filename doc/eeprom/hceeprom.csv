@@ -244,3 +244,12 @@ Addr,Name,Len,Type,Description
 0xD28,NV_APRSCATFILTER,2,i,bitmask of APRSCategory values currently shown in the pane
 0xD2B,NV_HAMALERT_PASSWD,32,s,HamAlert.org telnet password; blank means HamAlert pane is unused
 0xD4C,NV_HAMALERT_LOGIN,64,s,HamAlert.org telnet login call sign; blank means use station call
+0xD8D,NV_MARINE_ON,1,i,whether the Special Marine Warning overlay/pane is enabled
+0xD8F,NV_MARINE_AUTOPOP,1,i,whether a warning local to DE forces itself onto PANE_0
+0xD91,NV_MARINE_RADIUS,2,i,"fallback geofence radius, statute miles, when no polygon given"
+0xD94,NV_FIREWX_ON,1,i,whether the Red Flag Warning overlay/pane is enabled
+0xD96,NV_FIREWX_AUTOPOP,1,i,whether a warning local to DE forces itself onto its target pane
+0xD98,NV_FIREWX_RADIUS,2,i,"fallback geofence radius, statute miles, when no polygon given"
+0xD9B,NV_QUAKE_ON,1,i,whether the earthquake overlay/pane is enabled
+0xD9D,NV_QUAKE_AUTOPOP,1,i,whether a big-enough local quake forces itself onto its target pane
+0xD9F,NV_QUAKE_RADIUS,2,i,"""any magnitude"" local radius, statute miles (scales up with mag)"

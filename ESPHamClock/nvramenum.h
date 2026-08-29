@@ -424,6 +424,21 @@ typedef enum {
     NV_HAMALERT_PASSWD,             // HamAlert.org telnet password; blank means HamAlert pane is unused
     NV_HAMALERT_LOGIN,              // HamAlert.org telnet login call sign; blank means use station call
 
+    // 265
+    NV_MARINE_ON,                   // whether the Special Marine Warning overlay/pane is enabled
+    NV_MARINE_AUTOPOP,              // whether a warning local to DE forces itself onto PANE_0
+    NV_MARINE_RADIUS,               // fallback geofence radius, statute miles, when no polygon given
+
+    // 266
+    NV_FIREWX_ON,                   // whether the Red Flag Warning overlay/pane is enabled
+    NV_FIREWX_AUTOPOP,              // whether a warning local to DE forces itself onto its target pane
+    NV_FIREWX_RADIUS,               // fallback geofence radius, statute miles, when no polygon given
+
+    // 267
+    NV_QUAKE_ON,                    // whether the earthquake overlay/pane is enabled
+    NV_QUAKE_AUTOPOP,               // whether a big-enough local quake forces itself onto its target pane
+    NV_QUAKE_RADIUS,                // "any magnitude" local radius, statute miles (scales up with mag)
+
     NV_N
 
 } NV_Name;
