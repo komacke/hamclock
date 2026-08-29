@@ -531,9 +531,9 @@ static StringPrompt string_pr[N_SPR] = {
 
     // "page 4" -- index 3
 
-    {3, { 10, R2Y(0), 140, PR_H}, {160, R2Y(0), 490, PR_H}, "hams.at key:  ", hamsat_key, NV_HAMSATKEY_LEN, 0, 0,
-                "Enter your hams.at API key for personalized satellite activation match%/visibility, "
-                "or leave blank"},
+    {3, { 10, R2Y(0), 175, PR_H}, {190, R2Y(0), 460, PR_H}, "hams.at api key: ", hamsat_key, NV_HAMSATKEY_LEN, 0, 0,
+                "Enter your hams.at API key (from your hams.at account settings) for personalized satellite "
+                "activation match%/visibility, or leave blank"},
 
     {3, {10,  R2Y(1), 240, PR_H}, {250, R2Y(1), 100, PR_H}, "Map center longitude:", NULL, 0, 0, 0,
                 "Enter the desired center longitude for the Mercator map projection in decimal degrees; "
