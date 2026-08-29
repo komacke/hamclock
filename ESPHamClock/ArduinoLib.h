@@ -201,7 +201,7 @@ extern bool version_https;
 extern std::string our_dir;
 extern void doExit(void);
 #if defined(_IS_ANDROID)
-extern "C" void android_request_restart(void);
+extern "C" void android_request_restart(bool minus_K);
 extern "C" void android_request_exit(void);
 extern "C" void android_open_url(const char *url);
 extern "C" bool android_get_clipboard(char *buf, size_t buf_len);

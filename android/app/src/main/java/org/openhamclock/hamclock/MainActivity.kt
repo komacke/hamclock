@@ -59,6 +59,7 @@ class MainActivity : AppCompatActivity() {
     private val PREFS_NAME = "hamclock_prefs"
     private val PREF_BACKEND_HOST = "backend_host"
     private val PREF_FORCE_SETUP = "force_setup"
+    private val PREF_RESTART_COUNTDOWN = "restart_countdown"
     private val PREF_START_ON_BOOT = "start_on_boot"
     private val PREF_ALLOW_EXTERNAL = "allow_external_access"
     private val PREF_MDNS_NAME = "mdns_name"
@@ -116,9 +117,13 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            override fun onRestartRequested() {
+            override fun onRestartRequested(minusK: Boolean) {
                 mainHandler.post {
-                    Log.i(TAG, "Restart requested by native HamClock engine")
+                    Log.i(TAG, "Restart requested by native HamClock engine (minusK=$minusK)")
+                    if (!minusK) {
+                        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        prefs.edit().putBoolean(PREF_RESTART_COUNTDOWN, true).commit()
+                    }
                     restartApp()
                 }
             }
@@ -540,7 +545,13 @@ class MainActivity : AppCompatActivity() {
                 val forceSetup = prefs.getBoolean(PREF_FORCE_SETUP, false)
                 if (forceSetup) {
                     prefs.edit().putBoolean(PREF_FORCE_SETUP, false).apply()
-                    Log.i(TAG, "Starting native backend with forceSetup=true")
+                    Log.i(TAG, "Starting native backend with forceSetup=true (direct to Setup)")
+                }
+
+                val countdownSetup = prefs.getBoolean(PREF_RESTART_COUNTDOWN, false)
+                if (countdownSetup) {
+                    prefs.edit().putBoolean(PREF_RESTART_COUNTDOWN, false).apply()
+                    Log.i(TAG, "Starting native backend with countdownSetup=true (10s countdown clock)")
                 }
 
                 val backendHost = getSelectedBackendHost()
@@ -578,7 +589,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                Log.i(TAG, "Launching native HamClock in ${dataDir.absolutePath} (hasLocation=$hasLocation, lat=$lat, lng=$lng, backend=$backendHost, forceSetup=$forceSetup, allowExternal=$allowExternal, restPort=$actualRestPort, restConflict=$conflict)")
+                Log.i(TAG, "Launching native HamClock in ${dataDir.absolutePath} (hasLocation=$hasLocation, lat=$lat, lng=$lng, backend=$backendHost, forceSetup=$forceSetup, countdownSetup=$countdownSetup, allowExternal=$allowExternal, restPort=$actualRestPort, restConflict=$conflict)")
                 HamClockNative.startDaemon(
                     dataDir = dataDir.absolutePath,
                     rwPort = RW_PORT,
@@ -588,7 +599,8 @@ class MainActivity : AppCompatActivity() {
                     hasLocation = hasLocation,
                     lat = lat,
                     lng = lng,
-                    forceSetup = forceSetup
+                    forceSetup = forceSetup,
+                    countdownSetup = countdownSetup
                 )
             }
 

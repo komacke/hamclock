@@ -28,6 +28,7 @@ struct DaemonArgs {
     double lat;
     double lng;
     bool forceSetup;
+    bool countdownSetup;
 };
 
 static pthread_t daemon_thread;
@@ -292,13 +293,16 @@ static void *daemon_worker(void *arg) {
     std::string bVal = dargs->backendHost;
     bool hasLoc = dargs->hasLocation;
     bool forceSetup = dargs->forceSetup;
+    bool countdownSetup = dargs->countdownSetup;
 
     if (forceSetup) {
-        LOGI("Setup requested: omitting -k flag and starting setup injector thread");
+        LOGI("Direct setup requested: omitting -k flag and starting setup injector thread");
         pthread_t injector_thread;
         if (pthread_create(&injector_thread, nullptr, setup_injector_worker, nullptr) == 0) {
             pthread_detach(injector_thread);
         }
+    } else if (countdownSetup) {
+        LOGI("Restart with 10s countdown requested: omitting -k flag (no virtual tap injector)");
     }
 
     delete dargs;
@@ -315,7 +319,7 @@ static void *daemon_worker(void *arg) {
     argv.push_back(const_cast<char *>(restVal.c_str()));
     argv.push_back(const_cast<char *>(throtFlag.c_str()));
     argv.push_back(const_cast<char *>(throtVal.c_str()));
-    if (!forceSetup) {
+    if (!forceSetup && !countdownSetup) {
         argv.push_back(const_cast<char *>(skipFlag.c_str()));
         if (!hasLoc) {
             argv.push_back(const_cast<char *>(geoFlag.c_str()));
@@ -331,8 +335,8 @@ static void *daemon_worker(void *arg) {
 
     int argc = static_cast<int>(argv.size() - 1);
 
-    LOGI("Starting HamClock daemon with argc=%d in dir=%s on rw_port=%s (backend=%s, forceSetup=%d)",
-         argc, dirVal.c_str(), rwVal.c_str(), bVal.c_str(), forceSetup);
+    LOGI("Starting HamClock daemon with argc=%d in dir=%s on rw_port=%s (backend=%s, forceSetup=%d, countdownSetup=%d)",
+         argc, dirVal.c_str(), rwVal.c_str(), bVal.c_str(), forceSetup, countdownSetup);
     hamclock_main(argc, argv.data());
 
     LOGI("HamClock daemon exited");
@@ -352,7 +356,8 @@ Java_org_openhamclock_hamclock_HamClockNative_startDaemon(
         jboolean hasLocation,
         jdouble lat,
         jdouble lng,
-        jboolean forceSetup) {
+        jboolean forceSetup,
+        jboolean countdownSetup) {
 
     configure_fdsan();
 
@@ -385,6 +390,7 @@ Java_org_openhamclock_hamclock_HamClockNative_startDaemon(
     args->lat = lat;
     args->lng = lng;
     args->forceSetup = (forceSetup == JNI_TRUE);
+    args->countdownSetup = (countdownSetup == JNI_TRUE);
 
     env->ReleaseStringUTFChars(dataDir, dataDirChars);
 
@@ -434,7 +440,7 @@ jint JNI_OnLoad(JavaVM *vm, void * /* reserved */) {
     if (localClass) {
         g_native_class = (jclass) env->NewGlobalRef(localClass);
         g_exit_method = env->GetStaticMethodID(g_native_class, "notifyExitRequested", "()V");
-        g_restart_method = env->GetStaticMethodID(g_native_class, "notifyRestartRequested", "()V");
+        g_restart_method = env->GetStaticMethodID(g_native_class, "notifyRestartRequested", "(Z)V");
         g_open_url_method = env->GetStaticMethodID(g_native_class, "notifyOpenUrl", "(Ljava/lang/String;)V");
         g_fetch_url_method = env->GetStaticMethodID(g_native_class, "fetchHttpsUrlToFd", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V");
         g_get_clipboard_method = env->GetStaticMethodID(g_native_class, "getClipboardText", "()Ljava/lang/String;");
@@ -493,8 +499,8 @@ extern "C" void android_request_exit() {
     _exit(0);
 }
 
-extern "C" void android_request_restart() {
-    LOGI("android_request_restart invoked from C++");
+extern "C" void android_request_restart(bool minus_K) {
+    LOGI("android_request_restart invoked from C++ (minus_K=%d)", minus_K);
     if (g_jvm && g_native_class && g_restart_method) {
         JNIEnv *env = nullptr;
         bool attached = false;
@@ -504,7 +510,7 @@ extern "C" void android_request_restart() {
             }
         }
         if (env) {
-            env->CallStaticVoidMethod(g_native_class, g_restart_method);
+            env->CallStaticVoidMethod(g_native_class, g_restart_method, (jboolean)minus_K);
             if (attached) {
                 g_jvm->DetachCurrentThread();
             }

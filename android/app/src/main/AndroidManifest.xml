@@ -50,6 +50,9 @@
         <activity
             android:name=".RestartActivity"
             android:process=":restart"
+            android:taskAffinity="org.openhamclock.hamclock.restart"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:exported="false" />
     </application>

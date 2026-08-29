@@ -23,13 +23,7 @@ class RestartActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Kill previous main process to wipe native memory, threads, and daemon state
-        val mainPid = intent.getIntExtra(EXTRA_MAIN_PID, -1)
-        if (mainPid > 0) {
-            Process.killProcess(mainPid)
-        }
-
-        // Relaunch the main activity in a brand new process
+        // 1. Relaunch the main activity while this activity is in foreground
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         }
@@ -37,7 +31,19 @@ class RestartActivity : Activity() {
             startActivity(launchIntent)
         }
 
+        // 2. Kill previous main process to wipe native memory, threads, and daemon state
+        val mainPid = intent.getIntExtra(EXTRA_MAIN_PID, -1)
+        if (mainPid > 0) {
+            Process.killProcess(mainPid)
+        }
+
+        // 3. Finish this activity cleanly
         finish()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Terminate the restart helper process once lifecycle transition completes
         Runtime.getRuntime().exit(0)
     }
 }

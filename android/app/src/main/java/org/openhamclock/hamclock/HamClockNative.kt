@@ -17,7 +17,7 @@ object HamClockNative {
 
     interface AppControlListener {
         fun onExitRequested()
-        fun onRestartRequested()
+        fun onRestartRequested(minusK: Boolean)
         fun onOpenUrlRequested(url: String)
         fun getClipboardText(): String
     }
@@ -37,8 +37,8 @@ object HamClockNative {
     }
 
     @JvmStatic
-    fun notifyRestartRequested() {
-        appControlListener?.onRestartRequested()
+    fun notifyRestartRequested(minusK: Boolean) {
+        appControlListener?.onRestartRequested(minusK)
     }
 
     @JvmStatic
@@ -114,7 +114,8 @@ object HamClockNative {
         hasLocation: Boolean = false,
         lat: Double = 0.0,
         lng: Double = 0.0,
-        forceSetup: Boolean = false
+        forceSetup: Boolean = false,
+        countdownSetup: Boolean = false
     ): Boolean
 
     external fun isDaemonRunning(): Boolean

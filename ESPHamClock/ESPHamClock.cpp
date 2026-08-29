@@ -2626,7 +2626,7 @@ void doReboot(bool minus_K, bool minus_0)
 {
     defaultState();
 #if defined(_IS_ANDROID)
-    android_request_restart();
+    android_request_restart(minus_K);
     for(;;);
 #else
     ESP.restart (minus_K, minus_0);
