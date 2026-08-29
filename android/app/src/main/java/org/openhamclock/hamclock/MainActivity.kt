@@ -327,6 +327,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
+        @Suppress("DEPRECATION")
         dialog.window?.setSoftInputMode(
             WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN or
             WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE

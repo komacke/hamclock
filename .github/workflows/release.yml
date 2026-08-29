@@ -92,12 +92,12 @@ jobs:
           fi
 
           # Copy generated release APK into dist directory
-          cp app/build/outputs/apk/release/org.openhamclock-*.apk ../dist/
+          cp app/build/outputs/apk/release/org.openhamclock*.apk ../dist/
 
           # Copy generated release AAB into dist directory with matching version naming
           AAB_SRC=$(find app/build/outputs/bundle/release/ -name "*.aab" | head -n 1)
           if [ -n "$AAB_SRC" ]; then
-            APK_NAME=$(basename $(ls ../dist/org.openhamclock-*.apk | head -n 1))
+            APK_NAME=$(basename $(ls ../dist/org.openhamclock*.apk | head -n 1))
             AAB_NAME="${APK_NAME%.apk}.aab"
             cp "$AAB_SRC" "../dist/$AAB_NAME"
           fi
@@ -112,8 +112,8 @@ jobs:
           HC_TAG=${HC_TAG#V}
 
           # Locate the built Android APK and AAB
-          APK_PATH=$(ls dist/org.openhamclock-*.apk 2>/dev/null | head -n 1)
-          AAB_PATH=$(ls dist/org.openhamclock-*.aab 2>/dev/null | head -n 1)
+          APK_PATH=$(ls dist/org.openhamclock*.apk 2>/dev/null | head -n 1)
+          AAB_PATH=$(ls dist/org.openhamclock*.aab 2>/dev/null | head -n 1)
 
           ASSETS=(
             "docker/manage-hc-docker-$TAG.sh#Manage HamClock Docker Installs"
