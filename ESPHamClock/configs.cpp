@@ -633,6 +633,8 @@ static const uint8_t modal_qroff[MODAL_NQR] = {
     (uint8_t)(MODAL_KB_INDENT + 3 * MODAL_KB_CHAR_W / 2)
 };
 
+static const SBox modal_paste_b = {MODAL_KB_INDENT, MODAL_KB_SPC_Y,
+                                    (uint16_t)(MODAL_SBAR_X - MODAL_KB_INDENT - 12), MODAL_KB_SPC_H};
 static const SBox modal_space_b  = {MODAL_SBAR_X, MODAL_KB_SPC_Y, MODAL_SBAR_W, MODAL_KB_SPC_H};
 static const SBox modal_delete_b = {(uint16_t)(MODAL_KB_INDENT + 12 * MODAL_KB_CHAR_W),
                                     (uint16_t)(MODAL_KB_Y0 + 2 * MODAL_KB_CHAR_H),
@@ -676,6 +678,7 @@ static void drawModalKeyboard (void)
         }
     }
 
+    drawStringInBox ("Paste", modal_paste_b, false, RA8875_CYAN);
     drawStringInBox ("", modal_space_b, false, RA8875_WHITE);
     drawStringInBox ("Del", modal_delete_b, false, RA8875_RED);
     drawStringInBox ("Done", modal_done_b, false, RA8875_GREEN);
@@ -828,6 +831,38 @@ static bool askConfigName (const char *title, const char *prompt, char name[], s
             (void) maxStringW (copy, sdx);
             cursor = strlen (copy);
             drawModalInputBox (input_b, edit_buf, cursor);
+            continue;
+        }
+
+        // check tapping Paste button
+        if (inBox (ui.tap, modal_paste_b)) {
+            drawStringInBox ("Paste", modal_paste_b, true, RA8875_CYAN);
+            char paste_buf[MAX_NAMLEN];
+            bool got_clip = false;
+#if defined(_IS_ANDROID)
+            got_clip = android_get_clipboard (paste_buf, sizeof(paste_buf));
+#endif
+            if (got_clip) {
+                strTrimAll (paste_buf);
+                for (int i = 0; paste_buf[i] != '\0'; i++) {
+                    char c = paste_buf[i];
+                    if (isprint (c) && c != '/' && c != '\\' && c != ':') {
+                        size_t sl = strlen (edit_buf);
+                        selectFontStyle (LIGHT_FONT, SMALL_FONT);
+                        if (sl < sizeof(edit_buf) - 1 && getTextWidth (edit_buf) < input_b.w - 30) {
+                            memmove (edit_buf + cursor + 1, edit_buf + cursor,
+                                     strlen (edit_buf) - cursor + 1);
+                            edit_buf[cursor] = c;
+                            cursor++;
+                        }
+                    }
+                }
+                drawModalInputBox (input_b, edit_buf, cursor);
+            } else {
+                tft.pasteClipboard();
+            }
+            wdDelay (150);
+            drawStringInBox ("Paste", modal_paste_b, false, RA8875_CYAN);
             continue;
         }
 

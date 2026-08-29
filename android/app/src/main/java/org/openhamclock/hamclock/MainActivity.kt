@@ -128,6 +128,19 @@ class MainActivity : AppCompatActivity() {
                     openExternalUrl(url)
                 }
             }
+
+            override fun getClipboardText(): String {
+                return try {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    val clip = clipboard?.primaryClip
+                    if (clip != null && clip.itemCount > 0) {
+                        clip.getItemAt(0).coerceToText(this@MainActivity)?.toString() ?: ""
+                    } else ""
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error accessing clipboard: ${e.message}")
+                    ""
+                }
+            }
         })
 
         // Check or request location permissions to obtain host coordinates
@@ -424,6 +437,31 @@ class MainActivity : AppCompatActivity() {
                 mainHandler.post {
                     openExternalUrl(url)
                 }
+            }
+
+            @JavascriptInterface
+            fun getClipboardText(): String {
+                var text = ""
+                val latch = java.util.concurrent.CountDownLatch(1)
+                mainHandler.post {
+                    try {
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        val clip = clipboard?.primaryClip
+                        if (clip != null && clip.itemCount > 0) {
+                            text = clip.getItemAt(0).coerceToText(this@MainActivity)?.toString() ?: ""
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error accessing clipboard from JS: ${e.message}")
+                    } finally {
+                        latch.countDown()
+                    }
+                }
+                try {
+                    latch.await(1, java.util.concurrent.TimeUnit.SECONDS)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Timeout waiting for clipboard in JS interface")
+                }
+                return text
             }
         }, "AndroidApp")
 

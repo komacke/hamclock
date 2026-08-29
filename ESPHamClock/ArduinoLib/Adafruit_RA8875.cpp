@@ -3088,3 +3088,15 @@ void Adafruit_RA8875::getScreenSize (int *w, int *h)
 }
 
 #endif // _USE_FB0
+
+void Adafruit_RA8875::pasteClipboard(void)
+{
+#if defined(_USE_X11)
+        if (display && win) {
+                Atom bufid   = XInternAtom(display, "CLIPBOARD", False),
+                     fmtid   = XInternAtom(display, "STRING", False),
+                     propid  = XInternAtom(display, "XSEL_DATA", False);
+                (void) XConvertSelection (display, bufid, fmtid, propid, win, CurrentTime);
+        }
+#endif
+}

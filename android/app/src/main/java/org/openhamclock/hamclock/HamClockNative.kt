@@ -1,10 +1,14 @@
 package org.openhamclock.hamclock
 
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 object HamClockNative {
     init {
@@ -15,6 +19,7 @@ object HamClockNative {
         fun onExitRequested()
         fun onRestartRequested()
         fun onOpenUrlRequested(url: String)
+        fun getClipboardText(): String
     }
 
     @Volatile
@@ -39,6 +44,28 @@ object HamClockNative {
     @JvmStatic
     fun notifyOpenUrl(url: String) {
         appControlListener?.onOpenUrlRequested(url)
+    }
+
+    @JvmStatic
+    fun getClipboardText(): String {
+        var text = ""
+        val latch = CountDownLatch(1)
+        val handler = Handler(Looper.getMainLooper())
+        handler.post {
+            try {
+                text = appControlListener?.getClipboardText() ?: ""
+            } catch (e: Exception) {
+                Log.w("HamClockNative", "Error reading clipboard: ${e.message}")
+            } finally {
+                latch.countDown()
+            }
+        }
+        try {
+            latch.await(1, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            Log.w("HamClockNative", "Timeout waiting for clipboard text")
+        }
+        return text
     }
 
     @JvmStatic

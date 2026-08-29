@@ -422,6 +422,7 @@ static jmethodID g_exit_method = nullptr;
 static jmethodID g_restart_method = nullptr;
 static jmethodID g_open_url_method = nullptr;
 static jmethodID g_fetch_url_method = nullptr;
+static jmethodID g_get_clipboard_method = nullptr;
 
 jint JNI_OnLoad(JavaVM *vm, void * /* reserved */) {
     g_jvm = vm;
@@ -436,8 +437,39 @@ jint JNI_OnLoad(JavaVM *vm, void * /* reserved */) {
         g_restart_method = env->GetStaticMethodID(g_native_class, "notifyRestartRequested", "()V");
         g_open_url_method = env->GetStaticMethodID(g_native_class, "notifyOpenUrl", "(Ljava/lang/String;)V");
         g_fetch_url_method = env->GetStaticMethodID(g_native_class, "fetchHttpsUrlToFd", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V");
+        g_get_clipboard_method = env->GetStaticMethodID(g_native_class, "getClipboardText", "()Ljava/lang/String;");
     }
     return JNI_VERSION_1_6;
+}
+
+extern "C" bool android_get_clipboard(char *buf, size_t buf_len) {
+    if (!buf || buf_len == 0) return false;
+    buf[0] = '\0';
+    if (g_jvm && g_native_class && g_get_clipboard_method) {
+        JNIEnv *env = nullptr;
+        bool attached = false;
+        if (g_jvm->GetEnv((void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+            if (g_jvm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+                attached = true;
+            }
+        }
+        if (env) {
+            jstring jText = (jstring) env->CallStaticObjectMethod(g_native_class, g_get_clipboard_method);
+            if (jText) {
+                const char *chars = env->GetStringUTFChars(jText, nullptr);
+                if (chars) {
+                    snprintf(buf, buf_len, "%s", chars);
+                    env->ReleaseStringUTFChars(jText, chars);
+                }
+                env->DeleteLocalRef(jText);
+            }
+            if (attached) {
+                g_jvm->DetachCurrentThread();
+            }
+            return (buf[0] != '\0');
+        }
+    }
+    return false;
 }
 
 extern "C" void android_request_exit() {
