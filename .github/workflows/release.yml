@@ -78,7 +78,10 @@ jobs:
           if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "Configuring release keystore from secrets..."
             export ANDROID_KEYSTORE_FILE="$(pwd)/release.keystore"
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE_FILE"
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE_FILE"
+          fi
+          if [ -n "$ANDROID_KEY_ALIAS" ]; then
+            export ANDROID_KEY_ALIAS="$(echo "$ANDROID_KEY_ALIAS" | tr -d '[:space:]')"
           fi
 
           ./gradlew assembleRelease bundleRelease

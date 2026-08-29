@@ -177,20 +177,20 @@ fun promptPlain(prompt: String): String? {
                 if (keystoreFile.exists()) {
                     storeFile = keystoreFile
 
-                    val keyAliasStr = System.getenv("ANDROID_KEY_ALIAS")
-                        ?: (project.findProperty("android.injected.signing.key.alias") as? String)
+                    val keyAliasStr = System.getenv("ANDROID_KEY_ALIAS")?.trim()
+                        ?: (project.findProperty("android.injected.signing.key.alias") as? String)?.trim()
                         ?: promptPlain("Enter Key Alias")?.trim()
 
-                    val storePass = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-                        ?: (project.findProperty("android.injected.signing.store.password") as? String)
-                        ?: promptSecure("Enter Keystore Password")
+                    val storePass = System.getenv("ANDROID_KEYSTORE_PASSWORD")?.trim()
+                        ?: (project.findProperty("android.injected.signing.store.password") as? String)?.trim()
+                        ?: promptSecure("Enter Keystore Password")?.trim()
 
-                    val keyPassEnv = System.getenv("ANDROID_KEY_PASSWORD")
-                        ?: (project.findProperty("android.injected.signing.key.password") as? String)
+                    val keyPassEnv = System.getenv("ANDROID_KEY_PASSWORD")?.trim()
+                        ?: (project.findProperty("android.injected.signing.key.password") as? String)?.trim()
                     val keyPass = if (!keyPassEnv.isNullOrEmpty()) {
                         keyPassEnv
                     } else if (!storePass.isNullOrEmpty()) {
-                        val prompted = promptSecure("Enter Key Password (press Enter if same as keystore)")
+                        val prompted = promptSecure("Enter Key Password (press Enter if same as keystore)")?.trim()
                         if (prompted.isNullOrEmpty()) storePass else prompted
                     } else {
                         null
