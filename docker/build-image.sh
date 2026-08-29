@@ -14,15 +14,20 @@ YELLOW=$(tput setaf 3)
 GREEN=$(tput setaf 2)
 NC=$(tput sgr0) # Reset color
 
-TAG=$(git describe --exact-match --tags 2>/dev/null)
-if [ $? -ne 0 ]; then
-    echo "${RED}NOTE${NC}: Not currently on a tag. Using 'edge'."
-    TAG=edge
-    GIT_VERSION=$(git rev-parse --short HEAD)
-    ON_TAG=false
-else
+if [ -n "$TAG" ]; then
     GIT_VERSION=$TAG
     ON_TAG=true
+else
+    TAG=$(git describe --exact-match --tags 2>/dev/null)
+    if [ $? -ne 0 ]; then
+        echo "${RED}NOTE${NC}: Not currently on a tag. Using 'edge'."
+        TAG=edge
+        GIT_VERSION=$(git rev-parse --short HEAD)
+        ON_TAG=false
+    else
+        GIT_VERSION=$TAG
+        ON_TAG=true
+    fi
 fi
 
 IMAGE=$IMAGE_BASE:$TAG
@@ -127,6 +132,10 @@ warn_local_edits() {
     LOCAL_EDITS=$?
 
     if [ $LOCAL_EDITS -ne 0 ]; then
+        if [ "$FORCE" == "true" ] || [ "$CI" == "true" ]; then
+            echo "${YELLOW}WARNING${NC}: Local edits detected, but proceeding because CI or FORCE is set."
+            return 0
+        fi
         if [ $MULTI_PLATFORM == true ]; then
             echo
             echo "${RED}ERROR${NC}: There are local edits. stash or reset them before pushing"
