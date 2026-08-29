@@ -588,6 +588,16 @@ static bool queryForQRA (const char line[])
     return (strcistr (line, "Please enter your location with set/location or set/qra") != NULL);
 }
 
+/* return whether the given line is an AR-Cluster/CC-user-program (eg ve7cc.net) style
+ * explicit request for our callsign. unlike DXSpider, these print their whole banner
+ * unprompted then ask for the call at the very end, so our initial blind login (sent
+ * before any of that banner arrived) is not actually answering this prompt.
+ */
+static bool queryForCall (const char line[])
+{
+    return (strcistr (line, "enter your call") != NULL);
+}
+
 /* display the current cluster host in the given color
  */
 static void showDXCHost (const SBox &box, uint16_t c)
@@ -1197,19 +1207,81 @@ bool connectDXCluster (void)
             updateClocks(false);
             dxcLog ("connect %s:%d ok\n", dxhost, dxport);
 
-            // assume first question is asking for call.
-            // don't try to read with getTCPLine because first line is "login: " without trailing nl
+            // NEVER write anything before the server has actually asked for it. Some AR-Cluster/
+            // CC-cluster nodes (eg cluster.zs2ez.co.za) actively RESET the connection if they see
+            // unsolicited data before their own call prompt -- confirmed by "write() ... Connection
+            // reset by peer" the instant this code used to blind-send a login immediately after
+            // connect. So instead we watch the raw byte stream for a recognizable prompt, then
+            // answer it -- even DXSpider's prompt, which is just "login: " with no trailing
+            // newline, so getTCPLine() alone can't see it.
             const char *login = getDXClusterLogin();
-            dxcLog ("logging in as %s\n", login);
-            dxcSendMsg ("%s\n", login);
-
-            // look for first prompt and watch for clue about type of cluster along the way
             uint16_t bl;
             char buf[200];
             const size_t bufl = sizeof(buf);
             cl_type = CT_UNKNOWN;
             bool rx_gt = false;
-            while (cl_type == CT_UNKNOWN && rx_gt == false && getTCPLine (dxc_client, buf, bufl, &bl)) {
+            bool sent_call = false;
+            char pend[80];                                  // current (possibly partial) line
+            size_t pend_n = 0;
+            bool timed_out = false;
+            while (!rx_gt && !sent_call && !timed_out) {
+                char c;
+                if (!getTCPChar (dxc_client, &c)) {
+                    timed_out = true;
+                    break;
+                }
+                if (c == '\r')
+                    continue;
+                if (c != '\n' && pend_n < sizeof(pend)-1)
+                    pend[pend_n++] = c;
+                pend[pend_n] = '\0';
+
+                // check the pending (partial or just-completed) line, lower-cased, for a
+                // recognizable "send us your call now" cue -- this catches DXSpider's bare,
+                // unterminated "login: " the instant it appears, without waiting for a '\n'
+                // that will never come until we respond
+                char lc[sizeof(pend)];
+                quietStrncpy (lc, pend, sizeof(lc));
+                strtolower (lc);
+                bool is_prompt = strstr (lc, "login:") || queryForCall (lc);
+
+                if (c == '\n' || is_prompt) {
+
+                    dxcLog ("< %s\n", pend);
+                    detectMultiConnection (lc);
+
+                    if (queryForQRA (lc)) {
+                        dxc_updateDE = true;
+                        cl_type = CT_DXSPIDER;
+                    } else if (strstr (lc, "dx") && strstr (lc, "spider"))
+                        cl_type = CT_DXSPIDER;
+                    else if (strstr (lc, " cc "))
+                        cl_type = CT_VE7CC;
+                    else if (strstr (lc, "ar-cluster"))
+                        cl_type = CT_ARCLUSTER;
+
+                    if (is_prompt) {
+                        dxcLog ("logging in as %s\n", login);
+                        dxcSendMsg ("%s\n", login);
+                        sent_call = true;
+                    } else if (pend_n > 0 && pend[pend_n-1] == '>') {
+                        // could just wait for timeout but usually ok to stop if see a prompt
+                        rx_gt = true;
+                    }
+
+                    pend_n = 0;
+                    pend[0] = '\0';
+                }
+            }
+
+            // once logged in, keep scanning lines to nail down cluster type and find the real
+            // command prompt. don't let a type-identifying keyword alone end this scan: AR-
+            // Cluster/CC style servers print the rest of their banner -- which may still contain
+            // clue words like the " cc " in "CC Cluster software" -- right up until the real
+            // prompt, so a keyword match here must not be treated as the finish line. DXSpider
+            // needs no such patience: its login prompt IS the greeting, so we still stop the
+            // instant it's recognized.
+            while (sent_call && cl_type != CT_DXSPIDER && !rx_gt && getTCPLine (dxc_client, buf, bufl, &bl)) {
                 dxcLog ("< %s\n", buf);
 
                 strtolower(buf);
@@ -1225,9 +1297,14 @@ bool connectDXCluster (void)
                 else if (strstr (buf, "ar-cluster"))
                     cl_type = CT_ARCLUSTER;
 
-                // could just wait for timeout but usually ok to stop if find what looks like a prompt
                 if (buf[bl-1] == '>')
                     rx_gt = true;
+            }
+
+            if (!sent_call) {
+                incLostConn();
+                showDXClusterErr ("No login prompt from %s:%d", dxhost, dxport);
+                return (false);
             }
 
             // if no id string but do see > assume it's M0CKE's fire hose

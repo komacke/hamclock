@@ -25,7 +25,10 @@ bool crackClusterSpot (char line[], DXSpot &spot)
     spot = {};
 
     // DX de KD0AA:     18100.0  JR1FYS       FT8 LOUD in FL!                2156Z EL98
-    if (sscanf (line, "DX de %11[^ :]: %f %11s", spot.rx_call, &spot.kHz, spot.tx_call) != 3) {
+    // N.B. match the "DX de " label case-insensitively: some AR-Cluster nodes (eg k1ttt.net)
+    // print it as "DX de" for live pushed spots but "Dx de" for a show/dx backlog reply
+    if (strncasecmp (line, "dx de ", 6) != 0
+                        || sscanf (line+6, "%11[^ :]: %f %11s", spot.rx_call, &spot.kHz, spot.tx_call) != 3) {
         // already logged
         return (false);
     }
