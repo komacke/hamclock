@@ -30,7 +30,7 @@ The resulting APK will be located at:
 Set the keystore file and key alias in your environment (passwords will be prompted interactively and securely):
 ```bash
 cd android
-ANDROID_KEYSTORE_FILE=~/.keystores/hamclock-upload-key.keystore ANDROID_KEY_ALIAS=hamclock ./gradlew bundleRelease
+ANDROID_KEYSTORE_FILE=~/.keystores/hamclock-upload-key.p12 ANDROID_KEY_ALIAS=hamclock ./gradlew bundleRelease
 ```
 *(You will be prompted to enter the keystore and key passwords without echoing them to the terminal).*
 
