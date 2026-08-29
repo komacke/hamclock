@@ -2,4 +2,3 @@ Changes with latest release:
 - Android support
 - touchscreen keyboard support
 - touchscreen paste from OS
-- advance pane for touchscreen
