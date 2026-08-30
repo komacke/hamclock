@@ -665,6 +665,22 @@ extern void updateCountryBorders(void); // reproject cached data to current pan/
 extern void drawCountryBorders(void);   // draw from the cached, already-projected data
 extern uint8_t lightning_on;            // show lightning strikes overlay
 
+/*********************************************************************************************
+ *
+ * fires.cpp
+ *
+ */
+
+extern uint8_t fires_on;                // show active-fire hotspot overlay
+extern SBox fires_btn_b;                // on-map "Fires On/Off" badge; slot floats right of
+                                         // whichever of View/Borders is currently rightmost
+extern bool firesBadgeVisible(void);    // whether that badge should currently be shown --
+                                         // Countries/Terrain/Clouds + Mercator only
+extern void drawFiresButton(void);      // draw (or blank) the badge
+extern void initFires(void);            // restore NV state at startup
+extern void updateFires(void);          // fetch from OHB if due; call from updateWiFi()
+extern void drawFiresOnMap(void);       // render flame glyphs; call from drawAllSymbols()
+
 extern SBox desrss_b, dxsrss_b;         // sun rise/set display
 extern uint8_t desrss, dxsrss;          // sun rise/set chpice
 enum {

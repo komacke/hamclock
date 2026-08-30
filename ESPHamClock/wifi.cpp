@@ -2676,6 +2676,9 @@ void updateWiFi(PlotPane skip_pp)
     // update lightning overlay if due
     updateLightning();
 
+    // update fire hotspot overlay if due
+    updateFires();
+
     checkStormsData();
 
     // unlike checkStormsData(), this must run even when the Marine pane isn't on screen

@@ -439,6 +439,9 @@ typedef enum {
     NV_QUAKE_AUTOPOP,               // whether a big-enough local quake forces itself onto its target pane
     NV_QUAKE_RADIUS,                // "any magnitude" local radius, statute miles (scales up with mag)
 
+    // 268
+    NV_FIRES_ON,                    // whether the active-fire hotspot overlay is enabled
+
     NV_N
 
 } NV_Name;

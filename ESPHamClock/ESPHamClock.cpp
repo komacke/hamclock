@@ -498,6 +498,20 @@ void setup()
         wefax_btn_b.h = view_btn_b.h;
     }
 
+    // seed the Fires on-map badge just to the right of View. Unlike Borders/WEFAX it can be
+    // showing at the same time as Borders (both apply to Terrain/Clouds), so it can't share
+    // their fixed slot -- drawFiresButton() recomputes fires_btn_b.x every draw to float right
+    // of whichever of View/Borders is currently rightmost. This is just a harmless initial value.
+    {
+        const int gap = 4;
+        const int pad = 8;
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        fires_btn_b.x = view_btn_b.x + view_btn_b.w + gap;
+        fires_btn_b.y = view_btn_b.y;
+        fires_btn_b.w = getTextWidth ("Fires Off") + pad;
+        fires_btn_b.h = view_btn_b.h;
+    }
+
     // redefine callsign for main screen
     cs_info.box.x = 0;
     cs_info.box.y = 0;
@@ -651,6 +665,7 @@ void setup()
     rss_bnr_b.h = 68;
     NVReadUInt8 (NV_RSS_ON, &rss_on);
     initLightning();
+    initFires();
     initStorms();
     initMarineWarnings();
     initFireWx();
@@ -941,6 +956,14 @@ static void checkTouch()
     } else if (wefaxBadgeVisible() && inBox (s, wefax_btn_b)) {
         // runWefaxViewer() blocks until the user closes it, and restores the map on the way out
         runWefaxViewer();
+    } else if (firesBadgeVisible() && inBox (s, fires_btn_b)) {
+        fires_on = !fires_on;
+        NVWriteUInt8 (NV_FIRES_ON, fires_on);
+        if (fires_on)
+            updateFires();          // fetch right away instead of waiting for the next poll
+        drawFiresButton();
+        drawFiresOnMap();
+        tft.drawPR();
     } else if (checkSatMapTouch (s)) {
         // set showing sat in DX box
         dx_info_for_sat = true;
@@ -1819,6 +1842,7 @@ void drawAllSymbols()
     drawDXMarker(false);
     drawFarthestPSKSpots();
     drawLightningOnMap();
+    drawFiresOnMap();
     drawStormsOnMap();
     drawMarineWarningsOnMap();
     drawFireWxOnMap();
