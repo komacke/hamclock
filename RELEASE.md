@@ -39,11 +39,13 @@ gh workflow run release.yml --ref main -f tag_name=v4.32.0
 
 #### Interactive Command
 
-If you omit the inputs, `gh` can prompt you interactively:
+To run interactively, run `gh workflow run` with no arguments. `gh` will prompt you to select the workflow and enter the `tag_name`:
 
 ```bash
-gh workflow run release.yml
+gh workflow run
 ```
+
+*(Note: Specifying `release.yml` directly as an argument, e.g. `gh workflow run release.yml`, tells `gh` to run non-interactively, so it dispatches immediately using default values rather than prompting).*
 
 ### Monitoring the Workflow
 
