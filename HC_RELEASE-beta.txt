@@ -1,4 +1,7 @@
 Changes with latest release:
-- Android support
+- new Android support
+- new fire wx monitoring
+- new marine warning monitoring
+- new earthquake monitoring
 - touchscreen keyboard support
 - touchscreen paste from OS
