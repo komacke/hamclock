@@ -7,6 +7,10 @@ plugins {
 }
 
 fun getGitVersion(): Pair<String, Boolean> {
+    val envTag = (System.getenv("APP_VERSION") ?: System.getenv("TAG"))?.trim()
+    if (!envTag.isNullOrEmpty()) {
+        return Pair(envTag, true)
+    }
     return try {
         val process = ProcessBuilder("git", "describe", "--exact-match", "--tags")
             .directory(rootDir)
@@ -43,6 +47,9 @@ fun getGitCommitCount(): Int {
 }
 
 fun hasLocalChanges(): Boolean {
+    if (System.getenv("CI") == "true") {
+        return false
+    }
     return try {
         val process = ProcessBuilder("git", "diff-index", "--quiet", "HEAD", "--")
             .directory(rootDir)
