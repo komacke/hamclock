@@ -442,6 +442,9 @@ static const uint8_t nv_sizes[NV_N] = {
     1,                          // NV_QUAKE_AUTOPOP
     2,                          // NV_QUAKE_RADIUS
 
+    // 268
+    1,                          // NV_FIRES_ON
+
 };
 
 #endif // _NVRAMSIZE_H

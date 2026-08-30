@@ -1264,6 +1264,7 @@ void initEarthMap()
     drawMapMenuButton();
     drawBordersButton();
     drawWefaxButton();
+    drawFiresButton();
 
     // update astro info
     updateCircumstances();
@@ -1385,6 +1386,7 @@ void drawMoreEarth()
         drawMapMenuButton();
         drawBordersButton();
         drawWefaxButton();
+        drawFiresButton();
 
         // draw now
         tft.drawPR();
@@ -1932,7 +1934,9 @@ void antipode (LatLong &to, const LatLong &from)
 }
 
 /* return whether s is over the view_btn_b, including an extra border for fat lines or DX etc.
- * also extends over the Borders badge, when it's currently shown, since the two sit side by side.
+ * also extends over the Borders and/or Fires badges, when currently shown, since they all sit
+ * side by side -- Fires floats to the right of whichever of View/Borders is rightmost, so it's
+ * always the last word on where the row actually ends.
  */
 bool overViewBtn (const SCoord &s, uint16_t border)
 {
@@ -1940,6 +1944,8 @@ bool overViewBtn (const SCoord &s, uint16_t border)
     uint16_t right_edge = view_btn_b.x + view_btn_b.w;
     if (bordersBadgeVisible())
         right_edge = borders_btn_b.x + borders_btn_b.w;
+    if (firesBadgeVisible())
+        right_edge = fires_btn_b.x + fires_btn_b.w;
     return (s.x < right_edge + border && s.y < view_btn_b.y + view_btn_b.h + border);
 }
 

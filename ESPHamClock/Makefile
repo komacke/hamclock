@@ -124,6 +124,7 @@ OBJS = \
 	hurricane.o \
 	marinewarnings.o \
 	firewx.o \
+	fires.o \
 	quakes.o \
 	earthmap.o \
 	earthsat.o \

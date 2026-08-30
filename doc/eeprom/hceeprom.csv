@@ -253,3 +253,4 @@ Addr,Name,Len,Type,Description
 0xD9B,NV_QUAKE_ON,1,i,whether the earthquake overlay/pane is enabled
 0xD9D,NV_QUAKE_AUTOPOP,1,i,whether a big-enough local quake forces itself onto its target pane
 0xD9F,NV_QUAKE_RADIUS,2,i,"""any magnitude"" local radius, statute miles (scales up with mag)"
+0xDA2,NV_FIRES_ON,1,i,whether the active-fire hotspot overlay is enabled
