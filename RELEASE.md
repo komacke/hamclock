@@ -27,11 +27,14 @@ gh auth login
 Trigger the workflow by specifying the workflow file and the desired `tag_name`:
 
 ```bash
-# Beta release example:
+# Beta release example (builds Docker by default):
 gh workflow run release.yml -f tag_name=v4.32b00.0
 
 # Stable release example:
 gh workflow run release.yml -f tag_name=v4.32.0
+
+# Skip GitHub Docker build (e.g. if building Docker image locally):
+gh workflow run release.yml -f tag_name=v4.32b00.0 -f build_docker=false
 
 # Optional: target a specific branch (defaults to main)
 gh workflow run release.yml --ref main -f tag_name=v4.32.0
@@ -39,7 +42,7 @@ gh workflow run release.yml --ref main -f tag_name=v4.32.0
 
 #### Interactive Command
 
-To run interactively, run `gh workflow run` with no arguments. `gh` will prompt you to select the workflow and enter the `tag_name`:
+To run interactively, run `gh workflow run` with no arguments. `gh` will prompt you to select the workflow, enter the `tag_name`, and confirm whether to build Docker (`build_docker` defaults to `Yes`):
 
 ```bash
 gh workflow run
@@ -178,11 +181,13 @@ The release workflow executes two parallel jobs: `release` and `docker`.
      - `dist/org.openhamclock*.apk`
      - `dist/org.openhamclock*.aab`
 
-### Job 2: `docker`
+### Job 2: `docker` *(Optional - enabled by default)*
+
+*Can be skipped by passing `-f build_docker=false` via CLI or unchecking the box in the GitHub web UI.*
 
 1. Sets up Docker Buildx and QEMU.
 2. Logs in to Docker Hub using `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`.
-3. Runs `./docker/build-image.sh -m` to build and push multi-platform images (`linux/amd64`, `linux/arm64`, `linux/arm/v7`) tagged as `komacke/hamclock:$TAG`.
+3. Runs `./docker/build-image.sh -m` to build and push multi-platform images (`linux/amd64`, `linux/arm64`) tagged as `komacke/hamclock:$TAG` (and `latest` for stable releases).
 
 ---
 

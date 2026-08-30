@@ -7,6 +7,11 @@ on:
         description: 'Tag name (e.g., v0.0.0 or v0.0b00.0)'
         required: true
         default: 'v0.0.0'
+      build_docker:
+        description: 'Build and push Docker image'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   release:
@@ -173,6 +178,7 @@ jobs:
   docker:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
+    if: ${{ inputs.build_docker == true || inputs.build_docker == 'true' || inputs.build_docker == null }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
