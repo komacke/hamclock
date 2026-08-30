@@ -103,15 +103,34 @@ jobs:
             cp "$AAB_SRC" "../dist/$AAB_NAME"
           fi
 
-      # Upload the signed .aab as a Draft to Google Play console
-      - name: Upload to Google Play Internal Track as Draft
+      # Prepare release notes for Google Play Store upload
+      - name: Prepare Play Store Release Notes
+        run: |
+          mkdir -p dist/whatsnew
+          rm -f dist/whatsnew/*
+
+          TAG="${{ github.event.inputs.tag_name }}"
+          if [[ "$TAG" =~ [bB][0-9]+ ]] && [ -f HC_RELEASE-beta.txt ]; then
+            echo "Attaching beta release notes from HC_RELEASE-beta.txt"
+            cp HC_RELEASE-beta.txt dist/whatsnew/whatsnew-en-US
+          elif [[ "$TAG" =~ ^[vV]?[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] && [ -f HC_RELEASE-stable.txt ]; then
+            echo "Attaching stable release notes from HC_RELEASE-stable.txt"
+            cp HC_RELEASE-stable.txt dist/whatsnew/whatsnew-en-US
+          else
+            echo "Edge build or notes file not found - skipping release notes"
+          fi
+
+      # Upload the signed .aab as a Draft to Google Play console (Alpha track)
+      - name: Upload to Google Play Alpha Track as Draft
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
           packageName: org.openhamclock.hamclock
           releaseFiles: dist/org.openhamclock*.aab
-          tracks: internal
+          tracks: alpha
           status: draft
+          changesNotSentForReview: true
+          whatsNewDirectory: dist/whatsnew
 
       - name: Create Release and Upload Asset
         env:
