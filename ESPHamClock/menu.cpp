@@ -734,8 +734,9 @@ bool runMenu (MenuInfo &menu)
         if (menu.menu_b.w < MENU_BB + min_ok_w + MENU_BB)
             menu.menu_b.w = MENU_BB + min_ok_w + MENU_BB;
     } else {
-        if (menu.menu_b.w < MENU_BB + min_ok_w + MENU_BB + min_cancel_w + MENU_BB)
-            menu.menu_b.w = MENU_BB + min_ok_w + MENU_BB + min_cancel_w + MENU_BB;
+        uint16_t min_btn_w = min_cancel_w > min_ok_w ? min_cancel_w : min_ok_w;
+        if (menu.menu_b.w < 2 * min_btn_w + 3 * MENU_BB)
+            menu.menu_b.w = 2 * min_btn_w + 3 * MENU_BB;
     }
 
 

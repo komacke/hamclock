@@ -472,7 +472,7 @@ static void drawMapPopup(void)
     Serial.printf ("POPUP before: pan_x %d pan_y %d zoom %d\n", pan_zoom.pan_x, pan_zoom.pan_y,
                                 pan_zoom.zoom);
 
-    const int ZINDENT = 2;
+    const int ZINDENT = 5;
 
     bool zoom_ok = map_proj == MAPP_MERCATOR;
     bool pan_ok = map_proj == MAPP_MERCATOR || map_proj == MAPP_ROB;
