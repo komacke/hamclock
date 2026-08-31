@@ -15,6 +15,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -796,6 +797,38 @@ class MainActivity : AppCompatActivity() {
             }
         }
         wifiLock = null
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_MENU -> {
+                    showBackendSettingsDialog()
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    webView.evaluateJavascript("if (typeof sendKey === 'function') sendKey('ArrowUp');", null)
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    webView.evaluateJavascript("if (typeof sendKey === 'function') sendKey('ArrowDown');", null)
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    webView.evaluateJavascript("if (typeof sendKey === 'function') sendKey('ArrowLeft');", null)
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    webView.evaluateJavascript("if (typeof sendKey === 'function') sendKey('ArrowRight');", null)
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                    webView.evaluateJavascript("if (typeof sendKey === 'function') sendKey('Enter');", null)
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onDestroy() {

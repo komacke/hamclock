@@ -41,5 +41,5 @@ The resulting signed release bundle will be located at:
 ## Requirements
 * Android SDK 36 (Android 16)
 * Android NDK (version 25+ / 26+)
-* Minimum supported device: Android 5.0+ (API 21+), including Amazon Fire OS 5+ tablets
+* Minimum supported device: Android 5.0+ (API 21+), including Amazon Fire OS tablets & Fire TV Sticks
 
