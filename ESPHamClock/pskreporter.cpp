@@ -48,26 +48,43 @@ static time_t psk_backoff;                      // current failure backoff, secs
 #define TST_PSKBAND(b)  ((b) != HAMBAND_NONE && (psk_bands & (1 << (b))) != 0)  // test if band b displayed
 
 // display order for the 2-column band summary grid -- deliberately NOT the same as HamBandSetting's
-// own enum order. HamBandSetting order has to stay append-only (160..2, then 630 tacked on at the
-// end) because its values double as bit positions in persisted filter bitmasks -- see SUPPORTED_BANDS
-// in HamClock.h. But there's no reason the on-screen GRID has to mirror that storage order, and
-// grouping 630m with its nearest neighbor by wavelength (160m) reads better than leaving it stranded
-// as the 13th/last cell. 630m sits first here so it lands directly above 160m whenever it's shown --
-// see pskGridCount() just below for why it only occupies a slot at all once the user enables it.
-static const HamBandSetting psk_grid_order[HAMBAND_N] = {
-    HAMBAND_630M, HAMBAND_160M, HAMBAND_80M, HAMBAND_60M, HAMBAND_40M, HAMBAND_30M, HAMBAND_20M,
+// own enum order. HamBandSetting order has to stay append-only (160..2, then 630/4/2200 tacked on at
+// the end) because its values double as bit positions in persisted filter bitmasks -- see
+// SUPPORTED_BANDS in HamClock.h. But there's no reason the on-screen GRID has to mirror that storage
+// order, and grouping the long-wave bands with their nearest neighbor by wavelength (160m) reads
+// better than leaving them stranded as trailing cells. This is the fixed set of 12 "always shown"
+// bands; 630m, 4m and 2200m are handled separately below since at most one of them is ever active
+// (see checkPSKTouch()) and whichever one is active takes a single leading slot above 160m.
+static const HamBandSetting psk_grid_order[HAMBAND_N-3] = {
+    HAMBAND_160M, HAMBAND_80M, HAMBAND_60M, HAMBAND_40M, HAMBAND_30M, HAMBAND_20M,
     HAMBAND_17M,  HAMBAND_15M,  HAMBAND_12M, HAMBAND_10M, HAMBAND_6M,  HAMBAND_2M,
 };
 
-/* how many bands the summary grid currently shows. 630m only claims a grid slot -- and shrinks
- * every row height slightly to make room, since the pane's total height is fixed -- once the
- * user has actually enabled it; otherwise the grid quietly stays exactly as tall and roomy as
- * it was before 630m existed. This is why row count/height below are runtime functions rather
- * than compile-time HAMBAND_N-based macros: they now depend on user state, not just band count.
+/* return whichever of 630m/4m/2200m is currently active, or HAMBAND_NONE if none is.
+ * checkPSKTouch() enforces that at most one of these three is ever selected at a time (they share
+ * a single MENU_01OFN group), so there is never a need to disambiguate more than one hit here.
+ */
+static HamBandSetting pskLongWaveBand (void)
+{
+    if (TST_PSKBAND(HAMBAND_630M))
+        return (HAMBAND_630M);
+    if (TST_PSKBAND(HAMBAND_4M))
+        return (HAMBAND_4M);
+    if (TST_PSKBAND(HAMBAND_2200M))
+        return (HAMBAND_2200M);
+    return (HAMBAND_NONE);
+}
+
+/* how many bands the summary grid currently shows. Whichever of 630m/4m/2200m is active (if any)
+ * only claims a grid slot -- and shrinks every row height slightly to make room, since the pane's
+ * total height is fixed -- once the user has actually enabled it; otherwise the grid quietly stays
+ * exactly as tall and roomy as it was before these bands existed. This is why row count/height
+ * below are runtime functions rather than compile-time HAMBAND_N-based macros: they now depend on
+ * user state, not just band count.
  */
 static int pskGridCount (void)
 {
-    return (TST_PSKBAND(HAMBAND_630M) ? HAMBAND_N : HAMBAND_N - 1);
+    return (pskLongWaveBand() != HAMBAND_NONE ? HAMBAND_N-2 : HAMBAND_N-3);
 }
 
 /* rows needed per column for the current grid count, given the fixed 2-column layout. N.B. must
@@ -130,10 +147,14 @@ void initPSKState()
         NVWriteUInt8 (NV_PSK_MODEBITS, psk_mask);
     }
     if (!NVReadUInt32 (NV_PSK_BANDS, &psk_bands)) {
-        // default all ham_bands
+        // default all ham_bands -- except 4m and 2200m, which start off since they're mutually
+        // exclusive with 630m (see checkPSKTouch()) and 630m already defaulted on before either
+        // of them existed; leaving all three on here would violate that "at most one" invariant
+        // on every fresh install
         psk_bands = 0;
         for (int i = 0; i < HAMBAND_N; i++)
-            SET_PSKBAND(i);
+            if (i != HAMBAND_4M && i != HAMBAND_2200M)
+                SET_PSKBAND(i);
         NVWriteUInt32 (NV_PSK_BANDS, psk_bands);
     }
     if (!NVReadUInt16 (NV_PSK_MAXAGE, &psk_maxage_mins) || !maxPSKageOk(psk_maxage_mins)) {
@@ -230,14 +251,15 @@ static void drawPSKPane (const SBox &box)
     tft.print (where_how);
 
     // table
-    const int n_show = pskGridCount();                         // 12, or 13 once 630m is enabled
-    const int show_630 = TST_PSKBAND(HAMBAND_630M);
+    const int n_show = pskGridCount();                 // 12, or 13 if a long-wave band is enabled
+    const HamBandSetting lwb = pskLongWaveBand();
     const int n_rows = pskBandRows();
     const int row_h = pskRowHeight();
     for (int gi = 0; gi < n_show; gi++) {
-        // skip psk_grid_order[0] (630m) entirely while it's disabled, so the remaining 12
-        // bands render in their original positions at their original (taller) row height
-        HamBandSetting i = psk_grid_order[show_630 ? gi : gi+1];
+        // gi==0 is the single leading slot for whichever of 630m/4m/2200m is active, if any;
+        // otherwise every gi indexes straight into the fixed 12-entry psk_grid_order
+        HamBandSetting i = (lwb != HAMBAND_NONE) ? (gi == 0 ? lwb : psk_grid_order[gi-1])
+                                                  : psk_grid_order[gi];
         int row = gi % n_rows;
         int col = gi / n_rows;
         uint16_t x = box.x + TBLHGAP + col*(TBLCOLW+TBLHGAP);
@@ -588,10 +610,15 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
     // 630m existed -- rather than the 12 rows a naive single-column append produces. Band checkbox
     // menu_b.w below is explicitly padded a couple px past the tightest fit -- see that comment
     // for why (a zero-gap column boundary was letting one row's checkboxes overlap each other).
+    // N.B. _M_4 and _M_2200 reuse what used to be blank padding cells in row 10 (they were never
+    // load-bearing for layout, just filler), so 4m/2200m fit without growing the table at all.
+    // _M_630, _M_4 and _M_2200 are declared MENU_01OFN (not MENU_AL1OFN like the other bands, and
+    // not adjacent on screen) so that selecting any one of them automatically clears the other two
+    // -- see the "at most one of 630/4/2200" comment down by mitems[_M_630] below.
     enum {
         _M_RBN,  _M_SPOT, _M_WHAT, _M_SHOW, _M_PATH, _M_AGE, _M_1HR, _M_630, _M_40, _M_15, _M_2,
-        _M_PSK,  _M_OFDE, _M_CALL, _M_DIST, _M_PON,  _M_15M, _M_6HR, _M_160, _M_30, _M_12, _M_PADA,
-        _M_WSPR, _M_BYDE, _M_GRID, _M_CNT,  _M_POFF, _M_30M, _M_24H, _M_80,  _M_20, _M_10, _M_PADB,
+        _M_PSK,  _M_OFDE, _M_CALL, _M_DIST, _M_PON,  _M_15M, _M_6HR, _M_160, _M_30, _M_12, _M_4,
+        _M_WSPR, _M_BYDE, _M_GRID, _M_CNT,  _M_POFF, _M_30M, _M_24H, _M_80,  _M_20, _M_10, _M_2200,
         _M_PADC0,_M_PADC1,_M_PADC2,_M_PADC3,_M_PADC4,_M_PADC5,_M_PADC6,_M_60, _M_17, _M_6,  _M_PADD,
         _M_N
     };
@@ -623,7 +650,13 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
     mitems[_M_PATH] = {MENU_LABEL, false,    0, PRI_INDENT, "Pth:", 0};   // was "Path:"
     mitems[_M_AGE]  = {MENU_LABEL, false,    0, PRI_INDENT, "Age:", 0};
     mitems[_M_1HR]  = {MENU_1OFN,  false,    6, 5, "1hr", 0};    // was "1 hr" -- see width-gutter comment
-    mitems[_M_630]  = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_630M), 4, SEC_INDENT, findBandName(HAMBAND_630M), 0};
+    // 630m/4m/2200m share group 5 as MENU_01OFN (round selector, exactly 0 or 1 set) instead of
+    // group 4's MENU_AL1OFN (square checkbox, at least 1 of the group set) that every other band
+    // uses -- picking one of these three automatically clears whichever of the other two was set
+    // (see updateMenu()'s MENU_01OFN case), enforcing "at most one of 4m/630m/2200m" without any
+    // extra validation code here. Group 4's "at least 1 band selected" requirement (menuStateOk())
+    // still applies to the other 12 bands only, since these three are no longer group 4/AL1OFN.
+    mitems[_M_630]  = {MENU_01OFN, TST_PSKBAND(HAMBAND_630M), 5, SEC_INDENT, findBandName(HAMBAND_630M), 0};
     mitems[_M_40]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_40M),  4, SEC_INDENT, findBandName(HAMBAND_40M), 0};
     mitems[_M_15]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_15M),  4, SEC_INDENT, findBandName(HAMBAND_15M), 0};
     mitems[_M_2]    = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_2M),   4, SEC_INDENT, findBandName(HAMBAND_2M), 0};
@@ -640,7 +673,7 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
     mitems[_M_160]  = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_160M), 4, SEC_INDENT, findBandName(HAMBAND_160M), 0};
     mitems[_M_30]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_30M),  4, SEC_INDENT, findBandName(HAMBAND_30M), 0};
     mitems[_M_12]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_12M),  4, SEC_INDENT, findBandName(HAMBAND_12M), 0};
-    mitems[_M_PADA] = {MENU_BLANK, false,    0, SEC_INDENT, NULL, 0};
+    mitems[_M_4]    = {MENU_01OFN, TST_PSKBAND(HAMBAND_4M),   5, SEC_INDENT, findBandName(HAMBAND_4M), 0};
 
     mitems[_M_WSPR] = {MENU_1OFN, iswspr,    1, PRI_INDENT, "WSPR", 0};
     mitems[_M_BYDE] = {MENU_1OFN, !of_de,    2, PRI_INDENT, "byDE", 0};   // was "by DE"
@@ -652,7 +685,7 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
     mitems[_M_80]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_80M),  4, SEC_INDENT, findBandName(HAMBAND_80M), 0};
     mitems[_M_20]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_20M),  4, SEC_INDENT, findBandName(HAMBAND_20M), 0};
     mitems[_M_10]   = {MENU_AL1OFN, TST_PSKBAND(HAMBAND_10M),  4, SEC_INDENT, findBandName(HAMBAND_10M), 0};
-    mitems[_M_PADB] = {MENU_BLANK, false,    0, SEC_INDENT, NULL, 0};
+    mitems[_M_2200] = {MENU_01OFN, TST_PSKBAND(HAMBAND_2200M), 5, SEC_INDENT, findBandName(HAMBAND_2200M), 0};
 
     // 4th column: blank alongside the control rows (0-6) so no control row picks up a stray
     // band checkbox, then real band entries for rows 7-9, blank again on the final row (10)
@@ -740,6 +773,8 @@ bool checkPSKTouch (const SCoord &s, const SBox &box)
             if (mitems[_M_6].set)   SET_PSKBAND(HAMBAND_6M);
             if (mitems[_M_2].set)   SET_PSKBAND(HAMBAND_2M);
             if (mitems[_M_630].set) SET_PSKBAND(HAMBAND_630M);
+            if (mitems[_M_4].set)   SET_PSKBAND(HAMBAND_4M);
+            if (mitems[_M_2200].set) SET_PSKBAND(HAMBAND_2200M);
 
             // get new age
             if (mitems[_M_15M].set)
@@ -933,10 +968,11 @@ bool getMaxDistPSK (const SCoord &ms, DXSpot *sp, LatLong *mark_ll)
     band_box.w = TBLCOLW;
     band_box.h = pskRowHeight();
     const int n_show = pskGridCount();
-    const int show_630 = TST_PSKBAND(HAMBAND_630M);
+    const HamBandSetting lwb = pskLongWaveBand();
     const int n_rows = pskBandRows();
     for (int gi = 0; gi < n_show; gi++) {
-        HamBandSetting i = psk_grid_order[show_630 ? gi : gi+1];
+        HamBandSetting i = (lwb != HAMBAND_NONE) ? (gi == 0 ? lwb : psk_grid_order[gi-1])
+                                                  : psk_grid_order[gi];
         int row = gi % n_rows;
         int col = gi / n_rows;
         band_box.x = box.x + TBLHGAP + col*(TBLCOLW+TBLHGAP);
