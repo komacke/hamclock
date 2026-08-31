@@ -285,6 +285,13 @@ char live_html[] =  R"_raw_html_(
                 event.preventDefault();
             }
 
+            // ignore Ctrl+V / Cmd+V here so browser's native 'paste' event handles it without typing a stray 'v'
+            if ((event.ctrlKey || event.metaKey) && (key === 'v' || key === 'V')) {
+                if (event_verbose)
+                    console.log ("delegating Ctrl+V to paste event");
+                return;
+            }
+
             sendKey (key, event.ctrlKey, event.shiftKey);
         });
 
@@ -559,7 +566,8 @@ char live_html[] =  R"_raw_html_(
                 console.log ("button " + event.button + " + " + mods + " -> " + button);
 
                 // if tapping on virtual keyboard Paste button in non-Android browser, read browser clipboard
-                if (m.x >= 16 && m.x <= 155 && m.y >= 404 && m.y <= 470 && !window.AndroidApp) {
+                // Only trigger on primary button (left click / touch tap) without keyboard modifiers
+                if (event.button === 0 && !mods && m.x >= 16 && m.x <= 155 && m.y >= 404 && m.y <= 470 && !window.AndroidApp) {
                     if (navigator.clipboard && navigator.clipboard.readText) {
                         navigator.clipboard.readText().then(text => {
                             if (text)
