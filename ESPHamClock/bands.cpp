@@ -132,6 +132,13 @@ static const BandEdge band_es[] = {
     // doesn't have -- get the real sub-edges from mkbands.pl's actual source data instead
     // of hand-adding them, the way every other row here was produced.
     { 630, "BAND",       472,    479},
+    // 4m and 2200m -- appended for the same reason as 630m just above: keeps every prior
+    // band's bandes_idx unchanged, and only the overall allocation is listed since this repo
+    // has no access to mkbands.pl's real source data for sub-band edges. 4m's allocation
+    // varies by country/region; 70.0-70.5 MHz is the widest commonly-used allocation (eg IARU
+    // Region 1). 2200m is the internationally recognized LF ham allocation, 135.7-137.8 kHz.
+    {   4, "BAND",     70000,  70500},
+    {2200, "BAND",     135.7,  137.8},
 };
 
 #define N_BE NARRAY(band_es)
