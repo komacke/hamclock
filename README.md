@@ -21,6 +21,10 @@ An archive of historical HamClock Client releases up to 4.22 is available at <ht
 Bug reports and pull requests are welcome on GitHub at
 <https://github.com/openhamclock/hamclock/issues>
 
+## Releases & Docker Builds
+
+For instructions on building local images, setting up SSH signing keys, and triggering releases via GitHub Actions, see [RELEASE.md](RELEASE.md).
+
 ## Related
 
 * [HamClock Standards](https://github.com/openhamclock/hamclock-standards) - specifications source

@@ -201,3 +201,23 @@ The release workflow executes two parallel jobs: `release` and `docker`.
 - [ ] Run `gh workflow run release.yml -f tag_name=<tag>`.
 - [ ] Monitor build and verify assets on GitHub Release page (`gh release view <tag>`).
 - [ ] Verify multi-arch images on Docker Hub.
+
+---
+
+## 6. Verified Commits & Tags (SSH Signing Keys)
+
+If your local git environment is configured to sign commits or tags with SSH (`commit.gpgsign=true` / `tag.gpgsign=true`), GitHub requires that your public key be registered specifically as a **Signing Key** (rather than only an Authentication Key):
+
+1. Check your public key:
+   ```bash
+   cat ~/.ssh/git-signing.pub
+   ```
+2. Go to **GitHub Settings -> [SSH and GPG keys](https://github.com/settings/keys)**.
+3. Click **New SSH Key**.
+4. In the **Key type** dropdown, select **Signing Key**.
+5. Paste your public key and save.
+
+*(Alternatively, run `gh auth refresh -h github.com -s admin:ssh_signing_key` and then `gh ssh-key add ~/.ssh/git-signing.pub --type signing`)*.
+
+Once added as a signing key, GitHub will mark your releases, tags, and commits with the green **Verified** badge.
+
