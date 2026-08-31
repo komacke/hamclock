@@ -34,10 +34,15 @@ file(GLOB ZLIB_SRCS
     "${HC_DIR}/zlib-hc/*.cpp"
 )
 
+add_compile_options(
+    "-include" "${CMAKE_CURRENT_SOURCE_DIR}/ifaddrs_compat.h"
+)
+
 add_library(
     hamclock
     SHARED
     hamclock_jni.cpp
+    ifaddrs_compat.c
     ${HC_SRCS}
     ${ARDUINO_SRCS}
     ${WS_SRCS}
