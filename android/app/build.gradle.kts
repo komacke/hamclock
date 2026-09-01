@@ -123,7 +123,7 @@ android {
 
     defaultConfig {
         applicationId = "org.openhamclock.hamclock"
-        minSdk = 24
+        minSdk = 21
         targetSdk = 36
         versionCode = getGitCommitCount()
         versionName = appVersion
