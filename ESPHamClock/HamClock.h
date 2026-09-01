@@ -3730,7 +3730,11 @@ extern bool parseWebCommand (WebArgs &wa, char line[], size_t line_len);
 extern void initWebServer(void);
 extern void checkWebServer(bool ro);
 extern TouchType readCalTouchWS (SCoord &s);
+#if defined(_IS_ANDROID) || defined(__ANDROID__)
+extern char platform[32];
+#else
 extern const char platform[];
+#endif
 extern void runNextDemoCommand(void);
 extern bool bypass_pw;
 
