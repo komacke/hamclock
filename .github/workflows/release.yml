@@ -7,8 +7,18 @@ on:
         description: 'Tag name (e.g., v0.0.0 or v0.0b00.0)'
         required: true
         default: 'v0.0.0'
+      draft:
+        description: 'Create as a draft release'
+        required: false
+        type: boolean
+        default: false
       build_docker:
         description: 'Build and push Docker image'
+        required: false
+        type: boolean
+        default: true
+      push_play_store:
+        description: 'Upload Android AAB to Google Play as draft'
         required: false
         type: boolean
         default: true
@@ -115,6 +125,7 @@ jobs:
 
       # Prepare release notes for Google Play Store upload
       - name: Prepare Play Store Release Notes
+        if: ${{ github.event_name == 'push' || inputs.push_play_store == true || inputs.push_play_store == 'true' }}
         run: |
           mkdir -p dist/whatsnew
           rm -f dist/whatsnew/*
@@ -132,6 +143,7 @@ jobs:
 
       # Upload the signed .aab as a Draft to Google Play console (Alpha track)
       - name: Upload to Google Play Alpha Track as Draft
+        if: ${{ github.event_name == 'push' || inputs.push_play_store == true || inputs.push_play_store == 'true' }}
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
@@ -146,6 +158,7 @@ jobs:
       - name: Create Release and Upload Asset
         env:
           GH_TOKEN: ${{ github.token }}
+          IS_DRAFT: ${{ inputs.draft }}
         run: |
           TAG="${{ github.event.inputs.tag_name }}"
           HC_TAG=${TAG%.*}
@@ -173,18 +186,23 @@ jobs:
             ASSETS+=("$AAB_PATH#HamClock Android App Bundle (Google Play)")
           fi
 
-          # Grabs files from repo tree and uploads with labels as a draft release
+          EXTRA_FLAGS=()
+          if [ "$IS_DRAFT" = "true" ]; then
+            EXTRA_FLAGS+=(--draft)
+          fi
+
+          # Grabs files from repo tree and uploads with labels
           gh release create "$TAG" \
             "${ASSETS[@]}" \
             --title "HamClock Release: $TAG" \
             --target "${{ github.ref_name }}" \
             --generate-notes \
-            --draft
+            "${EXTRA_FLAGS[@]}"
 
   docker:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
-    if: ${{ inputs.build_docker == true || inputs.build_docker == 'true' || inputs.build_docker == null }}
+    if: ${{ github.event_name == 'push' || inputs.build_docker == true || inputs.build_docker == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5

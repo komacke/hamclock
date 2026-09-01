@@ -27,14 +27,23 @@ gh auth login
 Trigger the workflow by specifying the workflow file and the desired `tag_name`:
 
 ```bash
-# Beta release example (builds Docker by default):
+# Beta release example (builds Docker and pushes to Play Store draft by default):
 gh workflow run release.yml -f tag_name=v4.32b00.0
 
 # Stable release example:
 gh workflow run release.yml -f tag_name=v4.32.0
 
-# Skip GitHub Docker build (e.g. if building Docker image locally):
-gh workflow run release.yml -f tag_name=v4.32b00.0 -f build_docker=false
+# Optional: create as a draft release:
+gh workflow run release.yml -f tag_name=v4.32.0 -f draft=true
+
+# Optional: skip GitHub Docker build (e.g. if building Docker image locally):
+gh workflow run release.yml -f tag_name=v4.32.0 -f build_docker=false
+
+# Optional: skip uploading to Google Play Store:
+gh workflow run release.yml -f tag_name=v4.32.0 -f push_play_store=false
+
+# Optional: draft release without Docker build or Play Store upload:
+gh workflow run release.yml -f tag_name=v4.32.0 -f draft=true -f build_docker=false -f push_play_store=false
 
 # Optional: target a specific branch (defaults to main)
 gh workflow run release.yml --ref main -f tag_name=v4.32.0
@@ -42,13 +51,22 @@ gh workflow run release.yml --ref main -f tag_name=v4.32.0
 
 #### Interactive Command
 
-To run interactively, run `gh workflow run` with no arguments. `gh` will prompt you to select the workflow, enter the `tag_name`, and confirm whether to build Docker (`build_docker` defaults to `Yes`):
+To run interactively, run `gh workflow run` with no arguments. `gh` will prompt you to select the workflow, enter the `tag_name`, and configure the boolean options:
 
 ```bash
 gh workflow run
 ```
 
 *(Note: Specifying `release.yml` directly as an argument, e.g. `gh workflow run release.yml`, tells `gh` to run non-interactively, so it dispatches immediately using default values rather than prompting).*
+
+#### Workflow Inputs (`workflow_dispatch`)
+
+| Input | Type | Default | Description |
+|---|---|---|---|
+| `tag_name` | string | `v0.0.0` | Version tag to release (e.g., `v4.32.0` or `v4.32b00.0`). |
+| `draft` | boolean | `false` | When `true`, creates the GitHub Release as a draft. |
+| `build_docker` | boolean | `true` | When `true`, builds and pushes the multi-platform Docker image. |
+| `push_play_store` | boolean | `true` | When `true`, uploads the Android AAB to Google Play (Alpha track) as a draft. |
 
 ### Monitoring the Workflow
 
@@ -80,6 +98,12 @@ gh run view <RUN_ID>
 # View full logs or failed steps
 gh run view <RUN_ID> --log
 gh run view <RUN_ID> --log-failed
+
+# Cancel a running workflow:
+gh run cancel <RUN_ID>
+
+# Force cancel if a run is unresponsive (e.g., during long-running Docker builds):
+gh run cancel <RUN_ID> --force
 ```
 
 #### Verifying the Created Release
@@ -164,11 +188,12 @@ The release workflow executes two parallel jobs: `release` and `docker`.
    - `dist/HC-$TAG.tar.gz` and `dist/HC-$TAG.zip` (full repository archives).
    - `dist/ESPHamClock-V$HC_TAG.zip` (standalone HamClock source zip).
    - `dist/hamclock-contrib-V$HC_TAG.zip` (contrib zip).
-3. **Android Build:**
+3. **Android Build & Google Play Upload:**
    - Runs `./gradlew assembleRelease bundleRelease` with JDK 17.
    - Outputs release `.apk` (direct install) and `.aab` (Google Play Store bundle).
+   - *(Optional - enabled by default)* Prepares `whatsnew` notes and uploads the `.aab` to Google Play Console (Alpha track) as a draft. Can be skipped by setting `-f push_play_store=false`.
 4. **GitHub Release Publication:**
-   - Creates the GitHub Release via `gh release create`.
+   - Creates the GitHub Release via `gh release create`. By default creates an active release; can be published as a draft using `-f draft=true`.
    - Generates release notes automatically from commit log (`--generate-notes`).
    - Attaches:
      - `docker/manage-hc-docker-$TAG.sh`

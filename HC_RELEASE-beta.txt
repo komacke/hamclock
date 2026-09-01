@@ -1,7 +1,11 @@
 Changes with latest release:
 - new Android support
+- old Amazon fire tablets and tv
 - new fire wx monitoring
+- new fires on maps
 - new marine warning monitoring
 - new earthquake monitoring
+- support spots for 4, 630, 2200
 - touchscreen keyboard support
 - touchscreen paste from OS
+- fix cancel button on de/dx
