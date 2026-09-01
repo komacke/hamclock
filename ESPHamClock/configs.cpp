@@ -860,6 +860,7 @@ static bool askConfigName (const char *title, const char *prompt, char name[], s
                 drawModalInputBox (input_b, edit_buf, cursor);
             } else {
                 tft.pasteClipboard();
+                requestLiveWebPaste();
             }
             wdDelay (150);
             drawStringInBox ("Paste", modal_paste_b, false, RA8875_CYAN);

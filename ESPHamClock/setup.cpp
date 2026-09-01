@@ -5313,6 +5313,7 @@ static void runSetup()
                         checkLLGEdit (sp);
                 } else {
                     tft.pasteClipboard();
+                    requestLiveWebPaste();
                 }
                 wdDelay (150);
                 drawStringInBox ("Paste", paste_b, false, RA8875_CYAN);
