@@ -6076,7 +6076,7 @@ bool useMagBearing()
  */
 int getRawPathWidth (ColorSelection id)
 {
-    if (id == BAND630_CSPR || id == BAND4_CSPR || id == BAND2200_CSPR)
+    if (id == BAND630_CSPR || id == BAND4_CSPR || id == BAND2200_CSPR || id == BAND23CM_CSPR)
         return (RAWTHINPATHSZ);            // always on, always thin -- no editable on/off state
     ColSelPrompt &csp = csel_pr[id];
     return (csp.o_state ? (csp.t_state ? RAWTHINPATHSZ : RAWWIDEPATHSZ) : 0);
@@ -6088,7 +6088,7 @@ int getRawPathWidth (ColorSelection id)
  */
 int getRawSpotRadius (ColorSelection id)
 {
-    if (id == BAND630_CSPR || id == BAND4_CSPR || id == BAND2200_CSPR)
+    if (id == BAND630_CSPR || id == BAND4_CSPR || id == BAND2200_CSPR || id == BAND23CM_CSPR)
         return (2*RAWTHINPATHSZ);          // matches the ColSelPrompt-overload's own formula, thin
     ColSelPrompt &csp = csel_pr[id];
     return (getRawSpotRadius (csp));
@@ -6399,7 +6399,7 @@ bool setDXCluster (char *host, char *port_str, Message &ynot)
     return(true);
 }
 
-// hardcoded 630m/4m/2200m colors, since none of the three have an editable Setup page slot --
+// hardcoded 630m/4m/2200m/23cm colors, since none of the four have an editable Setup page slot --
 // see the BAND630_CSPR comment in HamClock.h for why. Used by every getMapColor()/
 // getRawPathWidth()/etc accessor below, all of which must check for these ids BEFORE indexing
 // csel_pr[], since their enum values are >= N_CSPR (at or past the end of that array).
@@ -6407,6 +6407,7 @@ bool setDXCluster (char *host, char *port_str, Message &ynot)
                                                           // other band colors and from borders/states
 #define BAND4_HARDCODED_COLOR    RGB565(220,80,150)      // magenta-pink -- distinct from the above
 #define BAND2200_HARDCODED_COLOR RGB565(80,180,220)      // sky blue -- distinct from both above
+#define BAND23CM_HARDCODED_COLOR RGB565(200,200,60)      // olive-yellow -- distinct from all three
 
 /* return current rgb565 color for the given ColorSelection
  */
@@ -6418,6 +6419,8 @@ uint16_t getMapColor (ColorSelection id)
         return (BAND4_HARDCODED_COLOR);
     if (id == BAND2200_CSPR)
         return (BAND2200_HARDCODED_COLOR);
+    if (id == BAND23CM_CSPR)
+        return (BAND23CM_HARDCODED_COLOR);
     uint16_t c;
     if (id >= 0 && id < N_CSPR) {
         ColSelPrompt &p = csel_pr[id];
@@ -6433,7 +6436,7 @@ uint16_t getMapColor (ColorSelection id)
  */
 bool getMapColorThin (ColorSelection id)
 {
-    if (id == BAND630_CSPR || id == BAND4_CSPR || id == BAND2200_CSPR)
+    if (id == BAND630_CSPR || id == BAND4_CSPR || id == BAND2200_CSPR || id == BAND23CM_CSPR)
         return (true);                                   // always drawn thin, matches most bands' default
     return (id >= 0 && id < N_CSPR) ? csel_pr[id].t_state : true;
 }
@@ -6448,6 +6451,8 @@ const char* getMapColorName (ColorSelection id)
         return ("4 m");
     if (id == BAND2200_CSPR)
         return ("2200 m");
+    if (id == BAND23CM_CSPR)
+        return ("23 cm");
     const char *n;
     if (id >= 0 && id < N_CSPR)
         n = csel_pr[id].p_str;
@@ -6484,7 +6489,7 @@ bool setMapColor (const char *name, uint16_t rgb565)
  */
 bool getPathDashed (ColorSelection id)
 {
-    if (id == BAND630_CSPR || id == BAND4_CSPR || id == BAND2200_CSPR)
+    if (id == BAND630_CSPR || id == BAND4_CSPR || id == BAND2200_CSPR || id == BAND23CM_CSPR)
         return (false);                    // no editable dash control -- solid, like most bands' default
     return (csel_pr[id].a_state);
 }
