@@ -684,6 +684,7 @@ typedef enum {
     UDPSPOTS_BPR,
     QRZBIOA_BPR,
     QRZBIOB_BPR,
+    QRZBIOC_BPR,                                // 3rd bit, bespoke 5-way cycle -- see getQRZId()
 
     AUTOMAP_BPR,
     UDPSETSDX_BPR,
@@ -968,11 +969,21 @@ static BoolPrompt bool_pr[N_BPR] = {
 
 
     {4, {400, R2Y(8), 190, PR_H},  {590, R2Y(8), 170, PR_H}, false, "Look up bio?",
-                    qrz_urltable[QRZ_NONE].label, qrz_urltable[QRZ_QRZ].label, QRZBIOB_BPR,
+                    qrz_urltable[QRZ_NONE].label, qrz_urltable[QRZ_QRZ].label, NOMATE,
                     "Whether and from which resource to offer looking up cluster spot biography"},
     {4, {400, R2Y(8), 190, PR_H},  {590, R2Y(8), 170, PR_H}, false, NULL,
-                                qrz_urltable[QRZ_HAMCALL].label, qrz_urltable[QRZ_CQQRZ].label,QRZBIOA_BPR,0},
-                                                // 4x entangled: FF -> TF -> FT -> TT -> ...
+                                qrz_urltable[QRZ_HAMCALL].label, qrz_urltable[QRZ_CQQRZ].label,NOMATE,0},
+    {4, {400, R2Y(8), 190, PR_H},  {590, R2Y(8), 170, PR_H}, false, NULL,
+                                "", qrz_urltable[QRZ_HAMQTH].label, NOMATE, 0},
+                                                // N.B. this trio is NOT run through the generic
+                                                // 3x/4x "entangled" machinery above/below (that
+                                                // tops out at 4 states from 2 booleans, no room
+                                                // for a 5th) -- getQRZId()/setQRZId()/drawQRZBioBox()
+                                                // read/write these 3 raw booleans directly as a
+                                                // little-endian bit triple instead, gated on
+                                                // identity (bp == &bool_pr[QRZBIOA_BPR]) rather
+                                                // than ent_mate, hence NOMATE on all three here.
+                                                // f/t_str are inert documentation only.
 
 
 
@@ -2616,6 +2627,41 @@ static void drawEntangledBools (BoolPrompt *A, BoolPrompt *B)
     }
 }
 
+/* return the user's chosen qrz_urltable index, decoded from the 3 raw booleans
+ * QRZBIOA/B/C_BPR (A lsb .. C msb) as a little-endian bit triple.
+ * N.B. deliberately bespoke rather than routed through getEntangledIndex()/getEntangledValue()
+ * above: those top out at 4 states from 2 booleans, with no room for QRZ_HAMQTH as a 5th.
+ */
+QRZURLId getQRZId(void)
+{
+    int idx = (bool_pr[QRZBIOA_BPR].state ? 1 : 0)
+            | (bool_pr[QRZBIOB_BPR].state ? 2 : 0)
+            | (bool_pr[QRZBIOC_BPR].state ? 4 : 0);
+    return (idx < QRZ_N ? (QRZURLId)idx : QRZ_NONE);           // clamp any of the 3 unused states
+}
+
+/* set the 3 raw booleans behind getQRZId() to represent the given choice
+ */
+static void setQRZId (QRZURLId id)
+{
+    bool_pr[QRZBIOA_BPR].state = (id & 1) != 0;
+    bool_pr[QRZBIOB_BPR].state = (id & 2) != 0;
+    bool_pr[QRZBIOC_BPR].state = (id & 4) != 0;
+}
+
+/* draw the single combined "Look up bio?" value box showing the currently selected service.
+ * mirrors drawBPState()'s own rendering (same box, same colors) but pulls display text from
+ * qrz_urltable via getQRZId() instead of a lone bool's own f_str/t_str.
+ */
+static void drawQRZBioBox (void)
+{
+    BoolPrompt &A = bool_pr[QRZBIOA_BPR];
+    tft.setTextColor (TX_C);
+    fillSBox (A.s_box, BG_C);
+    tft.setCursor (A.s_box.x, A.s_box.y + A.s_box.h - PR_D);
+    tft.print (qrz_urltable[getQRZId()].label);
+}
+
 /* perform action resulting from tapping the given BoolPrompt.
  * handle both singles and entangled pairs.
  */
@@ -2623,6 +2669,18 @@ static void engageBoolTap (BoolPrompt *bp)
 {
     // erase current cursor position
     eraseCursor ();
+
+    if (bp == &bool_pr[QRZBIOA_BPR]) {
+
+        // bespoke 5-way cycle across 3 raw booleans -- see getQRZId()/setQRZId() just above.
+        // identity-gated so the shared entangled-pair machinery below, used by 6 other
+        // settings, is completely untouched by this special case.
+        setQRZId ((QRZURLId) ((getQRZId() + 1) % QRZ_N));
+        drawQRZBioBox ();
+        setFocus (NULL, bp);
+        drawCursor ();
+        return;
+    }
 
     // update state
     if (bp->ent_mate == NOMATE) {
@@ -2783,7 +2841,11 @@ static void drawCurrentPageFields()
         BoolPrompt *bp = &bool_pr[i];
         if (boolIsRelevant(bp)) {
             drawBPPrompt (bp);
-            if (bp->ent_mate == i+1)
+            if (bp == &bool_pr[QRZBIOA_BPR])
+                drawQRZBioBox ();                       // bespoke 5-way, see engageBoolTap()
+            else if (bp == &bool_pr[QRZBIOB_BPR] || bp == &bool_pr[QRZBIOC_BPR])
+                ;                                        // no-op: A's box above covers all 3
+            else if (bp->ent_mate == i+1)
                 drawEntangledBools(bp, &bool_pr[i+1]);
             else if (bp->ent_mate == NOMATE)
                 drawBPState (bp);
@@ -4897,7 +4959,7 @@ static void initSetup()
         qrz_id = QRZ_NONE;
         NVWriteUInt8 (NV_QRZID, qrz_id);
     }
-    setEntangledValue (QRZBIOA_BPR, QRZBIOB_BPR, qrz_urltable[qrz_id].label);
+    setQRZId ((QRZURLId)qrz_id);
 
     // insure default DX
     char dx_grid[MAID_CHARLEN];
@@ -6689,18 +6751,6 @@ GrayDpy_t getGrayDisplay(void)
     if (strcmp (v, "Map") == 0) return (GRAY_MAP);
     if (strcmp (v, "All") == 0) return (GRAY_ALL);
     return (GRAY_OFF);  // default?
-}
-
-/* return the user's chosen qrz_urltable index.
- */
-QRZURLId getQRZId(void)
-{
-    const char *label = getEntangledValue (QRZBIOA_BPR, QRZBIOB_BPR);
-    for (int i = 0; i < QRZ_N; i++)
-        if (strcmp (label, qrz_urltable[i].label) == 0)
-            return ((QRZURLId)i);
-    fatalError ("unknown call bio label: %s", label);
-    return (QRZ_NONE);  // lint
 }
 
 /* return whether to use metric units
