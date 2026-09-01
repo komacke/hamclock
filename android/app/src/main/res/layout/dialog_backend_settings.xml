@@ -2,15 +2,15 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:focusable="false"
     android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
-        android:descendantFocusability="beforeDescendants"
+        android:focusable="false"
+        android:descendantFocusability="afterDescendants"
         android:paddingStart="24dp"
         android:paddingEnd="24dp"
         android:paddingTop="12dp"
@@ -20,6 +20,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
+        android:focusable="false"
         android:layout_marginBottom="8dp">
 
         <Button
@@ -30,7 +31,8 @@
             android:layout_marginEnd="6dp"
             android:text="@string/open_setup"
             android:textColor="@color/hamclock_text"
-            android:backgroundTint="#2C3E50" />
+            android:background="@drawable/btn_setup_selector"
+            android:focusable="true" />
 
         <Button
             android:id="@+id/btn_exit_app"
@@ -40,7 +42,8 @@
             android:layout_marginStart="6dp"
             android:text="@string/exit_hamclock"
             android:textColor="@color/hamclock_text"
-            android:backgroundTint="#8B0000" />
+            android:background="@drawable/btn_exit_selector"
+            android:focusable="true" />
     </LinearLayout>
 
     <View
@@ -68,7 +71,10 @@
         android:imeOptions="flagNoExtractUi|actionDone"
         android:singleLine="true"
         android:textColor="@color/hamclock_text"
-        android:textColorHint="#888888" />
+        android:textColorHint="#888888"
+        android:focusable="true"
+        android:padding="8dp"
+        android:background="@drawable/item_focus_highlight" />
 
     <View
         android:layout_width="match_parent"
@@ -84,13 +90,18 @@
         android:text="@string/start_on_boot_label"
         android:textColor="@color/hamclock_text"
         android:textSize="14sp"
-        android:buttonTint="@color/hamclock_accent" />
+        android:buttonTint="@color/hamclock_accent"
+        android:focusable="true"
+        android:clickable="true"
+        android:padding="8dp"
+        android:background="@drawable/item_focus_highlight" />
 
     <LinearLayout
         android:id="@+id/ll_autostart_helper"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
+        android:focusable="false"
         android:layout_marginTop="8dp"
         android:layout_marginStart="8dp"
         android:layout_marginEnd="8dp"
@@ -114,7 +125,8 @@
             android:text="@string/open_autostart_settings"
             android:textColor="@color/hamclock_text"
             android:textSize="12sp"
-            android:backgroundTint="#455A64" />
+            android:background="@drawable/btn_neutral_selector"
+            android:focusable="true" />
     </LinearLayout>
 
     <View
@@ -131,13 +143,18 @@
         android:text="@string/allow_external_label"
         android:textColor="@color/hamclock_text"
         android:textSize="14sp"
-        android:buttonTint="@color/hamclock_accent" />
+        android:buttonTint="@color/hamclock_accent"
+        android:focusable="true"
+        android:clickable="true"
+        android:padding="8dp"
+        android:background="@drawable/item_focus_highlight" />
 
     <LinearLayout
         android:id="@+id/ll_local_access_details"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
+        android:focusable="false"
         android:layout_marginTop="8dp"
         android:layout_marginStart="8dp"
         android:layout_marginEnd="8dp"
@@ -164,7 +181,10 @@
             android:singleLine="true"
             android:textSize="13sp"
             android:textColor="@color/hamclock_text"
-            android:textColorHint="#888888" />
+            android:textColorHint="#888888"
+            android:focusable="true"
+            android:padding="8dp"
+            android:background="@drawable/item_focus_highlight" />
 
         <TextView
             android:layout_width="match_parent"
@@ -192,7 +212,8 @@
             android:text="@string/copy_url"
             android:textColor="@color/hamclock_text"
             android:textSize="12sp"
-            android:backgroundTint="#37474F" />
+            android:background="@drawable/btn_neutral_selector"
+            android:focusable="true" />
     </LinearLayout>
 
     <View
