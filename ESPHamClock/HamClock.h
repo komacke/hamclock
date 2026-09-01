@@ -2686,7 +2686,8 @@ extern bool getMaxDistPSK (const SCoord &ms, DXSpot *sp, LatLong *mark_ll);
     X(QRZ_NONE,     "No",          NULL)                                        \
     X(QRZ_QRZ,      "qrz.com",     "https://www.qrz.com/db/WB0OEW")             \
     X(QRZ_HAMCALL,  "hamcall.net", "https://hamcall.net/call?callsign=WB0OEW")  \
-    X(QRZ_CQQRZ,    "cqqrz.com",   "https://www.qrzcq.com/call/WB0OEW")
+    X(QRZ_CQQRZ,    "cqqrz.com",   "https://www.qrzcq.com/call/WB0OEW")         \
+    X(QRZ_HAMQTH,   "hamqth.com",  "https://www.hamqth.com/WB0OEW")
 
 #define X(a,b,c)  a,                    // expands QRZTABLE to each enum and comma
 typedef enum {
