@@ -8,6 +8,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <strings.h>
+#include <sys/system_properties.h>
 #include <android/log.h>
 
 #include "HamClock.h"
@@ -276,7 +278,19 @@ static void *daemon_worker(void *arg) {
              ll.lat_d, ll.lng_d, grid, de_tz.tz_secs / 60);
     }
 
-    std::string progName = "hamclock-android";
+    char mfg[PROP_VALUE_MAX] = {0};
+    char brand[PROP_VALUE_MAX] = {0};
+    __system_property_get("ro.product.manufacturer", mfg);
+    __system_property_get("ro.product.brand", brand);
+    bool isAmazon = (strcasecmp(mfg, "Amazon") == 0 || strcasecmp(brand, "Amazon") == 0);
+
+    std::string progName = isAmazon ? "hamclock-amazon" : "hamclock-android";
+    if (isAmazon) {
+        snprintf(platform, sizeof(platform), "HamClock-amazon");
+        LOGI("Detected Amazon device (mfg: '%s', brand: '%s'): using platform '%s'", mfg, brand, platform);
+    } else {
+        LOGI("Detected Android device (mfg: '%s', brand: '%s'): using platform '%s'", mfg, brand, platform);
+    }
     std::string dirFlag = "-d";
     std::string dirVal = dargs->dataDir;
     std::string rwFlag = "-w";

@@ -10,7 +10,7 @@
 #if defined (_IS_ESP8266)
 const char platform[] = "ESPHamClock";
 #elif defined(_IS_ANDROID) || defined(__ANDROID__)
-const char platform[] = "HamClock-android";
+char platform[32] = "HamClock-android";
 #elif defined(_IS_LINUX_ARMBIAN)
 const char platform[] = "HamClock-armbian";
 #elif defined(_IS_LINUX_RPI)
