@@ -7,21 +7,30 @@ on:
         description: 'Tag name (e.g., v0.0.0 or v0.0b00.0)'
         required: true
         default: 'v0.0.0'
-      draft:
-        description: 'Create as a draft release'
-        required: false
-        type: boolean
-        default: false
+      publish_release:
+        description: 'Publish GitHub release directly (set to false for draft)'
+        required: true
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+        default: 'true'
       build_docker:
         description: 'Build and push Docker image'
-        required: false
-        type: boolean
-        default: true
+        required: true
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+        default: 'true'
       push_play_store:
         description: 'Upload Android AAB to Google Play as draft'
-        required: false
-        type: boolean
-        default: true
+        required: true
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+        default: 'true'
 
 jobs:
   release:
@@ -158,7 +167,7 @@ jobs:
       - name: Create Release and Upload Asset
         env:
           GH_TOKEN: ${{ github.token }}
-          IS_DRAFT: ${{ inputs.draft }}
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
         run: |
           TAG="${{ github.event.inputs.tag_name }}"
           HC_TAG=${TAG%.*}
@@ -187,7 +196,7 @@ jobs:
           fi
 
           EXTRA_FLAGS=()
-          if [ "$IS_DRAFT" = "true" ]; then
+          if [ "$PUBLISH_RELEASE" = "false" ]; then
             EXTRA_FLAGS+=(--draft)
           fi
 

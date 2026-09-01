@@ -34,7 +34,7 @@ gh workflow run release.yml -f tag_name=v4.32b00.0
 gh workflow run release.yml -f tag_name=v4.32.0
 
 # Optional: create as a draft release:
-gh workflow run release.yml -f tag_name=v4.32.0 -f draft=true
+gh workflow run release.yml -f tag_name=v4.32.0 -f publish_release=false
 
 # Optional: skip GitHub Docker build (e.g. if building Docker image locally):
 gh workflow run release.yml -f tag_name=v4.32.0 -f build_docker=false
@@ -43,7 +43,7 @@ gh workflow run release.yml -f tag_name=v4.32.0 -f build_docker=false
 gh workflow run release.yml -f tag_name=v4.32.0 -f push_play_store=false
 
 # Optional: draft release without Docker build or Play Store upload:
-gh workflow run release.yml -f tag_name=v4.32.0 -f draft=true -f build_docker=false -f push_play_store=false
+gh workflow run release.yml -f tag_name=v4.32.0 -f publish_release=false -f build_docker=false -f push_play_store=false
 
 # Optional: target a specific branch (defaults to main)
 gh workflow run release.yml --ref main -f tag_name=v4.32.0
@@ -64,9 +64,9 @@ gh workflow run
 | Input | Type | Default | Description |
 |---|---|---|---|
 | `tag_name` | string | `v0.0.0` | Version tag to release (e.g., `v4.32.0` or `v4.32b00.0`). |
-| `draft` | boolean | `false` | When `true`, creates the GitHub Release as a draft. |
-| `build_docker` | boolean | `true` | When `true`, builds and pushes the multi-platform Docker image. |
-| `push_play_store` | boolean | `true` | When `true`, uploads the Android AAB to Google Play (Alpha track) as a draft. |
+| `publish_release` | choice (`true`, `false`) | `true` | When `true`, publishes the release immediately. Set to `false` to create as a draft. |
+| `build_docker` | choice (`true`, `false`) | `true` | When `true`, builds and pushes the multi-platform Docker image. |
+| `push_play_store` | choice (`true`, `false`) | `true` | When `true`, uploads the Android AAB to Google Play (Alpha track) as a draft. |
 
 ### Monitoring the Workflow
 
@@ -193,7 +193,7 @@ The release workflow executes two parallel jobs: `release` and `docker`.
    - Outputs release `.apk` (direct install) and `.aab` (Google Play Store bundle).
    - *(Optional - enabled by default)* Prepares `whatsnew` notes and uploads the `.aab` to Google Play Console (Alpha track) as a draft. Can be skipped by setting `-f push_play_store=false`.
 4. **GitHub Release Publication:**
-   - Creates the GitHub Release via `gh release create`. By default creates an active release; can be published as a draft using `-f draft=true`.
+   - Creates the GitHub Release via `gh release create`. By default creates an active, published release; can be created as a draft using `-f publish_release=false`.
    - Generates release notes automatically from commit log (`--generate-notes`).
    - Attaches:
      - `docker/manage-hc-docker-$TAG.sh`
