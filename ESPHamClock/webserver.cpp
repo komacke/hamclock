@@ -4676,7 +4676,7 @@ static bool setWiFiScreenLock (WiFiClient &client, char line[], size_t line_len)
 
 /* change the live spots configuration
  *   spot=of|by&what=call|grid&show=maxdist|counts&data=psk|wspr|rbn&age=mins
- *   &bands=all|160,...,2,630,4,2200 (630/4/2200 mutually exclusive)
+ *   &bands=all|160,...,2,2200,630,4,23 (2200/630/4/23 mutually exclusive)
  */
 static bool setWiFiLiveSpots (WiFiClient &client, char line[], size_t line_len)
 {
@@ -4697,7 +4697,7 @@ static bool setWiFiLiveSpots (WiFiClient &client, char line[], size_t line_len)
 
     const char *usage =
         "spot=of|by&what=call|grid&show=maxdist|counts&data=psk|wspr|rbn&age=mins"
-        "&bands=all|160,...,2,630,4,2200 (630/4/2200 mutually exclusive)";
+        "&bands=all|160,...,2,2200,630,4,23 (2200/630/4/23 mutually exclusive, 23=23cm)";
 
     // parse
     if (!parseWebCommand (wa, line, line_len)) {
@@ -4761,14 +4761,16 @@ static bool setWiFiLiveSpots (WiFiClient &client, char line[], size_t line_len)
         char *bands = (char *) bands_mem.getMem();
         strcpy (bands, wa.value[_LS_BANDS]);
         if (strcmp (bands, "all") == 0) {
-            // N.B. can't just set every bit: 630/4/2200 are mutually exclusive in the Live Spots
-            // pane (see checkPSKTouch() in pskreporter.cpp), so blindly setting all HAMBAND_N bits
-            // would turn all three on at once. "all" here means "every band except that at most
-            // one of the mutually exclusive trio may be on" -- matches initPSKState()'s own
-            // fresh-install default of everything-but-4m/2200m, with 630m the one left on.
+            // N.B. can't just set every bit: 2200/630/4/23cm are mutually exclusive in the Live
+            // Spots pane (see checkPSKTouch() in pskreporter.cpp), so blindly setting all
+            // HAMBAND_N bits would turn all four on at once. "all" here means "every band except
+            // that at most one of the mutually exclusive group may be on" -- matches
+            // initPSKState()'s own fresh-install default of everything-but-4m/2200m/23cm, with
+            // 630m the one left on.
             new_bands = (1 << HAMBAND_N) - 1;
             new_bands &= ~(1 << HAMBAND_4M);
             new_bands &= ~(1 << HAMBAND_2200M);
+            new_bands &= ~(1 << HAMBAND_23CM);
         } else {
             char *token, *string = bands;
             while ((token = strsep (&string, ",")) != NULL) {
@@ -4785,22 +4787,24 @@ static bool setWiFiLiveSpots (WiFiClient &client, char line[], size_t line_len)
                 case 10:  new_bands |= (1 << HAMBAND_10M);  break;
                 case 6:   new_bands |= (1 << HAMBAND_6M);   break;
                 case 2:   new_bands |= (1 << HAMBAND_2M);   break;
+                case 2200:new_bands |= (1 << HAMBAND_2200M);break;
                 case 630: new_bands |= (1 << HAMBAND_630M); break;
                 case 4:   new_bands |= (1 << HAMBAND_4M);   break;
-                case 2200:new_bands |= (1 << HAMBAND_2200M);break;
+                case 23:  new_bands |= (1 << HAMBAND_23CM); break;   // matches token "23" or "23cm"
                 default:
                     strcpy (line, "unknown band");
                     return (false);
                 }
             }
-            // 630m, 4m and 2200m share a physical antenna range/menu group in the Live Spots pane
-            // and are mutually exclusive there -- see checkPSKTouch() -- so reject any request
-            // that tries to turn on more than one of them together, same as the UI would.
-            int n_lw = ((new_bands & (1 << HAMBAND_630M)) != 0)
+            // 2200m, 630m, 4m and 23cm share a single menu group in the Live Spots pane and are
+            // mutually exclusive there -- see checkPSKTouch() -- so reject any request that tries
+            // to turn on more than one of them together, same as the UI would.
+            int n_ex = ((new_bands & (1 << HAMBAND_2200M)) != 0)
+                     + ((new_bands & (1 << HAMBAND_630M)) != 0)
                      + ((new_bands & (1 << HAMBAND_4M)) != 0)
-                     + ((new_bands & (1 << HAMBAND_2200M)) != 0);
-            if (n_lw > 1) {
-                strcpy (line, "630, 4 and 2200 are mutually exclusive");
+                     + ((new_bands & (1 << HAMBAND_23CM)) != 0);
+            if (n_ex > 1) {
+                strcpy (line, "2200, 630, 4 and 23 (23cm) are mutually exclusive");
                 return (false);
             }
         }

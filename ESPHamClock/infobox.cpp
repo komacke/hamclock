@@ -324,9 +324,9 @@ static void drawIB_DXPed (const SBox &minfo_b, const DXPedEntry *dxp, const SCoo
         StackMalloc bm_mem(n_worked * sizeof(BandModeStr_t));
         BandModeStr_t *bm = (BandModeStr_t *) bm_mem.getMem();
         for (int i = 0; i < n_worked; i++) {
-            const char *band_name = findBandName (worked[i].hb);
-            int gap = IB_MAXCHARS - 1 - strlen(band_name) - strlen(worked[i].mode);         // -1 for 'm'
-            snprintf (bm[i], IB_MAXCHARS+1, "%sm%*s%s", band_name, gap, "", worked[i].mode);
+            const char *band_name = findBandUnitName (worked[i].hb);      // includes its own unit now
+            int gap = IB_MAXCHARS - (int)strlen(band_name) - (int)strlen(worked[i].mode);
+            snprintf (bm[i], IB_MAXCHARS+1, "%s%*s%s", band_name, gap, "", worked[i].mode);
         }
 
         // show each band+mode, but set last line to "..." if they don't all fit

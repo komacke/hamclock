@@ -383,7 +383,7 @@ typedef enum {
     STATES_CSPR,
     N_CSPR,                  // csel_pr[] in setup.cpp is sized to exactly this many editable colors
 
-    // 630m, 4m and 2200m are deliberately declared AFTER N_CSPR, not folded into the editable
+    // 630m, 4m, 2200m and 23cm are deliberately declared AFTER N_CSPR, not folded into the editable
     // csel_pr[] table above it: the Color Editor's page 6 is already exactly full (12 tightly-packed
     // rows, no spare vertical room on real hardware -- confirmed, not just a layout guess), so
     // there's no row to give any of them. Rather than reflow that whole page, each gets a single
@@ -391,12 +391,14 @@ typedef enum {
     // be used to index csel_pr[N_CSPR] directly (that's one past the end of the array) -- every
     // function that reads a ColorSelection by indexing csel_pr[] (getMapColor, getMapColorThin,
     // getMapColorName, getRawPathWidth, getRawSpotRadius, getPathDashed) has an explicit early check
-    // for each of these values before it ever touches csel_pr[]. findColSel(HAMBAND_630M/_4M/_2200M)
-    // returns the corresponding value, and spot/path drawing code calls those functions with it via
-    // findColSel() just like every other band, so this guard has to be airtight, not best-effort.
+    // for each of these values before it ever touches csel_pr[]. findColSel(HAMBAND_630M/_4M/
+    // _2200M/_23CM) returns the corresponding value, and spot/path drawing code calls those
+    // functions with it via findColSel() just like every other band, so this guard has to be
+    // airtight, not best-effort.
     BAND630_CSPR,
     BAND4_CSPR,
-    BAND2200_CSPR
+    BAND2200_CSPR,
+    BAND23CM_CSPR
 } ColorSelection;
 
 
@@ -921,6 +923,13 @@ extern void tftMsg (bool verbose, uint32_t dwell_ms, const char *fmt, ...) __att
 extern void tftMsg (bool verbose, uint32_t dwell_ms, const char *fmt, ...);
 #endif
 
+// N.B. noreturn: every implementation (ESPHamClock.cpp for desktop/ESP32, robinson.cpp's
+// standalone unit-test build) ends in exit()/_exit()/an infinite loop and never returns to its
+// caller. Without this, GCC can't prove that a caller's "if (!isValidHBS(h)) fatalError(...)"
+// guard actually stops execution before an out-of-range h reaches later code, which showed up as
+// a spurious -Warray-bounds warning on an inlined band_info[h] access that was never actually
+// reachable with a bad h. [[noreturn]] is standard C++11, so it's applied unconditionally rather
+// than behind the same __GNUC__ guard as the printf-format attribute below.
 #if defined(__GNUC__)
 extern void fatalError (const char *fmt, ...) __attribute__ ((format (__printf__, 1, 2)));
 #else
@@ -1119,12 +1128,15 @@ extern void getLunarRS (const time_t t0, const LatLong &ll, time_t *riset, time_
  * (NV_DXC_BANDS, NV_PSK_BANDS), so new bands must always be appended at the end here, never
  * inserted in frequency order, or every existing user's saved bitmask silently reinterprets
  * to the wrong bands. This is why 630m (longer wavelength than 160m) is listed last instead
- * of first -- and why 4m and 2200m, added after it, are tacked on after 630m rather than
+ * of first -- and why 4m, 2200m and 23cm, added after it, are tacked on after 630m rather than
  * sorted in by wavelength. Same reasoning applies to each entry's *_CSPR value -- see
- * ColorSelection below. 630m, 4m and 2200m are mutually exclusive in the Live Spots pane (see
- * checkPSKTouch() in pskreporter.cpp) -- at most one of the three may be selected at a time --
+ * ColorSelection below. 2200m, 630m, 4m and 23cm are mutually exclusive in the Live Spots pane
+ * (see checkPSKTouch() in pskreporter.cpp) -- at most one of the four may be selected at a time --
  * but that is a Live Spots UI policy, not a HamBandSetting-level restriction; nothing here stops
- * all three bits from being set in a bitmask built some other way.
+ * all four bits from being set in a bitmask built some other way. 23cm's "meters" field (the 2nd
+ * X macro argument, see just below) holds 23, not a true meters value -- it's cm, not m -- purely
+ * so findHamBand(int) still has a unique integer to match on; nothing currently calls
+ * findHamBand(23) expecting meters, so this can't collide with a real band.
  */
 #define SUPPORTED_BANDS                                 \
     X(HAMBAND_160M, 160, "160",  90, BAND160_CSPR)      \
@@ -1141,7 +1153,8 @@ extern void getLunarRS (const time_t t0, const LatLong &ll, time_t *riset, time_
     X(HAMBAND_2M,     2,   "2",   0, BAND2_CSPR)        \
     X(HAMBAND_630M, 630, "630",  96, BAND630_CSPR)      \
     X(HAMBAND_4M,     4,   "4",  97, BAND4_CSPR)        \
-    X(HAMBAND_2200M,2200,"2200", 98, BAND2200_CSPR)
+    X(HAMBAND_2200M,2200,"2200", 98, BAND2200_CSPR)     \
+    X(HAMBAND_23CM,  23,"23cm",  99, BAND23CM_CSPR)
 
 #define X(a,b,c,d,e) a,                         // expands SUPPORTED_BANDS to each enum and comma
 typedef enum {
@@ -1157,6 +1170,7 @@ extern HamBandSetting findHamBand (float kHz);
 extern HamBandSetting findHamBand (int meters);
 extern ColorSelection findColSel (HamBandSetting h);
 extern const char *findBandName (HamBandSetting h);
+extern const char *findBandUnitName (HamBandSetting h);
 extern bool isValidSubBand (const char *mode);
 extern const char *findHamMode (float kHz);
 
