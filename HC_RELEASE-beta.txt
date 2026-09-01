@@ -1,6 +1,6 @@
 Changes with latest release:
 - new Android support
-- old Amazon fire tablets and tv
+- Amazon fire tablets and tv
 - new fire wx monitoring
 - new fires on maps
 - new marine warning monitoring

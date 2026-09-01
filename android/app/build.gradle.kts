@@ -232,7 +232,7 @@ fun promptPlain(prompt: String): String? {
                 "proguard-rules.pro"
             )
             ndk {
-                debugSymbolLevel = "SYMBOL_TABLE"
+                debugSymbolLevel = "FULL"
             }
         }
     }
