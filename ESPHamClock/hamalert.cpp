@@ -21,6 +21,14 @@
 #define HA_HOST         "hamalert.org"                  // fixed HamAlert telnet host
 #define HA_PORT         7300                            // fixed HamAlert telnet port
 
+// clear control -- same geometry/column as dxcluster.cpp's CLR so it's a familiar target,
+// stacked above the New Spots symbol which occupies NEWSYM_DY (18) down to PANETITLE_H (27)
+// in the same DX (6) column -- see scrollstate.cpp
+#define HACLRBOX_DX     6                               // clear control box left offset
+#define HACLRBOX_DY     6                               // "  top offset
+#define HACLRBOX_W      20                               // "  width
+#define HACLRBOX_H      11                               // "  height
+
 // connection
 static WiFiClient ha_client;                            // persistent TCP connection while displayed
 #define HA_MAX_LCN      10                               // max lost connections per HA_MAX_LCDT
@@ -40,6 +48,7 @@ static bool ha_spots_changed;                            // set to rebuild displ
 static time_t ha_scrolledaway_tm;                         // time() when user scrolled away from top
 static uint32_t ha_activity_ms;                           // millis() of last socket activity
 static bool ha_showbio;                                  // whether click shows bio
+static SBox haclr_b;                                     // Clear list control box
 
 // crude in-memory (non-persistent) lost-connection throttle -- doesn't need to survive reboot
 static uint32_t ha_lc_t0;                                 // time() when current lost-conn window started
@@ -156,6 +165,21 @@ static void drawHASpotRow (const SBox &box, const DXSpot &spot, int row)
     tft.print (age_str);
 }
 
+/* draw, else erase, the clear list control -- same idea as dxcluster.cpp's drawClearListBtn:
+ * black when there's nothing to clear, so it visually disables itself rather than disappearing.
+ */
+static void drawHAClearBtn (bool draw)
+{
+    uint16_t color = draw ? HAC_COLOR : RA8875_BLACK;
+
+    drawSBox (haclr_b, color);
+
+    selectFontStyle (LIGHT_FONT, FAST_FONT);
+    tft.setCursor (haclr_b.x+1, haclr_b.y+2);
+    tft.setTextColor (color);
+    tft.print ("CLR");
+}
+
 /* draw all currently visible spots then update scroll markers
  */
 static void drawAllVisHASpots (const SBox &box)
@@ -171,6 +195,7 @@ static void drawAllVisHASpots (const SBox &box)
 
     ha_ss.drawScrollUpControl (box, HAC_COLOR, HAC_COLOR);
     ha_ss.drawScrollDownControl (box, HAC_COLOR, HAC_COLOR);
+    drawHAClearBtn (ha_ss.n_data > 0);
 }
 
 /* handy check whether New Spot symbol needs changing on/off
@@ -306,6 +331,9 @@ static void showHamAlertErr (const char *fmt, ...)
 static void initHAGUI (const SBox &box)
 {
     prepPlotBox (box);
+
+    // locate the Clr box
+    haclr_b = {(uint16_t)(box.x+HACLRBOX_DX), (uint16_t)(box.y+HACLRBOX_DY), HACLRBOX_W, HACLRBOX_H};
 
     const char *title = BOX_IS_PANE_0(box) ? "HamAlert" : "HamAlert";
     selectFontStyle (LIGHT_FONT, SMALL_FONT);
@@ -534,6 +562,19 @@ bool checkHamAlertTouch (TouchType tt, const SCoord &s, const SBox &box)
                 ha_ss.scrollToNewest();
             return (true);
         }
+
+        // clear control? this only frees the displayed list, exactly like dxcluster.cpp's CLR --
+        // ha_client and the background checkHamAlert() polling loop are untouched, so the connection
+        // stays up and any alert that arrives moments later still shows up normally.
+        if (inBox (s, haclr_b)) {
+            haLog ("User cleared list of %d spots\n", ha_ss.n_data);
+            resetHAMem();
+            ha_scrolledaway_tm = 0;
+            ROTHOLD_CLR(PLOT_CH_HAMALERT);
+            initHAGUI (box);
+            return (true);
+        }
+
         if (ROTHOLD_TST(PLOT_CH_HAMALERT))
             return (true);
 
