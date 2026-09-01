@@ -132,6 +132,11 @@ jobs:
             cp app/build/outputs/mapping/release/mapping.txt ../dist/mapping.txt
           fi
 
+          # Copy Native Debug Symbols if generated
+          if [ -f app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip ]; then
+            cp app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip ../dist/native-debug-symbols.zip
+          fi
+
       # Prepare release notes for Google Play Store upload
       - name: Prepare Play Store Release Notes
         if: ${{ github.event_name == 'push' || inputs.push_play_store == true || inputs.push_play_store == 'true' }}
@@ -162,6 +167,7 @@ jobs:
           status: draft
           whatsNewDirectory: dist/whatsnew
           mappingFile: dist/mapping.txt
+          debugSymbols: dist/native-debug-symbols.zip
 
       - name: Create Release and Upload Asset
         env:
