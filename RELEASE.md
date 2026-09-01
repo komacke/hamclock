@@ -176,7 +176,7 @@ base64 -w 0 path/to/release.keystore | gh secret set ANDROID_KEYSTORE_BASE64
 
 ## 4. Pipeline Jobs & Artifacts
 
-The release workflow executes two parallel jobs: `release` and `docker`.
+The release workflow executes two jobs sequentially: `release` followed by `docker` (ensuring Docker images are only built and pushed if the release succeeds).
 
 ### Job 1: `release`
 
