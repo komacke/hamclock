@@ -160,7 +160,6 @@ jobs:
           releaseFiles: dist/org.openhamclock*.aab
           tracks: alpha
           status: draft
-          changesNotSentForReview: true
           whatsNewDirectory: dist/whatsnew
           mappingFile: dist/mapping.txt
 
@@ -210,8 +209,9 @@ jobs:
 
   docker:
     name: Build and Push Docker Image
+    needs: release
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'push' || inputs.build_docker == true || inputs.build_docker == 'true' }}
+    if: ${{ needs.release.result == 'success' && (github.event_name == 'push' || inputs.build_docker == true || inputs.build_docker == 'true') }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
