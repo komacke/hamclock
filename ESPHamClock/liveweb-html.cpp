@@ -446,6 +446,24 @@ char live_html[] =  R"_raw_html_(
                         }
                     }
 
+                    else if (e.data === 'paste') {
+                        if (navigator.clipboard && navigator.clipboard.readText) {
+                            navigator.clipboard.readText().then(text => {
+                                if (text)
+                                    pasteString(text);
+                            }).catch(err => {
+                                console.log("clipboard read denied: ", err);
+                                let text = prompt("Paste text here (Ctrl+V):", "");
+                                if (text)
+                                    pasteString(text);
+                            });
+                        } else {
+                            let text = prompt("Paste text here (Ctrl+V):", "");
+                            if (text)
+                                pasteString(text);
+                        }
+                    }
+
                     else if (e.data === 'Too many connections') {       // N.B. string must match liveweb.cpp
                         // close and don't reload
                         drawMsgOnce (e.data);
@@ -564,26 +582,6 @@ char live_html[] =  R"_raw_html_(
                 var mods = event.ctrlKey || event.metaKey;
                 var button = ((event.button == 0 && mods) || event.button == 1 || event.button == 2) ? 1 : 0;
                 console.log ("button " + event.button + " + " + mods + " -> " + button);
-
-                // if tapping on virtual keyboard Paste button in non-Android browser, read browser clipboard
-                // Only trigger on primary button (left click / touch tap) without keyboard modifiers
-                if (event.button === 0 && !mods && m.x >= 16 && m.x <= 155 && m.y >= 404 && m.y <= 470 && !window.AndroidApp) {
-                    if (navigator.clipboard && navigator.clipboard.readText) {
-                        navigator.clipboard.readText().then(text => {
-                            if (text)
-                                pasteString(text);
-                        }).catch(err => {
-                            console.log("clipboard read denied: ", err);
-                            let text = prompt("Paste text here (Ctrl+V):", "");
-                            if (text)
-                                pasteString(text);
-                        });
-                    } else {
-                        let text = prompt("Paste text here (Ctrl+V):", "");
-                        if (text)
-                            pasteString(text);
-                    }
-                }
 
                 // compose and send
                 let msg = 'set_touch?x=' + m.x + '&y=' + m.y + '&button=' + button;

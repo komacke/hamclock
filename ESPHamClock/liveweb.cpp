@@ -46,6 +46,7 @@ const int liveweb_maxmax = MAX_CLIENTS-1;               // max max for -help
 // record client and possible URL for it to display.
 static ws_cli_conn_t *lastest_ws_touch_client;          // most recent client performing set_touch
 static char *liveweb_openurl;                           // malloced url to attempt to open, else NULL
+static bool liveweb_dopaste;                            // client should attempt paste
 static pthread_mutex_t lw_url_lock = PTHREAD_MUTEX_INITIALIZER; // thread-safe access for liveweb_openurl
 
 
@@ -469,16 +470,21 @@ static void getLiveUpdate (ws_cli_conn_t *client, char args[], size_t args_len)
     if (liveweb_fs_ready && getWebFullScreen())
         sendFullScreen (client);
 
-    // check for pending openurl if this client did a touch
+    // check for pending openurl or paste if this client did a touch
     pthread_mutex_lock (&lw_url_lock);
     if (lastest_ws_touch_client == client) {
+        if (liveweb_dopaste) {
+            Serial.printf ("LIVE: sending paste command\n");
+            ws_sendframe_txt (client, "paste");
+            liveweb_dopaste = false;
+        }
         if (liveweb_openurl) {
             Serial.printf ("LIVE: sending URL %s\n", liveweb_openurl);
             sendURL (client, liveweb_openurl);
             free (liveweb_openurl);
             liveweb_openurl = NULL;
-            lastest_ws_touch_client = NULL;
         }
+        lastest_ws_touch_client = NULL;
     }
     pthread_mutex_unlock (&lw_url_lock);
 
@@ -1002,6 +1008,18 @@ void openLiveWebURL (const char *url)
     }
     liveweb_openurl = strdup (url);
     Serial.printf ("LIVE: live web staging URL %s\n", url);
+    pthread_mutex_unlock (&lw_url_lock);
+}
+
+/* record desire for most recent touch client to paste from clipboard.
+ */
+void requestLiveWebPaste (void)
+{
+    pthread_mutex_lock (&lw_url_lock);
+    if (lastest_ws_touch_client) {
+        liveweb_dopaste = true;
+        Serial.printf ("LIVE: live web staging paste request\n");
+    }
     pthread_mutex_unlock (&lw_url_lock);
 }
 

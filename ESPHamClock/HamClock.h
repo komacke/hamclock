@@ -1987,6 +1987,7 @@ extern void initLiveWeb(bool verbose);
 extern bool liveweb_fs_ready;
 extern int n_roweb, n_rwweb;
 extern void openLiveWebURL (const char *url);
+extern void requestLiveWebPaste (void);
 extern bool isLiveWebTouch (void);
 
 
