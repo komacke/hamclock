@@ -9,19 +9,28 @@ on:
         default: 'v0.0.0'
       publish_release:
         description: 'Publish GitHub release directly (set to false for draft)'
-        required: false
-        type: boolean
-        default: true
+        required: true
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+        default: 'true'
       build_docker:
         description: 'Build and push Docker image'
-        required: false
-        type: boolean
-        default: true
+        required: true
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+        default: 'true'
       push_play_store:
         description: 'Upload Android AAB to Google Play as draft'
-        required: false
-        type: boolean
-        default: true
+        required: true
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+        default: 'true'
 
 jobs:
   release:

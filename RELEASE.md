@@ -64,9 +64,9 @@ gh workflow run
 | Input | Type | Default | Description |
 |---|---|---|---|
 | `tag_name` | string | `v0.0.0` | Version tag to release (e.g., `v4.32.0` or `v4.32b00.0`). |
-| `publish_release` | boolean | `true` | When `true`, publishes the release immediately. Set to `false` to create as a draft. |
-| `build_docker` | boolean | `true` | When `true`, builds and pushes the multi-platform Docker image. |
-| `push_play_store` | boolean | `true` | When `true`, uploads the Android AAB to Google Play (Alpha track) as a draft. |
+| `publish_release` | choice (`true`, `false`) | `true` | When `true`, publishes the release immediately. Set to `false` to create as a draft. |
+| `build_docker` | choice (`true`, `false`) | `true` | When `true`, builds and pushes the multi-platform Docker image. |
+| `push_play_store` | choice (`true`, `false`) | `true` | When `true`, uploads the Android AAB to Google Play (Alpha track) as a draft. |
 
 ### Monitoring the Workflow
 
