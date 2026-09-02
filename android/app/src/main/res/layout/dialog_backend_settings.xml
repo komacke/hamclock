@@ -200,7 +200,8 @@
             android:layout_height="wrap_content"
             android:text="http://hamclock.local:8081/live.html"
             android:textColor="#80D8FF"
-            android:textIsSelectable="true"
+            android:focusable="false"
+            android:focusableInTouchMode="false"
             android:textSize="13sp"
             android:layout_marginTop="2dp"
             android:layout_marginBottom="8dp" />
