@@ -82,6 +82,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
     private lateinit var statusText: TextView
     private lateinit var btnSettings: ImageButton
+    @Volatile private var isEmbedVisible = false
 
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -440,6 +441,7 @@ class MainActivity : AppCompatActivity() {
             setSupportZoom(false)
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(true)
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         }
 
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
@@ -451,6 +453,12 @@ class MainActivity : AppCompatActivity() {
                 mainHandler.post {
                     openExternalUrl(url)
                 }
+            }
+
+            @JavascriptInterface
+            fun setEmbedVisible(visible: Boolean) {
+                isEmbedVisible = visible
+                Log.i(TAG, "isEmbedVisible updated: $visible")
             }
 
             @JavascriptInterface
@@ -804,6 +812,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
+            if (event.keyCode == KeyEvent.KEYCODE_BACK && isEmbedVisible) {
+                webView.evaluateJavascript("if (typeof hideEmbed === 'function') hideEmbed();", null)
+                return true
+            }
+
+            if (isEmbedVisible) {
+                // When embed overlay is showing, allow standard WebView focus navigation for D-pad and Enter
+                return super.dispatchKeyEvent(event)
+            }
+
             when (event.keyCode) {
                 KeyEvent.KEYCODE_MENU -> {
                     showBackendSettingsDialog()

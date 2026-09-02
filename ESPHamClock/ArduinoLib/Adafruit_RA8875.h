@@ -217,6 +217,12 @@ class Adafruit_RA8875 {
             gray_type = g;
         };
 
+        // return the app window's absolute position and size on the X screen, for positioning
+        // companion popup windows (eg the ADS-B Chromium app-mode popup, see qrz.cpp). only
+        // meaningful with _USE_X11; returns false everywhere else (fb0, ESP32, Android) since
+        // there's no separate windowing layer to query.
+        bool getWinScreenGeom (int *x, int *y, int *w, int *h);
+
     protected:
 
 	// 0: normal 2: 180 degs

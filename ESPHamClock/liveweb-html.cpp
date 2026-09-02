@@ -28,6 +28,74 @@ char live_html[] =  R"_raw_html_(
             touch-action: pinch-zoom; /* allow both 1-finger moves and multi-touch p-z */
         }
 
+        /* overlay used to show an embedded page in-app (e.g. ADS-B Exchange), instead of a
+         * new tab. covers most of the canvas but leaves a visible margin so it's clearly a
+         * popup, not a navigation away from HamClock. */
+        #embed-overlay {
+            display: none;              /* toggled to flex by showEmbed() */
+            position: fixed;
+            left: 3%; top: 3%; right: 3%; bottom: 3%;
+            flex-direction: column;
+            background: #111;
+            border: 1px solid #888;
+            box-shadow: 0 0 20px rgba(0,0,0,0.7);
+            z-index: 1000;
+        }
+
+        #embed-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 10px;
+            background: #222;
+            color: #eee;
+            font-family: sans-serif;
+            font-size: 14px;
+            border-bottom: 1px solid #888;
+        }
+
+        #embed-title {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+
+        #embed-header button {
+            margin-left: 8px;
+            background: #333;
+            color: #eee;
+            border: 1px solid #888;
+            border-radius: 3px;
+            padding: 4px 10px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        #embed-header button:hover {
+            background: #444;
+        }
+
+        #embed-frame {
+            flex: 1;
+            width: 100%;
+            border: none;
+            background: white;
+        }
+
+        /* shown if the embedded site appears not to have loaded (likely blocked by the
+         * target's own framing policy) -- points the user at the manual fallback button
+         * instead of silently leaving a blank frame. */
+        #embed-fallback-note {
+            display: none;
+            padding: 6px 10px;
+            background: #442;
+            color: #fd8;
+            font-family: sans-serif;
+            font-size: 12px;
+            border-bottom: 1px solid #888;
+        }
+
     </style>
 
     <script>
@@ -278,6 +346,16 @@ char live_html[] =  R"_raw_html_(
                 return;
             }
 
+            // Escape key closes embed overlay if open
+            if (key === "Escape") {
+                var overlay = document.getElementById ('embed-overlay');
+                if (overlay && overlay.style.display !== 'none') {
+                    hideEmbed();
+                    event.preventDefault();
+                    return;
+                }
+            }
+
             // don't let browser see tab
             if (key === "Tab") {
                 if (event_verbose)
@@ -359,6 +437,54 @@ char live_html[] =  R"_raw_html_(
                     console.log ('sendWSMsg: ' + msg);
                 ws.send (msg);
             }
+        }
+
+        // show the given url in the in-page embed overlay instead of a new tab.
+        //
+        // N.B. cross-origin iframes give JS no reliable way to detect whether the target site
+        // actually rendered or silently refused via X-Frame-Options/CSP frame-ancestors -- we
+        // can't inspect contentDocument across origins, and a refused frame still fires 'load'
+        // in most browsers. So this doesn't try to auto-detect failure and auto-redirect: an
+        // automatic window.open() from a timer callback is a non-user-gesture popup anyway and
+        // gets blocked by the browser's popup blocker in practice. Instead: the "Open in new
+        // tab" button is always visible up front, and a one-time hint banner appears a few
+        // seconds in as a nudge in case the frame is sitting blank.
+        var embed_hint_timer = null;
+        function showEmbed (url) {
+            document.getElementById ('embed-frame').src = url;
+            document.getElementById ('embed-title').textContent = url;
+            document.getElementById ('embed-fallback-note').style.display = 'none';
+            document.getElementById ('embed-overlay').style.display = 'flex';
+
+            if (embed_hint_timer)
+                clearTimeout (embed_hint_timer);
+            embed_hint_timer = setTimeout (function() {
+                document.getElementById ('embed-fallback-note').style.display = 'block';
+            }, 4000);
+
+            var closeBtn = document.getElementById ('embed-close-btn');
+            if (closeBtn)
+                closeBtn.focus();
+            if (window.AndroidApp && window.AndroidApp.setEmbedVisible)
+                window.AndroidApp.setEmbedVisible(true);
+        }
+
+        function hideEmbed () {
+            document.getElementById ('embed-overlay').style.display = 'none';
+            document.getElementById ('embed-frame').src = 'about:blank';   // stop it running in bg
+            if (embed_hint_timer) {
+                clearTimeout (embed_hint_timer);
+                embed_hint_timer = null;
+            }
+            if (window.AndroidApp && window.AndroidApp.setEmbedVisible)
+                window.AndroidApp.setEmbedVisible(false);
+        }
+
+        // user gesture -- window.open() here is reliable, unlike from a timer callback
+        function embedOpenNewTab () {
+            var url = document.getElementById ('embed-frame').src;
+            window.open (url, "HamClockTab");
+            hideEmbed ();
         }
 
         // try once to engage full screen if desired.
@@ -444,6 +570,13 @@ char live_html[] =  R"_raw_html_(
                             console.log ("Failed to open ", url);
                             alert ("Failed to open " + url + ". \nYou may have popups blocked");
                         }
+                    }
+
+                    else if (e.data.substring(0,6) == 'embed ') {
+                        // show a url in an in-page overlay instead of a new tab
+                        var url = e.data.substring(6);
+                        console.log('embedding ' + url);
+                        showEmbed (url);
                     }
 
                     else if (e.data === 'paste') {
@@ -651,6 +784,19 @@ char live_html[] =  R"_raw_html_(
 
     <!-- page is a single canvas, size will be set based on hamclock build size -->
     <canvas id='hamclock-cvs'></canvas>
+
+    <!-- in-page overlay for embedded links (e.g. ADS-B badge), toggled by showEmbed()/hideEmbed() -->
+    <div id='embed-overlay'>
+        <div id='embed-header'>
+            <span id='embed-title'></span>
+            <button id='embed-open-btn' onclick='embedOpenNewTab()'>Open in new tab &#8599;</button>
+            <button id='embed-close-btn' onclick='hideEmbed()'>&#10005; Close</button>
+        </div>
+        <div id='embed-fallback-note'>
+            Taking a while to load? This site may not allow embedding -- try "Open in new tab" above.
+        </div>
+        <iframe id='embed-frame'></iframe>
+    </div>
 
 </body>
 </html> 

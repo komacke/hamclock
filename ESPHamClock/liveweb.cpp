@@ -46,6 +46,8 @@ const int liveweb_maxmax = MAX_CLIENTS-1;               // max max for -help
 // record client and possible URL for it to display.
 static ws_cli_conn_t *lastest_ws_touch_client;          // most recent client performing set_touch
 static char *liveweb_openurl;                           // malloced url to attempt to open, else NULL
+static bool liveweb_openurl_embed;                       // true if liveweb_openurl should be shown
+                                                          // in the in-page overlay instead of a new tab
 static bool liveweb_dopaste;                            // client should attempt paste
 static pthread_mutex_t lw_url_lock = PTHREAD_MUTEX_INITIALIZER; // thread-safe access for liveweb_openurl
 
@@ -433,14 +435,16 @@ static void sendFullScreen(ws_cli_conn_t *client)
     ws_sendframe_txt (client, "full-screen");
 }
 
-/* send message to open a url.
+/* send message to open a url, either as a new tab or, if embed is set, in the client's in-page
+ * embed overlay (see showEmbed() in liveweb-html.cpp).
  * N.B. coordinate with liveweb-html
  */
-static void sendURL (ws_cli_conn_t *client, const char *url)
+static void sendURL (ws_cli_conn_t *client, const char *url, bool embed)
 {
-    StackMalloc opencmd_mem(strlen(url)+50);
+    const char *verb = embed ? "embed " : "open ";
+    StackMalloc opencmd_mem(strlen(url)+strlen(verb)+1);
     char *opencmd = (char *)opencmd_mem.getMem();
-    snprintf (opencmd, opencmd_mem.getSize(), "open %s", url);
+    snprintf (opencmd, opencmd_mem.getSize(), "%s%s", verb, url);
     ws_sendframe_txt (client, opencmd);
 }
 
@@ -479,10 +483,11 @@ static void getLiveUpdate (ws_cli_conn_t *client, char args[], size_t args_len)
             liveweb_dopaste = false;
         }
         if (liveweb_openurl) {
-            Serial.printf ("LIVE: sending URL %s\n", liveweb_openurl);
-            sendURL (client, liveweb_openurl);
+            Serial.printf ("LIVE: sending URL %s (embed=%d)\n", liveweb_openurl, liveweb_openurl_embed);
+            sendURL (client, liveweb_openurl, liveweb_openurl_embed);
             free (liveweb_openurl);
             liveweb_openurl = NULL;
+            liveweb_openurl_embed = false;
         }
         lastest_ws_touch_client = NULL;
     }
@@ -1007,7 +1012,29 @@ void openLiveWebURL (const char *url)
         free (liveweb_openurl);
     }
     liveweb_openurl = strdup (url);
+    liveweb_openurl_embed = false;
     Serial.printf ("LIVE: live web staging URL %s\n", url);
+    pthread_mutex_unlock (&lw_url_lock);
+}
+
+/* same as openLiveWebURL() but asks the client to show it in its in-page embed overlay (an
+ * iframe) instead of opening a new tab -- see showEmbed() in liveweb-html.cpp. Intended for
+ * pages worth glancing at without leaving HamClock's tab. Not every site allows this -- some set
+ * X-Frame-Options/CSP frame-ancestors specifically to block being framed by another site (eg
+ * confirmed: Windy.com, which is why windbadge.cpp does NOT use this) -- so only call this for a
+ * target confirmed to permit framing; the client shows a manual "Open in new tab" fallback for
+ * the case it doesn't, since that failure can't be reliably detected across origins from JS.
+ */
+void openLiveWebURLEmbedded (const char *url)
+{
+    pthread_mutex_lock (&lw_url_lock);
+    if (liveweb_openurl) {
+        Serial.printf ("LIVE: discarded late URL %s\n", liveweb_openurl);
+        free (liveweb_openurl);
+    }
+    liveweb_openurl = strdup (url);
+    liveweb_openurl_embed = true;
+    Serial.printf ("LIVE: live web staging embedded URL %s\n", url);
     pthread_mutex_unlock (&lw_url_lock);
 }
 

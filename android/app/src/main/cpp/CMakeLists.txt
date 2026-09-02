@@ -18,19 +18,19 @@ include_directories(
     ${HC_DIR}/zlib-hc
 )
 
-file(GLOB HC_SRCS
+file(GLOB HC_SRCS CONFIGURE_DEPENDS
     "${HC_DIR}/*.cpp"
 )
 
-file(GLOB ARDUINO_SRCS
+file(GLOB ARDUINO_SRCS CONFIGURE_DEPENDS
     "${HC_DIR}/ArduinoLib/*.cpp"
 )
 
-file(GLOB WS_SRCS
+file(GLOB WS_SRCS CONFIGURE_DEPENDS
     "${HC_DIR}/wsServer/src/*.cpp"
 )
 
-file(GLOB ZLIB_SRCS
+file(GLOB ZLIB_SRCS CONFIGURE_DEPENDS
     "${HC_DIR}/zlib-hc/*.cpp"
 )
 

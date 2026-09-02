@@ -2149,6 +2149,31 @@ void Adafruit_RA8875::saveWinGeom(void)
         NVWriteX11Geom (winpos_now_x, winpos_now_y, winpos_now_w, winpos_now_h);
 }
 
+/* return the app window's absolute position and size on the X screen -- same XGetWindowAttributes
+ * + XTranslateCoordinates approach as saveWinGeom(), just returned to the caller instead of
+ * persisted to NV. used to position companion popup windows, eg the ADS-B Chromium app-mode
+ * popup (see qrz.cpp), so it lands near the HamClock window instead of wherever the window
+ * manager feels like putting it.
+ */
+// _USE_X11
+bool Adafruit_RA8875::getWinScreenGeom (int *x, int *y, int *w, int *h)
+{
+        XWindowAttributes xwa;
+        if (!XGetWindowAttributes (display, win, &xwa) || xwa.map_state != IsViewable)
+            return (false);
+
+        Screen *screen = XDefaultScreenOfDisplay (display);
+        int screen_num = XScreenNumberOfScreen(screen);
+        Window root = RootWindow(display,screen_num);
+
+        Window child;
+        if (!XTranslateCoordinates (display, win, root, 0, 0, x, y, &child))
+            return (false);
+        *w = xwa.width;
+        *h = xwa.height;
+        return (true);
+}
+
 
 /* return Button code from event.
  * N.B. must be used both in ButtonPress and ButtonRelease
@@ -2577,6 +2602,13 @@ void Adafruit_RA8875::getScreenSize (int *w, int *h)
 {
         *w = fb_si.xres;
         *h = fb_si.yres;
+}
+
+// _WEB_ONLY -- no separate window to query; nothing to embed a popup near
+bool Adafruit_RA8875::getWinScreenGeom (int *x, int *y, int *w, int *h)
+{
+        (void)x; (void)y; (void)w; (void)h;
+        return (false);
 }
 
 #endif // _WEB_ONLY
@@ -3085,6 +3117,13 @@ void Adafruit_RA8875::getScreenSize (int *w, int *h)
 {
         *w = FB_XRES;
         *h = FB_YRES;
+}
+
+// _USE_FB0 -- no windowing layer at all; HamClock owns the whole framebuffer
+bool Adafruit_RA8875::getWinScreenGeom (int *x, int *y, int *w, int *h)
+{
+        (void)x; (void)y; (void)w; (void)h;
+        return (false);
 }
 
 #endif // _USE_FB0
