@@ -5,7 +5,9 @@ Changes with latest release:
 - new fires on maps
 - new marine warning monitoring
 - new earthquake monitoring
+- ADB and windy access changes
 - support spots for 4, 630, 2200
+- support HamQTH lookups
 - touchscreen keyboard support
 - touchscreen paste from OS
 - fix cancel button on de/dx
