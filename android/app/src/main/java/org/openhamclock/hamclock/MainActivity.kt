@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -107,6 +108,15 @@ class MainActivity : AppCompatActivity() {
 
         btnSettings.setOnClickListener {
             showBackendSettingsDialog()
+        }
+        btnSettings.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                btnSettings.alpha = 1.0f
+                btnSettings.animate().scaleX(1.25f).scaleY(1.25f).setDuration(150).start()
+            } else {
+                btnSettings.alpha = 0.6f
+                btnSettings.animate().scaleX(1.0f).scaleY(1.0f).setDuration(150).start()
+            }
         }
 
         setupWebView()
@@ -329,6 +339,61 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
+
+        val btnSave = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
+        val btnCancel = dialog.getButton(DialogInterface.BUTTON_NEGATIVE)
+
+        btnSave?.let { btn ->
+            btn.setBackgroundResource(R.drawable.btn_setup_selector)
+            btn.setTextColor(ContextCompat.getColor(this, R.color.hamclock_text))
+            btn.setPadding(32, 16, 32, 16)
+        }
+        btnCancel?.let { btn ->
+            btn.setBackgroundResource(R.drawable.btn_neutral_selector)
+            btn.setTextColor(ContextCompat.getColor(this, R.color.hamclock_text))
+            btn.setPadding(32, 16, 32, 16)
+        }
+
+        // Direct D-pad Down from Copy URL button to Save button
+        btnCopyLocalUrl.setOnKeyListener { _, keyCode, keyEvent ->
+            if (keyEvent.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                btnSave?.requestFocus()
+                true
+            } else {
+                false
+            }
+        }
+
+        // Direct D-pad Down from cbAllowExternal to Save button when details are collapsed
+        cbAllowExternal.setOnKeyListener { _, keyCode, keyEvent ->
+            if (keyEvent.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (llLocalAccessDetails.visibility != View.VISIBLE) {
+                    btnSave?.requestFocus()
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        }
+
+        // Direct D-pad Up from Save/Cancel back up to Copy URL button or cbAllowExternal
+        val bottomUpListener = View.OnKeyListener { _, keyCode, keyEvent ->
+            if (keyEvent.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                if (llLocalAccessDetails.visibility == View.VISIBLE) {
+                    btnCopyLocalUrl.requestFocus()
+                } else {
+                    cbAllowExternal.requestFocus()
+                }
+                true
+            } else {
+                false
+            }
+        }
+        btnSave?.setOnKeyListener(bottomUpListener)
+        btnCancel?.setOnKeyListener(bottomUpListener)
+
         @Suppress("DEPRECATION")
         dialog.window?.setSoftInputMode(
             WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN or
@@ -822,11 +887,36 @@ class MainActivity : AppCompatActivity() {
                 return super.dispatchKeyEvent(event)
             }
 
-            when (event.keyCode) {
-                KeyEvent.KEYCODE_MENU -> {
-                    showBackendSettingsDialog()
-                    return true
+            // Quick access remote shortcuts to settings dialog (Menu or Play/Pause)
+            if (event.keyCode == KeyEvent.KEYCODE_MENU || event.keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
+                showBackendSettingsDialog()
+                return true
+            }
+
+            // If settings button is currently focused on the main screen
+            if (btnSettings.isFocused) {
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                        btnSettings.performClick()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_BACK -> {
+                        btnSettings.clearFocus()
+                        webView.requestFocus()
+                        return true
+                    }
                 }
+            } else {
+                // If settings button is NOT focused, navigate to it on Down or Right
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        btnSettings.requestFocus()
+                        return true
+                    }
+                }
+            }
+
+            when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_UP -> {
                     webView.evaluateJavascript("if (typeof sendKey === 'function') sendKey('ArrowUp');", null)
                     return true
@@ -844,12 +934,21 @@ class MainActivity : AppCompatActivity() {
                     return true
                 }
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                    event.startTracking()
                     webView.evaluateJavascript("if (typeof sendKey === 'function') sendKey('Enter');", null)
                     return true
                 }
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            showBackendSettingsDialog()
+            return true
+        }
+        return super.onKeyLongPress(keyCode, event)
     }
 
     override fun onDestroy() {
