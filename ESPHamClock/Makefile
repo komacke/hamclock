@@ -89,6 +89,7 @@ OBJS = \
 	P13.o \
 	adif.o \
 	adif_parser.o \
+	adsbbadge.o \
 	activenets.o \
 	balloons.o \
     antenna_lookup.o \
@@ -190,6 +191,7 @@ OBJS = \
 	watchlist.o \
 	wifi.o \
 	wifimeter.o \
+	windbadge.o \
 	wx.o \
 	xota.o \
 	zones.o

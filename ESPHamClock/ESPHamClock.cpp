@@ -512,6 +512,34 @@ void setup()
         fires_btn_b.h = view_btn_b.h;
     }
 
+    // seed the ADS-B on-map badge just to the right of View, same convention as Fires: it can be
+    // showing alongside Borders/Fires (all apply to Clouds), so it can't share a fixed slot either --
+    // drawADSBBadge() recomputes adsbmap_btn_b.x every draw to float right of whichever of
+    // View/Borders/Fires is currently rightmost. This is just a harmless initial value.
+    {
+        const int gap = 4;
+        const int pad = 8;
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        adsbmap_btn_b.x = view_btn_b.x + view_btn_b.w + gap;
+        adsbmap_btn_b.y = view_btn_b.y;
+        adsbmap_btn_b.w = getTextWidth ("ADS-B") + pad;
+        adsbmap_btn_b.h = view_btn_b.h;
+    }
+
+    // seed the Wind on-map badge just to the right of View, same convention: it can share the
+    // CM_WX row with WEFAX, so it can't take a fixed slot either -- drawWindButton() recomputes
+    // windmap_btn_b.x every draw to float right of WEFAX, or View when WEFAX isn't enabled. This
+    // is just a harmless initial value.
+    {
+        const int gap = 4;
+        const int pad = 8;
+        selectFontStyle (LIGHT_FONT, FAST_FONT);
+        windmap_btn_b.x = view_btn_b.x + view_btn_b.w + gap;
+        windmap_btn_b.y = view_btn_b.y;
+        windmap_btn_b.w = getTextWidth ("Wind") + pad;
+        windmap_btn_b.h = view_btn_b.h;
+    }
+
     // redefine callsign for main screen
     cs_info.box.x = 0;
     cs_info.box.y = 0;
@@ -964,6 +992,10 @@ static void checkTouch()
         drawFiresButton();
         drawFiresOnMap();
         tft.drawPR();
+    } else if (adsbBadgeVisible() && inBox (s, adsbmap_btn_b)) {
+        adsbBadgeClicked();
+    } else if (windBadgeVisible() && inBox (s, windmap_btn_b)) {
+        windBadgeClicked();
     } else if (checkSatMapTouch (s)) {
         // set showing sat in DX box
         dx_info_for_sat = true;

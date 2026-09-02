@@ -510,7 +510,7 @@ static StringPrompt string_pr[N_SPR] = {
 
     {2, {310, R2Y3(3), 130, PR_H}, {452, R2Y3(3), 208, PR_H}, "PiAware host:", piaware_host, NV_PIAWAREHOST_LEN, 0, 0,
                 "Enter the IP address or DNS host name of a local PiAware ADS-B receiver to use for the "
-                "ADS-B airplane icon instead of adsb.lol; leave blank to use adsb.lol"},
+                "ADS-B airplane icon instead of ADS-B Exchange; leave blank to use ADS-B Exchange"},
 
     {2, {100, R2Y3(4), 60, PR_H}, {160, R2Y3(4), 580, PR_H}, "file:", adif_fn, NV_ADIFFN_LEN, 0, 0,
                 "Enter the path name to the ADIF file; "
@@ -5313,6 +5313,7 @@ static void runSetup()
                         checkLLGEdit (sp);
                 } else {
                     tft.pasteClipboard();
+                    requestLiveWebPaste();
                 }
                 wdDelay (150);
                 drawStringInBox ("Paste", paste_b, false, RA8875_CYAN);

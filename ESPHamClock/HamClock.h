@@ -685,6 +685,18 @@ extern void initFires(void);            // restore NV state at startup
 extern void updateFires(void);          // fetch from OHB if due; call from updateWiFi()
 extern void drawFiresOnMap(void);       // render flame glyphs; call from drawAllSymbols()
 
+extern SBox adsbmap_btn_b;              // on-map "ADS-B" badge; slot floats right of whichever
+                                         // of View/Borders/Fires is currently rightmost
+extern bool adsbBadgeVisible(void);     // whether that badge should currently be shown -- Clouds
+                                         // + Mercator/Robinson only
+extern void drawADSBBadge(void);        // draw (or blank) the badge
+extern void adsbBadgeClicked(void);     // open ADS-B Exchange (or PiAware) centered on DE
+
+extern SBox windmap_btn_b;              // on-map "Wind" badge; slot floats right of WEFAX, or View
+extern bool windBadgeVisible(void);     // whether that badge should currently be shown -- CM_WX only
+extern void drawWindButton(void);       // draw (or blank) the badge
+extern void windBadgeClicked(void);     // open Windy.com centered on DE
+
 extern SBox desrss_b, dxsrss_b;         // sun rise/set display
 extern uint8_t desrss, dxsrss;          // sun rise/set chpice
 enum {
@@ -765,8 +777,6 @@ extern SBox map_b;                      // main map
 extern SBox view_btn_b;                 // map view menu button
 
 extern SBox motd_btn_b;                 // MOTD mailbox icon (next to UTC button)
-extern SBox adsb_btn_b;                 // ADS-B airplane icon (next to MOTD icon)
-extern SBox windy_btn_b;                // Windy.com wind icon (next to ADS-B icon)
 
 // MOTD (Message of the Day) functions
 extern void checkMOTD (void);
@@ -774,11 +784,6 @@ extern bool motdIsPresent (void);
 extern void drawMOTDIcon (void);
 extern void motdClicked (void);
 
-// ADS-B airplane icon -- opens https://adsb.lol
-extern void drawADSBIcon (void);
-
-// Windy.com wind icon -- opens https://www.windy.com
-extern void drawWindyIcon (void);
 extern SBox dx_maid_b;                  // dx maidenhead pick
 extern SBox de_maid_b;                  // de maidenhead pick
 extern SBox lkscrn_b;                   // screen lock icon button
@@ -1987,6 +1992,8 @@ extern void initLiveWeb(bool verbose);
 extern bool liveweb_fs_ready;
 extern int n_roweb, n_rwweb;
 extern void openLiveWebURL (const char *url);
+extern void openLiveWebURLEmbedded (const char *url);
+extern void requestLiveWebPaste (void);
 extern bool isLiveWebTouch (void);
 
 
@@ -2705,6 +2712,8 @@ extern QRZURLTable qrz_urltable[QRZ_N];
 
 extern void openQRZBio (const DXSpot &s);
 extern void openURL (const char *url);
+extern void openURLPopup (const char *url);
+extern void openURLPopupEmbed (const char *url);
 extern void openMovieURL (const char *hc_page, const char *orig_url);
 
 
@@ -3731,7 +3740,11 @@ extern bool parseWebCommand (WebArgs &wa, char line[], size_t line_len);
 extern void initWebServer(void);
 extern void checkWebServer(bool ro);
 extern TouchType readCalTouchWS (SCoord &s);
+#if defined(_IS_ANDROID) || defined(__ANDROID__)
+extern char platform[32];
+#else
 extern const char platform[];
+#endif
 extern void runNextDemoCommand(void);
 extern bool bypass_pw;
 
