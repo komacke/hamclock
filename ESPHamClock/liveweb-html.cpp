@@ -346,6 +346,16 @@ char live_html[] =  R"_raw_html_(
                 return;
             }
 
+            // Escape key closes embed overlay if open
+            if (key === "Escape") {
+                var overlay = document.getElementById ('embed-overlay');
+                if (overlay && overlay.style.display !== 'none') {
+                    hideEmbed();
+                    event.preventDefault();
+                    return;
+                }
+            }
+
             // don't let browser see tab
             if (key === "Tab") {
                 if (event_verbose)
@@ -451,6 +461,12 @@ char live_html[] =  R"_raw_html_(
             embed_hint_timer = setTimeout (function() {
                 document.getElementById ('embed-fallback-note').style.display = 'block';
             }, 4000);
+
+            var closeBtn = document.getElementById ('embed-close-btn');
+            if (closeBtn)
+                closeBtn.focus();
+            if (window.AndroidApp && window.AndroidApp.setEmbedVisible)
+                window.AndroidApp.setEmbedVisible(true);
         }
 
         function hideEmbed () {
@@ -460,6 +476,8 @@ char live_html[] =  R"_raw_html_(
                 clearTimeout (embed_hint_timer);
                 embed_hint_timer = null;
             }
+            if (window.AndroidApp && window.AndroidApp.setEmbedVisible)
+                window.AndroidApp.setEmbedVisible(false);
         }
 
         // user gesture -- window.open() here is reliable, unlike from a timer callback
@@ -771,8 +789,8 @@ char live_html[] =  R"_raw_html_(
     <div id='embed-overlay'>
         <div id='embed-header'>
             <span id='embed-title'></span>
-            <button onclick='embedOpenNewTab()'>Open in new tab &#8599;</button>
-            <button onclick='hideEmbed()'>&#10005; Close</button>
+            <button id='embed-open-btn' onclick='embedOpenNewTab()'>Open in new tab &#8599;</button>
+            <button id='embed-close-btn' onclick='hideEmbed()'>&#10005; Close</button>
         </div>
         <div id='embed-fallback-note'>
             Taking a while to load? This site may not allow embedding -- try "Open in new tab" above.
