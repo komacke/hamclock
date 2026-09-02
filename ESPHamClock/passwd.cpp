@@ -17,16 +17,16 @@ bool bypass_pw;
 #define HM      50                      // horizontal margin on each end of password
 #define CD      9                       // cursor descent
 #define TO      30000                   // timeout, millis
-#define NP      ((800 - 2*HM)/FW)       // max pw length, sans EOS
+#define EYE_W   44                      // eye icon width
+#define EYE_H   FH                      // eye icon height
+#define EYE_GAP 12                      // gap between password text and eye icon
+#define NP      ((800 - 2*HM - EYE_W - EYE_GAP)/FW) // max pw length, sans EOS
 #define TY      (480/4)                 // title baseline y
 #define PY      (2*480/3)               // password baseline y
 #define NT      3                       // n tries
 
-#define HS_X    600                     // hide/show x
-#define HS_Y    350                     // hide/show y
-#define HS_W    100                     // hide/show width
-#define HS_H    50                      // hide/show height
-#define HS_C    RGB565(240,50,50)       // hide/show color
+#define EYE_X   (HM + NP*FW + EYE_GAP)  // eye icon x placed right after password field
+#define EYE_Y   (PY - FH + CD)          // eye icon y
 #define HS_V    '*'                     // pw char when hiding
 
 #define MX      200                     // message Y
@@ -123,10 +123,7 @@ static void deleteChar (char buf[], int &len, int &p, bool hide)
     drawActiveCursor (--p);
 }
 
-static void drawHideShow (const SBox &b, bool hide)
-{
-    drawStringInBox (hide ? "Show" : "Hide", b, hide, HS_C);
-}
+
 
 /* ask for a password for the given category.
  * return true if no such category, restful or password matches.
@@ -154,16 +151,16 @@ bool askPasswd (const char *category, bool restore)
     selectFontStyle (LIGHT_FONT, SMALL_FONT);
 
     // draw instructions
-    const char info[] = "Enter to accept, ESC to cancel, TAB to hide/show";
+    const char info[] = "Enter to accept, ESC to cancel, TAB to show/hide";
     uint16_t info_w = getTextWidth(info);
     uint16_t info_x = (tft.width() - info_w)/2;
     tft.setCursor (info_x, TY+FH);
     tft.print (info);
 
     // hide/show control
-    SBox hs_b = {HS_X, HS_Y, HS_W, HS_H};
+    SBox eye_b = {EYE_X, EYE_Y, EYE_W, EYE_H};
     bool hide = true;
-    drawHideShow (hs_b, hide);
+    drawEyeIcon (eye_b, hide);
 
     // candidate password and initial cursor position. N.B. pw_buf does not NOT include EOS
     char pw_buf[NP+1];
@@ -261,12 +258,12 @@ bool askPasswd (const char *category, bool restore)
                 }
             }
 
-            if (ui.kb_char == CHAR_TAB || inBox (ui.tap, hs_b)) {
+            if (ui.kb_char == CHAR_TAB || inBox (ui.tap, eye_b)) {
 
                 // toggle and redraw
                 hide = !hide;
 
-                drawHideShow (hs_b, hide);
+                drawEyeIcon (eye_b, hide);
                 for (int i = 0; i < pw_len; i++) {
                     eraseChar (i);
                     drawChar (i, hide ? HS_V : pw_buf[i]);

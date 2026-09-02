@@ -3149,6 +3149,7 @@ extern const char *getLocalNTPHost(void);
 extern bool useDXCluster(void);
 extern uint32_t getKX3Baud(void);
 extern void drawStringInBox (const char str[], const SBox &b, bool inverted, uint16_t color);
+extern void drawEyeIcon (const SBox &b, bool hide);
 extern bool logUsageOk(void);
 extern uint16_t getMapColor (ColorSelection cid);
 extern const char* getMapColorName (ColorSelection cid);
