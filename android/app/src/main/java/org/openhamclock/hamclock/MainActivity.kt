@@ -333,6 +333,9 @@ class MainActivity : AppCompatActivity() {
             WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN or
             WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         )
+        dialogView.post {
+            cbAllowExternal.requestFocus()
+        }
     }
 
     private fun clearHamClockCache(dataDir: File) {
