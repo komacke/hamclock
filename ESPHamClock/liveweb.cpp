@@ -576,7 +576,13 @@ static void setLiveChar (ws_cli_conn_t *client, char args[], size_t args_len)
                 c = CHAR_UP;
             else if (strcmp (str, "ArrowRight") == 0)
                 c = CHAR_RIGHT;
-            else
+            else if (strncasecmp (str, "0x", 2) == 0) {
+                unsigned int code = 0;
+                if (sscanf (str + 2, "%x", &code) == 1 && code > 0 && code < 256 && isprint((char)code))
+                    c = (char)code;
+                else
+                    Serial.printf ("LIVE: Invalid hex char: %s\n", str);
+            } else
                 Serial.printf ("LIVE: Unknown char name: %s\n", str);
         } else {
             // literal

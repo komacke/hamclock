@@ -315,8 +315,9 @@ char live_html[] =  R"_raw_html_(
                 return;
             }
             
-            // package up and send
-            var msg = 'set_char?char=' + k + '&mod=';
+            // package up and send: single characters sent as 0xHEX so symbols (&, =, #, +, %, etc) don't collide with URL query syntax
+            var char_val = (k.length == 1) ? ('0x' + k.charCodeAt(0).toString(16).toUpperCase()) : k;
+            var msg = 'set_char?char=' + char_val + '&mod=';
             if (c)
                 msg += 'C';
             if (s)

@@ -4019,10 +4019,14 @@ static bool validateStringPrompts (bool show_errors)
     // HamAlert password is optional -- blank just means the pane is unused. if a password has been
     // entered, we need a callsign to log in with: either the explicit HamAlert User field or, failing
     // that, the main station call sign.
-    if (strlen (string_pr[HAMALERTPASSWD_SPR].v_str) > 0
-                        && strlen (string_pr[HAMALERTUSER_SPR].v_str) == 0 && !callsignOk (cs_info.call)) {
-        err_msg = "HamAlert requires a call sign, either HamAlert User or the station call sign";
-        badsids[n_badsids++] = err_sid = HAMALERTUSER_SPR;
+    if (strlen (string_pr[HAMALERTPASSWD_SPR].v_str) > 0) {
+        if (strlen (string_pr[HAMALERTUSER_SPR].v_str) == 0 && !callsignOk (cs_info.call)) {
+            err_msg = "HamAlert requires a call sign, either HamAlert User or the station call sign";
+            badsids[n_badsids++] = err_sid = HAMALERTUSER_SPR;
+        } else if (strHasSpace (string_pr[HAMALERTPASSWD_SPR].v_str)) {
+            err_msg = "HamAlert password cannot contain whitespace";
+            badsids[n_badsids++] = err_sid = HAMALERTPASSWD_SPR;
+        }
     }
 
     // check for plausible temperature and pressure corrections and file name if used
@@ -5336,6 +5340,7 @@ static void runSetup()
 #endif
                 if (got_clip) {
                     strTrimAll (paste_buf);
+                    bool truncated = false;
                     for (int i = 0; paste_buf[i] != '\0'; i++) {
                         char c = paste_buf[i];
                         if (isprint (c)) {
@@ -5348,9 +5353,13 @@ static void runSetup()
                                 sp->v_str[sp->v_ci++] = c;
                                 drawSPValue (sp);
                                 drawCursor ();
+                            } else {
+                                truncated = true;
                             }
                         }
                     }
+                    if (truncated)
+                        flagErrField (sp, true, "full");
                     if (cur_page == LATLNG_PAGE)
                         checkLLGEdit (sp);
                 } else {
