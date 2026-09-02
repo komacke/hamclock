@@ -335,6 +335,7 @@ typedef struct {
     const char *tt;                             // tooltip text, if any
     uint16_t p_color;                           // 0 == use default PR_C, else this exact RGB565 color
     bool masked;                                // true to display v_str as asterisks (eg passwords)
+    bool is_pw;                                 // true if password field with eye toggle
 } StringPrompt;
 
 
@@ -462,7 +463,7 @@ static StringPrompt string_pr[N_SPR] = {
                 "Enter IP address or DNS host name of NTP server"},
 
     {0, { 90, R2Y(6), 60, PR_H}, {160, R2Y(6), 500, PR_H}, "SSID:", wifi_ssid, NV_WIFI_SSID_LEN, 0,0,NULL},
-    {0, {670, R2Y(6),110, PR_H}, { 10, R2Y(7), 789, PR_H}, "Password:", wifi_pw, NV_WIFI_PW_LEN, 0,0,NULL},
+    {0, {670, R2Y(6),110, PR_H}, { 10, R2Y(7), 740, PR_H}, "Password:", wifi_pw, NV_WIFI_PW_LEN, 0, 0, NULL, 0, true, true},
 
     // "page 2" -- index 1
 
@@ -591,7 +592,7 @@ static StringPrompt string_pr[N_SPR] = {
                 NV_HAMALERT_PASSWD_LEN, 0, 0,
                 "Enter your hamalert.org telnet password (Settings on the HamAlert web site -- "
                 "this is NOT your HamAlert web login password); leave blank to disable the HamAlert pane",
-                RA8875_CYAN, true},
+                RA8875_CYAN, true, true},
 
     // "page 8" -- index 7 -- on/off table (ONOFF_PAGE); no string_pr entries, custom-drawn
 
@@ -2290,12 +2291,30 @@ static void drawSPValue (StringPrompt *sp)
 #endif // _MARK_BOUNDS
 }
 
+/* return whether sp is a password prompt, and if so compute its eye icon box
+ */
+static bool getSPEyeBox (const StringPrompt *sp, SBox &eye_b)
+{
+    if (!sp->is_pw)
+        return (false);
+    eye_b.x = sp->v_box.x + sp->v_box.w + 6;
+    eye_b.y = sp->v_box.y;
+    eye_b.w = 38;
+    eye_b.h = sp->v_box.h;
+    return (true);
+}
+
 /* draw both prompt and value of the given StringPrompt
  */
 static void drawSPPromptValue (StringPrompt *sp)
 {
     drawSPPrompt (sp);
     drawSPValue (sp);
+    if (sp->is_pw) {
+        SBox eye_b;
+        if (getSPEyeBox (sp, eye_b))
+            drawEyeIcon (eye_b, sp->masked);
+    }
 }
 
 /* erase both prompt and value of the given StringPrompt
@@ -2304,6 +2323,11 @@ static void eraseSPPromptValue (StringPrompt *sp)
 {
     eraseSPPrompt (sp);
     eraseSPValue (sp);
+    if (sp->is_pw) {
+        SBox eye_b;
+        if (getSPEyeBox (sp, eye_b))
+            fillSBox (eye_b, BG_C);
+    }
 }
 
 /* draw the prompt of the given BoolPrompt, if any.
@@ -2755,6 +2779,24 @@ static bool tappedStringPrompt (SCoord &s, StringPrompt **spp)
     return (false);
 }
 
+/* find whether s is in any relevant password eye icon box.
+ * if so return true and set *spp, else return false.
+ */
+static bool tappedSPEye (SCoord &s, StringPrompt **spp)
+{
+    for (int i = 0; i < N_SPR; i++) {
+        StringPrompt *sp = &string_pr[i];
+        if (!stringIsRelevant(sp) || !sp->is_pw)
+            continue;
+        SBox eye_b;
+        if (getSPEyeBox (sp, eye_b) && inBox (s, eye_b)) {
+            *spp = sp;
+            return (true);
+        }
+    }
+    return (false);
+}
+
 /* find whether s is in any relevant bool_pr.
  * require s within prompt or state box.
  * if so return true and set *bpp, else return false.
@@ -2826,7 +2868,7 @@ static void drawCurrentPageFields()
         sw.p_box.w = sw_lbl_w;
         uint16_t sw_vx = 10 + sw_lbl_w + 10;
         sw.v_box.x = sw_vx;
-        sw.v_box.w = sw_vx + 30 < tft.width() ? tft.width() - sw_vx - 5 : 30;
+        sw.v_box.w = sw_vx + 80 < tft.width() ? tft.width() - sw_vx - 50 : 30;
     }
 
     // draw relevant string prompts on this page
@@ -5646,6 +5688,23 @@ static void runSetup()
             }
           #endif // _SUPPORT_KX3
 
+        } else if (tappedSPEye (ui.tap, &sp)) {
+
+            // toggle masked state
+            sp->masked = !sp->masked;
+            eraseSPValue (sp);
+            drawSPValue (sp);
+            SBox eye_b;
+            if (getSPEyeBox (sp, eye_b))
+                drawEyeIcon (eye_b, sp->masked);
+
+            // ensure focus is on this field
+            if (cur_focus[cur_page].sp != sp) {
+                eraseCursor ();
+                setFocus (sp, NULL);
+            }
+            drawCursor ();
+
         } else if (tappedStringPrompt (ui.tap, &sp) && stringIsRelevant (sp)) {
 
             // check for tooltip: secondary tap OR tapping directly on the prompt label
@@ -5859,6 +5918,52 @@ void drawStringInBox (const char str[], const SBox &b, bool inverted, uint16_t c
     drawSBox (b, KB_C);
     tft.setTextColor (fg);
     tft.print(str);
+}
+
+/* draw an eye icon in box b indicating whether password characters are hidden (hide==true) or shown.
+ */
+void drawEyeIcon (const SBox &b, bool hide)
+{
+    // clear background and draw border
+    fillSBox (b, BG_C);
+    drawSBox (b, KB_C);
+
+    // center and radii
+    int16_t cx = b.x + b.w/2;
+    int16_t cy = b.y + b.h/2;
+    int16_t rx = b.w >= 40 ? 14 : 11;
+    int16_t ry = b.h >= 28 ? 7 : 5;
+
+    // eye outline color: cyan when revealed, white when hidden
+    uint16_t col = hide ? RA8875_WHITE : RA8875_CYAN;
+
+    // upper lid
+    tft.drawLine (cx - rx, cy, cx - rx/2, cy - ry*7/10, col);
+    tft.drawLine (cx - rx/2, cy - ry*7/10, cx, cy - ry, col);
+    tft.drawLine (cx, cy - ry, cx + rx/2, cy - ry*7/10, col);
+    tft.drawLine (cx + rx/2, cy - ry*7/10, cx + rx, cy, col);
+
+    // lower lid
+    tft.drawLine (cx - rx, cy, cx - rx/2, cy + ry*7/10, col);
+    tft.drawLine (cx - rx/2, cy + ry*7/10, cx, cy + ry, col);
+    tft.drawLine (cx, cy + ry, cx + rx/2, cy + ry*7/10, col);
+    tft.drawLine (cx + rx/2, cy + ry*7/10, cx + rx, cy, col);
+
+    // iris
+    int16_t r_iris = ry * 6 / 10;
+    if (r_iris < 3) r_iris = 3;
+    tft.drawCircle (cx, cy, r_iris, col);
+
+    // pupil
+    int16_t r_pupil = r_iris / 2;
+    if (r_pupil < 1) r_pupil = 1;
+    tft.fillCircle (cx, cy, r_pupil, col);
+
+    // diagonal strike-through slash when masked/hidden
+    if (hide) {
+        tft.drawLine (cx - rx - 2, cy - ry - 2, cx + rx + 2, cy + ry + 2, RA8875_RED);
+        tft.drawLine (cx - rx - 1, cy - ry - 2, cx + rx + 3, cy + ry + 2, RA8875_RED);
+    }
 }
 
 
