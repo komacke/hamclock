@@ -8,6 +8,7 @@ Changes with latest release:
 - ADB and windy access changes
 - support spots for 4, 630, 2200
 - support HamQTH lookups
-- touchscreen keyboard support
 - touchscreen paste from OS
+- password visibility toggle
+- special chars in passwords
 - fix cancel button on de/dx
