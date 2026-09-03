@@ -5239,14 +5239,20 @@ TouchType readCalTouchWS (SCoord &s)
     // check for read-only remote commands
     checkWebServer (true);
 
-    // return info for remote else local touch
+    // return info for remote else local touch.
+    // N.B. capture cur_touch_live here too, same as checkTouch() -- this is the other place
+    // wifi_tt gets consumed (menus, setup wizard, stopwatch), and any of those can still lead to
+    // an openURL()/openQRZBio() call down the line that asks isLiveWebTouch().
     TouchType tt;
     if (wifi_tt != TT_NONE) {
         s = wifi_tt_s;
         tt = wifi_tt;
         wifi_tt = TT_NONE;
+        cur_touch_live = wifi_tt_live;
+        wifi_tt_live = false;
     } else {
         tt = readCalTouch (s);
+        cur_touch_live = false;
     }
 
     // return event type
