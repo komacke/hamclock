@@ -777,12 +777,17 @@ extern SBox map_b;                      // main map
 extern SBox view_btn_b;                 // map view menu button
 
 extern SBox motd_btn_b;                 // MOTD mailbox icon (next to UTC button)
+extern SBox userguide_btn_b;            // User Guide book icon (below MOTD icon)
 
 // MOTD (Message of the Day) functions
 extern void checkMOTD (void);
 extern bool motdIsPresent (void);
 extern void drawMOTDIcon (void);
 extern void motdClicked (void);
+
+// User Guide functions
+extern void drawUserGuideIcon (void);
+extern bool checkUserGuideTouch (SCoord &s);
 
 extern SBox dx_maid_b;                  // dx maidenhead pick
 extern SBox de_maid_b;                  // de maidenhead pick

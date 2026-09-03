@@ -83,11 +83,14 @@ static void drawUTCButton()
     // draw the MOTD mailbox icon to the left of the UTC button (or blank slot if no MOTD)
     drawMOTDIcon();
 
-    // defensively blank the icon column *below* the mailbox down to just above auxtime_b (the
+    // draw the User Guide open-book icon directly below the MOTD icon
+    drawUserGuideIcon();
+
+    // defensively blank the icon column *below* the user guide icon down to just above auxtime_b (the
     // date line, whose top edge sits 48px below clock_b.y by experiment) -- guards against stale
     // pixels left over from a previous build's icons in this same spot (ADS-B/Windy used to live
     // here; both are now on-map badges instead, see adsbbadge.cpp/windbadge.cpp).
-    tft.fillRect (motd_btn_b.x-3, motd_btn_b.y+motd_btn_b.h, motd_btn_b.w+6, 48-motd_btn_b.h, RA8875_BLACK);
+    tft.fillRect (userguide_btn_b.x-3, userguide_btn_b.y+userguide_btn_b.h, userguide_btn_b.w+6, 48-(userguide_btn_b.y-clock_b.y)-userguide_btn_b.h, RA8875_BLACK);
 }
 
 /* function given to TimeLib's setSyncProvider() to resync its time base occasionally.
@@ -1220,6 +1223,10 @@ bool checkClockTouch (SCoord &s)
         motdClicked();
         return (true);
     }
+
+    // check User Guide icon
+    if (checkUserGuideTouch (s))
+        return (true);
 
     if (inBox (s, auxtime_b)) {
 

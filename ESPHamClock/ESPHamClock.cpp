@@ -919,6 +919,7 @@ void initScreen()
     drawUptime(true);
     drawScreenLock();
     drawMOTDIcon();
+    drawUserGuideIcon();
     drawDemoRunner();
 
     // always close so it will restart if open in any pane

@@ -481,6 +481,7 @@ static void getLiveUpdate (ws_cli_conn_t *client, char args[], size_t args_len)
             Serial.printf ("LIVE: sending paste command\n");
             ws_sendframe_txt (client, "paste");
             liveweb_dopaste = false;
+            lastest_ws_touch_client = NULL;
         }
         if (liveweb_openurl) {
             Serial.printf ("LIVE: sending URL %s (embed=%d)\n", liveweb_openurl, liveweb_openurl_embed);
@@ -488,8 +489,8 @@ static void getLiveUpdate (ws_cli_conn_t *client, char args[], size_t args_len)
             free (liveweb_openurl);
             liveweb_openurl = NULL;
             liveweb_openurl_embed = false;
+            lastest_ws_touch_client = NULL;
         }
-        lastest_ws_touch_client = NULL;
     }
     pthread_mutex_unlock (&lw_url_lock);
 
