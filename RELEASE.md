@@ -66,7 +66,7 @@ gh workflow run
 | `tag_name` | string | `v0.0.0` | Version tag to release (e.g., `v4.32.0` or `v4.32b00.0`). |
 | `publish_release` | choice (`true`, `false`) | `true` | When `true`, publishes the release immediately. Set to `false` to create as a draft. |
 | `build_docker` | choice (`true`, `false`) | `true` | When `true`, builds and pushes the multi-platform Docker image. |
-| `push_play_store` | choice (`true`, `false`) | `true` | When `true`, uploads the Android AAB to Google Play (Alpha track) as a draft. |
+| `push_play_store` | choice (`true`, `false`) | `true` | When `true`, uploads the Android AAB to Google Play (Alpha track). |
 
 ### Monitoring the Workflow
 
@@ -191,7 +191,7 @@ The release workflow executes two jobs sequentially: `release` followed by `dock
 3. **Android Build & Google Play Upload:**
    - Runs `./gradlew assembleRelease bundleRelease` with JDK 17.
    - Outputs release `.apk` (direct install) and `.aab` (Google Play Store bundle).
-   - *(Optional - enabled by default)* Prepares `whatsnew` notes and uploads the `.aab` to Google Play Console (Alpha track) as a draft. Can be skipped by setting `-f push_play_store=false`.
+    - *(Optional - enabled by default)* Prepares `whatsnew` notes and uploads the `.aab` to Google Play Console (Alpha track). With Managed Publishing enabled in Play Console, changes land in the Publishing Overview for review checks. Can be skipped by setting `-f push_play_store=false`.
 4. **GitHub Release Publication:**
    - Creates the GitHub Release via `gh release create`. By default creates an active, published release; can be created as a draft using `-f publish_release=false`.
    - Generates release notes automatically from commit log (`--generate-notes`).

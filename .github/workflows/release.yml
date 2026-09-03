@@ -155,16 +155,18 @@ jobs:
             echo "Edge build or notes file not found - skipping release notes"
           fi
 
-      # Upload the signed .aab as a Draft to Google Play console (Alpha track)
-      - name: Upload to Google Play Alpha Track as Draft
+      # Upload the signed .aab to Google Play console (Alpha track)
+      - name: Upload to Google Play Alpha Track
         if: ${{ github.event_name == 'push' || inputs.push_play_store == true || inputs.push_play_store == 'true' }}
         uses: r0adkll/upload-google-play@v1
+        env:
+          NODE_OPTIONS: --no-deprecation
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
           packageName: org.openhamclock.hamclock
           releaseFiles: dist/org.openhamclock*.aab
           tracks: alpha
-          status: draft
+          status: completed
           whatsNewDirectory: dist/whatsnew
           mappingFile: dist/mapping.txt
           debugSymbols: dist/native-debug-symbols.zip
