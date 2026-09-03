@@ -163,8 +163,8 @@ static void userGuideShowModal (void)
     close_b.w = close_btn_w;
     close_b.h = btn_h;
 
-    fillSBox (open_b, RGB565(30, 80, 150));
-    drawSBox (open_b, RA8875_WHITE);
+    fillSBox (open_b, RGB565(50, 50, 50));
+    drawSBox (open_b, GRAY);
     selectFontStyle (BOLD_FONT, FAST_FONT);
     tft.setTextColor (RA8875_WHITE);
     const char *open_lbl = "Open in Browser";
@@ -172,8 +172,8 @@ static void userGuideShowModal (void)
     tft.setCursor (open_b.x + (open_b.w - ow) / 2, open_b.y + (btn_h - 8) / 2);
     tft.print (open_lbl);
 
-    fillSBox (close_b, RGB565(60, 60, 60));
-    drawSBox (close_b, GRAY);
+    fillSBox (close_b, RGB565(30, 80, 150));
+    drawSBox (close_b, RA8875_WHITE);
     selectFontStyle (BOLD_FONT, FAST_FONT);
     tft.setTextColor (RA8875_WHITE);
     const char *close_lbl = "Close";
@@ -197,7 +197,7 @@ static void userGuideShowModal (void)
 
     bool open_browser = false;
     while (waitForUser (ui)) {
-        if (ui.kb_char == CHAR_ESC) {
+        if (ui.kb_char == CHAR_ESC || ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL) {
             break;
         }
         if (inBox (ui.tap, open_b)) {
