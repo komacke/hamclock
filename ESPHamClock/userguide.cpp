@@ -143,11 +143,11 @@ static void userGuideShowModal (void)
     }
 
     // Buttons
-    // Left button: "Open in Browser", Right button: "Close"
+    // Left button: "Open Guide", Right button: "Close"
     int btn_margin = 10;
     int btn_gap = 8;
     int avail_w = dlg_w - 2 * btn_margin - btn_gap;
-    int open_btn_w = (avail_w * 65) / 100;
+    int open_btn_w = avail_w / 2;
     int close_btn_w = avail_w - open_btn_w;
     int btn_y = qr_y0 + qr_box_w + pad;
 
@@ -163,27 +163,33 @@ static void userGuideShowModal (void)
     close_b.w = close_btn_w;
     close_b.h = btn_h;
 
-    fillSBox (open_b, RGB565(50, 50, 50));
-    drawSBox (open_b, GRAY);
-    selectFontStyle (BOLD_FONT, FAST_FONT);
-    tft.setTextColor (RA8875_WHITE);
-    const char *open_lbl = "Open in Browser";
-    uint16_t ow = getTextWidth (open_lbl);
-    tft.setCursor (open_b.x + (open_b.w - ow) / 2, open_b.y + (btn_h - 8) / 2);
-    tft.print (open_lbl);
+    auto drawModalButtons = [&] (bool open_active) {
+        // Open Guide button
+        fillSBox (open_b, open_active ? RGB565(30, 80, 150) : RGB565(40, 40, 40));
+        drawSBox (open_b, open_active ? RA8875_WHITE : GRAY);
+        selectFontStyle (BOLD_FONT, FAST_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        const char *open_lbl = "Open Guide";
+        uint16_t ow = getTextWidth (open_lbl);
+        tft.setCursor (open_b.x + (open_b.w - ow) / 2, open_b.y + (btn_h - 8) / 2);
+        tft.print (open_lbl);
 
-    fillSBox (close_b, RGB565(30, 80, 150));
-    drawSBox (close_b, RA8875_WHITE);
-    selectFontStyle (BOLD_FONT, FAST_FONT);
-    tft.setTextColor (RA8875_WHITE);
-    const char *close_lbl = "Close";
-    uint16_t cw = getTextWidth (close_lbl);
-    tft.setCursor (close_b.x + (close_b.w - cw) / 2, close_b.y + (btn_h - 8) / 2);
-    tft.print (close_lbl);
+        // Close button
+        fillSBox (close_b, !open_active ? RGB565(30, 80, 150) : RGB565(40, 40, 40));
+        drawSBox (close_b, !open_active ? RA8875_WHITE : GRAY);
+        selectFontStyle (BOLD_FONT, FAST_FONT);
+        tft.setTextColor (RA8875_WHITE);
+        const char *close_lbl = "Close";
+        uint16_t cw = getTextWidth (close_lbl);
+        tft.setCursor (close_b.x + (close_b.w - cw) / 2, close_b.y + (btn_h - 8) / 2);
+        tft.print (close_lbl);
 
-    // If over map, flush to web/display
-    if (boxesOverlap (dlg_b, map_b))
-        tft.drawPR();
+        if (boxesOverlap (dlg_b, map_b))
+            tft.drawPR();
+    };
+
+    bool open_focused = true;
+    drawModalButtons (open_focused);
 
     // User input loop
     UserInput ui = {
@@ -197,7 +203,17 @@ static void userGuideShowModal (void)
 
     bool open_browser = false;
     while (waitForUser (ui)) {
-        if (ui.kb_char == CHAR_ESC || ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL) {
+        if (ui.kb_char == CHAR_TAB || ui.kb_char == CHAR_LEFT || ui.kb_char == CHAR_RIGHT) {
+            open_focused = !open_focused;
+            drawModalButtons (open_focused);
+            continue;
+        }
+        if (ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL || ui.kb_char == ' ') {
+            open_browser = open_focused;
+            break;
+        }
+        if (ui.kb_char == CHAR_ESC) {
+            open_browser = false;
             break;
         }
         if (inBox (ui.tap, open_b)) {
@@ -205,6 +221,7 @@ static void userGuideShowModal (void)
             break;
         }
         if (inBox (ui.tap, close_b) || !inBox (ui.tap, dlg_b)) {
+            open_browser = false;
             break;
         }
     }
