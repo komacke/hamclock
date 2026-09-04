@@ -163,6 +163,8 @@ OBJS = \
 	plotmgmnt.o \
 	prefixes.o \
 	pskreporter.o \
+	qrcodegen.o \
+	qrmodal.o \
 	qrz.o \
 	radio.o \
 	robinson.o \
@@ -185,6 +187,7 @@ OBJS = \
 	tooltip.o \
 	touch.o \
 	tz.o \
+	userguide.o \
 	version.o \
 	webserver.o \
 	wefax.o \
