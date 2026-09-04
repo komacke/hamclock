@@ -320,7 +320,7 @@ static const char *lbl_styles[LBL_N] = {
 #undef X
 
 // tooltip usage
-static const char tt_reminder[] = "Tap a label, right-click, control-click or middle button to show a tooltip for most fields";
+static const char tt_reminder[] = "Tap a label, press-and-hold or right-click to show a tooltip for most fields";
 
 // define a string prompt
 typedef struct {
