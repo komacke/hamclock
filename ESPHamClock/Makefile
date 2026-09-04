@@ -164,6 +164,7 @@ OBJS = \
 	prefixes.o \
 	pskreporter.o \
 	qrcodegen.o \
+	qrmodal.o \
 	qrz.o \
 	radio.o \
 	robinson.o \
