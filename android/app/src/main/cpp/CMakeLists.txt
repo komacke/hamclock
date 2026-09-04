@@ -20,7 +20,6 @@ include_directories(
 
 file(GLOB HC_SRCS CONFIGURE_DEPENDS
     "${HC_DIR}/*.cpp"
-    "${HC_DIR}/*.c"
 )
 
 file(GLOB ARDUINO_SRCS CONFIGURE_DEPENDS

@@ -242,8 +242,6 @@ bool checkUserGuideTouch (SCoord &s)
     pb.w += 2 * UG_HIT_PAD;
     pb.h += 2 * UG_HIT_PAD;
 
-    Serial.printf ("UserGuide: checkUserGuideTouch s=(%d,%d) userguide_btn_b=(%d,%d %dx%d)\n",
-                   s.x, s.y, userguide_btn_b.x, userguide_btn_b.y, userguide_btn_b.w, userguide_btn_b.h);
 
     if (inBox (s, pb)) {
         userGuideShowModal();
