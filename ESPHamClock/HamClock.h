@@ -3678,6 +3678,8 @@ extern TouchType checkKBWarp (SCoord &s);
 // for passing web touch command to checkTouch()
 extern TouchType wifi_tt;
 extern SCoord wifi_tt_s;
+extern bool wifi_tt_live;
+extern bool cur_touch_live;
 
 
 

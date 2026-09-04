@@ -106,6 +106,16 @@ static RotMsg_t rot_msg = ROTM_RSSI;
 // WiFi touch control
 TouchType wifi_tt;
 SCoord wifi_tt_s;
+bool wifi_tt_live;                     // whether the pending wifi_tt came from a Live Web client,
+                                        // set alongside wifi_tt/wifi_tt_s by setLiveTouch() and
+                                        // consumed atomically with them below in checkTouch() --
+                                        // see isLiveWebTouch() in liveweb.cpp for why this can't
+                                        // just be re-derived from lastest_ws_touch_client at the
+                                        // time a badge handler happens to ask
+bool cur_touch_live;                   // whether the touch currently being dispatched by
+                                        // checkTouch() came from a Live Web client -- this is
+                                        // what isLiveWebTouch() reports; valid only while a touch
+                                        // is being handled (set at the top of checkTouch())
 
 // set up TFT display controller RA8875 instance on hardware SPI plus reset and chip select
 #define RA8875_RESET    16
@@ -937,11 +947,17 @@ static void checkTouch()
 
     // check for remote and local touch
     if (wifi_tt != TT_NONE) {
-        // save and reset remote touch.
+        // save and reset remote touch, along with whether it came from a Live Web client --
+        // captured here in lockstep with wifi_tt/wifi_tt_s themselves rather than queried later
+        // from lastest_ws_touch_client, which a concurrent Live Web client poll can otherwise
+        // clear out from under a badge handler (eg adsbBadgeClicked()) before it gets a chance
+        // to ask -- see isLiveWebTouch() in liveweb.cpp.
         // N.B. remote touches never turn on brightness
         s = wifi_tt_s;
         tt = wifi_tt;
         wifi_tt = TT_NONE;
+        cur_touch_live = wifi_tt_live;
+        wifi_tt_live = false;
     } else {
         // check tap
         tt = readCalTouch (s);
@@ -954,6 +970,7 @@ static void checkTouch()
             drainTouch();
             return;
         }
+        cur_touch_live = false;
     }
 
     // check lock

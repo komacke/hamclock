@@ -646,10 +646,13 @@ static void setLiveTouch (ws_cli_conn_t *client, char args[], size_t args_len)
 
         } else {
 
-            // inform checkTouch() to use wifi_tt_s; it will reset
+            // inform checkTouch() to use wifi_tt_s; it will reset.
+            // N.B. set wifi_tt_live before wifi_tt so checkTouch() can never observe wifi_tt set
+            // without also seeing wifi_tt_live already valid for it.
             int button = wa.found[2] ? atoi (wa.value[2]) : 0;
             wifi_tt_s.x = x;
             wifi_tt_s.y = y;
+            wifi_tt_live = true;
             wifi_tt = button ? TT_TAP_BX : TT_TAP;              // 0 means button 1 -- go figure
 
             // record this client as the latest to do a touch
@@ -1056,12 +1059,19 @@ void requestLiveWebPaste (void)
     pthread_mutex_unlock (&lw_url_lock);
 }
 
-/* return whether there is a pending set_touch
+/* return whether the touch currently being dispatched by checkTouch() came from a Live Web
+ * client.
+ * N.B. this used to test lastest_ws_touch_client != NULL, but that variable exists to record
+ * which client should receive a queued openurl/paste (see getLiveUpdate()) and gets cleared on
+ * that client's very next screen-update poll -- which happens continuously, many times a second,
+ * completely independently of when the main thread actually gets around to processing the touch
+ * that set it. That poll routinely lands, and clears the flag, before checkTouch() on the main
+ * thread has even called into a badge handler, so a callback like adsbBadgeClicked() could see
+ * isLiveWebTouch() go false for a touch that genuinely came from Live Web. cur_touch_live is set
+ * in lockstep with the touch itself (see setLiveTouch() and checkTouch()), so it can't race with
+ * anything: it just reflects the touch actually being handled right now.
  */
 bool isLiveWebTouch (void)
 {
-    pthread_mutex_lock (&lw_url_lock);
-    bool is_live_touch_pending = lastest_ws_touch_client != NULL;
-    pthread_mutex_unlock (&lw_url_lock);
-    return (is_live_touch_pending);
+    return (cur_touch_live);
 }

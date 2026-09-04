@@ -105,6 +105,7 @@ void drainTouch()
 
     wifi_tt = TT_NONE;
     wifi_tt_s = {0, 0};
+    wifi_tt_live = false;
 
     bool control, shift;
     while (tft.getChar (&control, &shift) != CHAR_NONE)
