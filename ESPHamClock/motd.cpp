@@ -210,13 +210,11 @@ void drawMOTDIcon()
     motd_btn_b.w = MOTD_ICON_W;
     motd_btn_b.h = MOTD_ICON_H;
 
-    // always blank the slot first so a stale icon is erased when the MOTD disappears
+    // always blank the slot first
     tft.fillRect (motd_btn_b.x, motd_btn_b.y, motd_btn_b.w, motd_btn_b.h, RA8875_BLACK);
 
-    if (!motdIsPresent())
-        return;
-
-    uint16_t icon_col = motd_is_new ? RA8875_RED : GRAY;
+    // red if unread MOTD is present; gray if read or if no MOTD
+    uint16_t icon_col = (motdIsPresent() && motd_is_new) ? RA8875_RED : GRAY;
 
     // a simple envelope shape: a rectangle for the body with a "V" flap.
     const uint16_t bx = motd_btn_b.x;
@@ -245,8 +243,7 @@ void drawMOTDIcon()
  */
 static void motdShowPopup()
 {
-    if (!motd_text)
-        return;
+    const char *text = (motd_text && motd_text[0]) ? motd_text : "No active messages at this time.";
 
     // save and restore font around our work
     FontWeight saved_fw;
@@ -261,7 +258,7 @@ static void motdShowPopup()
     static char line_bufs[MOTD_MAXLINES][MOTD_WRAP_W/MOTD_FONTW + 1];
     int n_lines = 0;
 
-    const char *p = motd_text;
+    const char *p = text;
     while (*p && n_lines < MOTD_MAXLINES) {
         // find end of this source line
         const char *eol = strchr (p, '\n');
@@ -398,11 +395,9 @@ void motdClicked()
 {
     Serial.printf ("MOTD: motdClicked() entered, motdIsPresent=%d motd_text=%p\n",
                    motdIsPresent(), (void*)motd_text);
-    if (!motdIsPresent())
-        return;
 
     // if was new, record hash as having been read
-    if (motd_is_new) {
+    if (motd_is_new && motd_text) {
         uint32_t current_hash = stringHash (motd_text);
         FILE *h_fp = fopenOurs (MOTD_HASH_FN, "w");
         if (h_fp) {
@@ -416,7 +411,7 @@ void motdClicked()
     drawMOTDIcon();
 
     Serial.printf ("MOTD: calling motdShowPopup() with %lu bytes of text\n",
-                   (unsigned long)strlen(motd_text));
+                   (unsigned long)(motd_text ? strlen(motd_text) : 0));
     motdShowPopup();
     Serial.printf ("MOTD: motdShowPopup() returned\n");
 }
