@@ -73,18 +73,76 @@ TouchType checkKBWarp (SCoord &s)
     return (tt);
 }
 
+#define TOUCH_LONGPRESS_MS   500       // ms to trigger secondary tap (matches live web)
+#define TOUCH_JITTER_DIST    10        // max app pixel drift to still consider a hold
+
+static bool touch_down;                // whether a touch is currently active
+static uint32_t touch_t0;              // millis when touch started
+static SCoord touch_s0;                // initial touch location
+static bool touch_hold_fired;          // whether long-press already fired for this touch
+
+/* reset touch hold tracking
+ */
+static void resetTouchHold()
+{
+    touch_down = false;
+    touch_hold_fired = false;
+}
+
 /* read the touch screen or mouse.
  * pass back calibrated screen coordinate and return a TouchType.
+ * button 1 touches held for TOUCH_LONGPRESS_MS yield TT_TAP_BX (secondary tap).
  */
 TouchType readCalTouch (SCoord &s)
 {
     TouchType tt = TT_NONE;
 
-    // drain to latest, if any
-    while (tft.touched()) {
-        int mb;
-        tft.touchRead (&s.x, &s.y, &mb);
-        tt = mb == 1 ? TT_TAP : TT_TAP_BX;
+    if (tft.touched()) {
+        int mb = 1;
+        SCoord cur_s;
+        while (tft.touched()) {
+            tft.touchRead (&cur_s.x, &cur_s.y, &mb);
+        }
+
+        // Hardware mouse alternate button (right/middle click) always acts immediately
+        if (mb != 1) {
+            resetTouchHold();
+            s = cur_s;
+            tt = TT_TAP_BX;
+        } else {
+            // Button 1 (touchscreen or left click)
+            uint32_t now = millis();
+            if (!touch_down) {
+                touch_down = true;
+                touch_t0 = now;
+                touch_s0 = cur_s;
+                touch_hold_fired = false;
+            } else {
+                // If moved too far, reset hold starting point/timer
+                int dx = (int)cur_s.x - (int)touch_s0.x;
+                int dy = (int)cur_s.y - (int)touch_s0.y;
+                if (dx*dx + dy*dy > TOUCH_JITTER_DIST * TOUCH_JITTER_DIST) {
+                    touch_t0 = now;
+                    touch_s0 = cur_s;
+                    touch_hold_fired = false;
+                } else if (!touch_hold_fired && (now - touch_t0 >= TOUCH_LONGPRESS_MS)) {
+                    // Fire secondary tap on long-press
+                    touch_hold_fired = true;
+                    s = touch_s0;
+                    tt = TT_TAP_BX;
+                }
+            }
+        }
+    } else {
+        // Not touched now: check if just released
+        if (touch_down) {
+            if (!touch_hold_fired) {
+                // Released before long-press threshold: emit regular tap
+                s = touch_s0;
+                tt = TT_TAP;
+            }
+            resetTouchHold();
+        }
     }
 
     if (tt != TT_NONE)
@@ -99,6 +157,8 @@ TouchType readCalTouch (SCoord &s)
  */
 void drainTouch()
 {
+    resetTouchHold();
+
     uint16_t tx, ty;
     while (tft.touched())
         tft.touchRead (&tx, &ty, NULL);
