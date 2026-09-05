@@ -1219,7 +1219,7 @@ bool checkClockTouch (SCoord &s)
     Serial.printf ("MOTD: checkClockTouch s=(%d,%d) motd_btn_b=(%d,%d %dx%d) present=%d\n",
                    s.x, s.y, motd_btn_b.x, motd_btn_b.y, motd_btn_b.w, motd_btn_b.h,
                    motdIsPresent());
-    if (motdIsPresent() && inPaddedBox (s, motd_btn_b, ICON_HIT_PAD)) {
+    if (inPaddedBox (s, motd_btn_b, ICON_HIT_PAD)) {
         motdClicked();
         return (true);
     }
