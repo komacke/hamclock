@@ -42,8 +42,11 @@ gh workflow run release.yml -f tag_name=v4.32.0 -f build_docker=false
 # Optional: skip uploading to Google Play Store:
 gh workflow run release.yml -f tag_name=v4.32.0 -f push_play_store=false
 
-# Optional: draft release without Docker build or Play Store upload:
-gh workflow run release.yml -f tag_name=v4.32.0 -f publish_release=false -f build_docker=false -f push_play_store=false
+# Optional: upload to Amazon Appstore (defaults to false):
+gh workflow run release.yml -f tag_name=v4.32.0 -f push_amazon_appstore=true
+
+# Optional: draft release without Docker build or app store uploads:
+gh workflow run release.yml -f tag_name=v4.32.0 -f publish_release=false -f build_docker=false -f push_play_store=false -f push_amazon_appstore=false
 
 # Optional: target a specific branch (defaults to main)
 gh workflow run release.yml --ref main -f tag_name=v4.32.0
@@ -67,6 +70,7 @@ gh workflow run
 | `publish_release` | choice (`true`, `false`) | `true` | When `true`, publishes the release immediately. Set to `false` to create as a draft. |
 | `build_docker` | choice (`true`, `false`) | `true` | When `true`, builds and pushes the multi-platform Docker image. |
 | `push_play_store` | choice (`true`, `false`) | `true` | When `true`, uploads the Android AAB to Google Play (Alpha track). |
+| `push_amazon_appstore` | choice (`true`, `false`) | `false` | When `true`, uploads the Android APK to the Amazon Appstore. |
 
 ### Monitoring the Workflow
 
@@ -158,6 +162,9 @@ The release workflow requires secrets for Android code signing and Docker Hub pu
 | `ANDROID_KEY_PASSWORD` | Android Build | *(Optional)* Key password. If unset or blank, Gradle falls back to `ANDROID_KEYSTORE_PASSWORD`. |
 | `DOCKERHUB_USERNAME` | Docker Job | Docker Hub account username (e.g., `komacke`). |
 | `DOCKERHUB_TOKEN` | Docker Job | Docker Hub Personal Access Token (PAT) with write/push permissions. |
+| `AMAZON_APPSTORE_CLIENT_ID` | Amazon Upload | Client ID from the Amazon Appstore API Access Security Profile. |
+| `AMAZON_APPSTORE_CLIENT_SECRET` | Amazon Upload | Client Secret from the Amazon Appstore API Access Security Profile. |
+| `AMAZON_APPSTORE_APP_ID` | Amazon Upload | App ID of the application in the Amazon Developer Console. |
 
 ### Inspecting and Managing Secrets via CLI
 
@@ -188,10 +195,11 @@ The release workflow executes two jobs sequentially: `release` followed by `dock
    - `dist/HC-$TAG.tar.gz` and `dist/HC-$TAG.zip` (full repository archives).
    - `dist/ESPHamClock-V$HC_TAG.zip` (standalone HamClock source zip).
    - `dist/hamclock-contrib-V$HC_TAG.zip` (contrib zip).
-3. **Android Build & Google Play Upload:**
+3. **Android Build & App Store Uploads:**
    - Runs `./gradlew assembleRelease bundleRelease` with JDK 17.
    - Outputs release `.apk` (direct install) and `.aab` (Google Play Store bundle).
-    - *(Optional - enabled by default)* Prepares `whatsnew` notes and uploads the `.aab` to Google Play Console (Alpha track). With Managed Publishing enabled in Play Console, changes land in the Publishing Overview for review checks. Can be skipped by setting `-f push_play_store=false`.
+   - *(Optional - enabled by default)* Prepares `whatsnew` notes and uploads the `.aab` to Google Play Console (Alpha track). With Managed Publishing enabled in Play Console, changes land in the Publishing Overview for review checks. Can be skipped by setting `-f push_play_store=false`.
+   - *(Optional - disabled by default)* Uploads the release `.apk` to the Amazon Appstore using the Amazon App Submission API. Can be enabled by setting `-f push_amazon_appstore=true`.
 4. **GitHub Release Publication:**
    - Creates the GitHub Release via `gh release create`. By default creates an active, published release; can be created as a draft using `-f publish_release=false`.
    - Generates release notes automatically from commit log (`--generate-notes`).

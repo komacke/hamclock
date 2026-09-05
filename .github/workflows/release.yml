@@ -31,6 +31,14 @@ on:
           - 'true'
           - 'false'
         default: 'true'
+      push_amazon_appstore:
+        description: 'Upload Android APK to Amazon Appstore'
+        required: true
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+        default: 'false'
 
 jobs:
   release:
@@ -170,6 +178,16 @@ jobs:
           whatsNewDirectory: dist/whatsnew
           mappingFile: dist/mapping.txt
           debugSymbols: dist/native-debug-symbols.zip
+
+      # Upload the signed .apk to Amazon Appstore
+      - name: Upload to Amazon Appstore
+        if: ${{ inputs.push_amazon_appstore == true || inputs.push_amazon_appstore == 'true' }}
+        uses: galonga/upload-amazon-appstore@v1.0.2
+        with:
+          clientId: ${{ secrets.AMAZON_APPSTORE_CLIENT_ID }}
+          clientSecret: ${{ secrets.AMAZON_APPSTORE_CLIENT_SECRET }}
+          appId: ${{ secrets.AMAZON_APPSTORE_APP_ID }}
+          releaseFile: dist/org.openhamclock*.apk
 
       - name: Create Release and Upload Asset
         env:
