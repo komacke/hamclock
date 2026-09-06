@@ -1601,7 +1601,7 @@ bool httpSkipHeader (WiFiClient &client)
  * If 404 (or connecting fails), open orig_url.
  * Otherwise open backend URL.
  */
-void openMovieURL (const char *hc_page, const char *orig_url)
+void openMovieURL (const char *hc_page, const char *orig_url, const char *title)
 {
     WiFiClient client;
     bool is_404 = false;
@@ -1619,14 +1619,15 @@ void openMovieURL (const char *hc_page, const char *orig_url)
         is_404 = true;
     }
 
-    if (is_404) {
-        openURL (orig_url);
-    } else {
-        char backend_url[256];
+    const char *url_to_open = orig_url;
+    char backend_url[256];
+    if (!is_404) {
         snprintf (backend_url, sizeof(backend_url), "http://%s:%d/ham/HamClock%s",
                   backend_host, backend_port, hc_page);
-        openURL (backend_url);
+        url_to_open = backend_url;
     }
+
+    showQRCodeModal (url_to_open, title ? title : "Movie", "Scan with phone or open below", "Open Movie");
 }
 
 /* retrieve and plot latest and predicted DRAP indices, return whether io ok

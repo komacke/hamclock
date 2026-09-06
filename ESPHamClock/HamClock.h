@@ -2720,7 +2720,7 @@ extern void openURL (const char *url);
 extern void openURLPopup (const char *url);
 extern void openURLPopupEmbed (const char *url);
 extern bool showQRCodeModal (const char *url, const char *title, const char *subtitle = NULL, const char *open_lbl = NULL);
-extern void openMovieURL (const char *hc_page, const char *orig_url);
+extern void openMovieURL (const char *hc_page, const char *orig_url, const char *title = NULL);
 
 
 /*********************************************************************************************
