@@ -285,6 +285,51 @@ static bool ontaModeBandOk (const DXSpot &s)
     return (false);
 }
 
+/* fill counts[N_ONTAORGINFO] with how many currently-fetched spots would be visible for
+ * each org if it alone were checked -- respects every filter EXCEPT org itself: age, mode,
+ * band, AND watch list Only/Not (mirrors rebuildONTAWatchList()'s own pipeline exactly,
+ * just skipping its isSpotOrgOk() step since here we're bucketing BY org instead of
+ * filtering by a fixed one). This choice -- counting watch-list-filtered spots too -- means
+ * a count here always matches what would actually appear in the list if that box alone were
+ * checked. If that's ever undesired (eg someone forgets a narrow watch list is active and
+ * wonders why counts look low), drop the checkWatchListSpot() check below; nothing else
+ * needs to change.
+ *
+ * also fills *modeband_filtered with whether mode or band filtering is currently narrower
+ * than "everything" -- used by runONTAOrgMenu() to append "(filtered)" to its header so a
+ * low count isn't ambiguous between "quiet right now" and "hidden by your mode/band
+ * filter". Age is deliberately NOT part of that signal: it's always some finite window,
+ * never "everything", so flagging it the same way would be true 100% of the time.
+ */
+static void ontaOrgCounts (uint32_t counts[], bool *modeband_filtered)
+{
+    memset (counts, 0, N_ONTAORGINFO * sizeof(counts[0]));
+
+    time_t oldest = myNow() - 60*onta_age;
+    for (int i = 0; i < n_ontaspots; i++) {
+        DXSpot &spot = onta_spots[i];
+        if (spot.spotted < oldest)
+            continue;
+        if (!ontaModeBandOk (spot))
+            continue;
+        if (checkWatchListSpot (WLID_ONTA, spot) == WLS_NO)
+            continue;
+        uint32_t bit = ontaOrgBit (spot.rx_grid);
+        for (size_t j = 0; j < N_ONTAORGINFO; j++)
+            if (onta_org_info[j].bit == bit) {
+                counts[j]++;
+                break;
+            }
+    }
+
+    if (modeband_filtered) {
+        uint32_t all_bands = ONTA_BAND_OTHER;
+        for (int i = 0; i < ONTA_NBANDS_SHOWN; i++)
+            all_bands |= (1U << onta_shown_bands[i]);
+        *modeband_filtered = (onta_modes != ONTAMB_ALL) || (onta_bands != all_bands);
+    }
+}
+
 
 /* insure our settings are loaded
  */
@@ -1296,20 +1341,35 @@ static void runONTAOrgMenu (const SBox &box)
     // insure defaults are set in case retrieval failed
     loadONTASettings();
 
+    // per-org counts, respecting every filter except org itself -- see ontaOrgCounts()'s
+    // own comment for exactly what that means and why
+    uint32_t counts[N_ONTAORGINFO];
+    bool modeband_filtered;
+    ontaOrgCounts (counts, &modeband_filtered);
+
     SBox menu_b = box;                          // copy, not ref!
     menu_b.y = box.y + 2;                        // open near the top of the pane
     menu_b.x = box.x + 5;
     menu_b.w = box.w - 10;
     SBox ok_b;
 
+    // header and per-org labels need persistent (not stack-transient) storage for the
+    // duration of runMenu() below, since MenuItem.label is just a pointer, not a copy
+    char header_label[32];
+    snprintf (header_label, sizeof(header_label), "Show orgs:%s",
+                                                    modeband_filtered ? " (filtered)" : "");
+    char org_labels[N_ONTAORGINFO][24];
+
     MenuItem mitems[1 + N_ONTAORGINFO];
-    mitems[0] = {MENU_LABEL, false, 0, 2, "Show orgs:", NULL};
+    mitems[0] = {MENU_LABEL, false, 0, 2, header_label, NULL};
     for (size_t i = 0; i < N_ONTAORGINFO; i++) {
+        snprintf (org_labels[i], sizeof(org_labels[i]), "%s (%u)",
+                                                    onta_org_info[i].org, (unsigned)counts[i]);
         mitems[1+i].type    = MENU_AL1OFN;
         mitems[1+i].set     = (onta_orgmask & onta_org_info[i].bit) != 0;
         mitems[1+i].group   = 1;
         mitems[1+i].indent  = 12;
-        mitems[1+i].label   = onta_org_info[i].org;
+        mitems[1+i].label   = org_labels[i];
         mitems[1+i].textf   = NULL;
         mitems[1+i].submenu = false;
     }
