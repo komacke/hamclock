@@ -42,11 +42,12 @@ bool showQRCodeModal (const char *url, const char *title, const char *subtitle, 
     int qr_px = qr_size * scale;
     int qr_box_w = qr_px + 2 * border;
     // Check if browser opening is supported
-#if defined(_USE_FB0)
-    // On standalone fb0 there is no window manager or browser
-    bool can_open_browser = false;
-#else
+    bool is_live_session = isLiveWebTouch();
     bool can_open_browser = true;
+#if defined(_USE_FB0)
+    // On standalone fb0 there is no window manager or browser unless accessed via Live Web
+    if (!is_live_session)
+        can_open_browser = false;
 #endif
 
     const char *display_subtitle = subtitle;
@@ -214,6 +215,8 @@ bool showQRCodeModal (const char *url, const char *title, const char *subtitle, 
 
     bool open_confirmed = false;
     while (waitForUser (ui)) {
+        if (isLiveWebTouch())
+            is_live_session = true;
         if (ui.kb_char == CHAR_TAB || ui.kb_char == CHAR_LEFT || ui.kb_char == CHAR_RIGHT) {
             if (can_open_browser) {
                 open_focused = !open_focused;
@@ -254,7 +257,9 @@ bool showQRCodeModal (const char *url, const char *title, const char *subtitle, 
         tft.drawPR();
 
     if (open_confirmed) {
-        Serial.printf ("QRModal: opening %s\n", url);
+        Serial.printf ("QRModal: opening %s (is_live=%d)\n", url, is_live_session);
+        if (is_live_session)
+            cur_touch_live = true;
         openURLPopup (url);
     }
 

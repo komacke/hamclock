@@ -112,6 +112,7 @@ bool wifi_tt_live;                     // whether the pending wifi_tt came from 
                                         // see isLiveWebTouch() in liveweb.cpp for why this can't
                                         // just be re-derived from lastest_ws_touch_client at the
                                         // time a badge handler happens to ask
+bool wifi_kb_live;                     // whether the pending keyboard char came from a Live Web client
 bool cur_touch_live;                   // whether the touch currently being dispatched by
                                         // checkTouch() came from a Live Web client -- this is
                                         // what isLiveWebTouch() reports; valid only while a touch

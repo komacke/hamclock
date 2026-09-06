@@ -1038,8 +1038,15 @@ bool waitForUser (UserInput &ui)
             return(true);
 
         ui.kb_char = tft.getChar (&ui.kb_ctrl, &ui.kb_shift);
-        if (ui.kb_char != CHAR_NONE)
+        if (ui.kb_char != CHAR_NONE) {
+            if (wifi_kb_live) {
+                cur_touch_live = true;
+                wifi_kb_live = false;
+            } else {
+                cur_touch_live = false;
+            }
             return (true);
+        }
 
         if (ui.to_ms != UI_NOTIMEOUT && timesUp (&t0, ui.to_ms))
             return (false);

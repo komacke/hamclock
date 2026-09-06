@@ -3685,6 +3685,7 @@ extern TouchType checkKBWarp (SCoord &s);
 extern TouchType wifi_tt;
 extern SCoord wifi_tt_s;
 extern bool wifi_tt_live;
+extern bool wifi_kb_live;
 extern bool cur_touch_live;
 
 
