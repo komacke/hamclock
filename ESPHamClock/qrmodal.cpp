@@ -41,11 +41,12 @@ bool showQRCodeModal (const char *url, const char *title, const char *subtitle, 
     int border = 8;                        // quiet zone in pixels
     int qr_px = qr_size * scale;
     int qr_box_w = qr_px + 2 * border;
-    // If running on fb0 directly without a desktop browser, can_open_browser is only true for Live Web
-    bool can_open_browser = true;
+    // Check if browser opening is supported
 #if defined(_USE_FB0)
-    if (!isLiveWebTouch())
-        can_open_browser = false;
+    // On standalone fb0 there is no window manager or browser
+    bool can_open_browser = false;
+#else
+    bool can_open_browser = true;
 #endif
 
     const char *display_subtitle = subtitle;
@@ -221,7 +222,11 @@ bool showQRCodeModal (const char *url, const char *title, const char *subtitle, 
             continue;
         }
         if (ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL || ui.kb_char == ' ') {
-            open_confirmed = can_open_browser && open_focused;
+            // Select currently highlighted choice
+            if (can_open_browser)
+                open_confirmed = open_focused;
+            else
+                open_confirmed = false;     // Only "Close" button exists, so selecting it closes
             break;
         }
         if (ui.kb_char == CHAR_ESC) {
