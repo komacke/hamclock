@@ -272,10 +272,12 @@ bool updateSDOPane (const SBox &box)
 static void showSDOmovie (void)
 {
     char hc_page[256];
+    char title[64];
 
     snprintf (hc_page, sizeof(hc_page), "/SDO/movies/%s", sdo_filenames[sdo_choice]);
+    snprintf (title, sizeof(title), "SDO %s Movie", sdo_menu[sdo_choice]);
 
-    openMovieURL (hc_page, sdo_url[sdo_choice]);
+    openMovieURL (hc_page, sdo_url[sdo_choice], title);
 }
 
 /* check for our touch in the given pane box.
@@ -320,12 +322,8 @@ bool checkSDOTouch (const SCoord &s, const SBox &box)
     // set grayline option
     mitems[SDOM_GRAYLINE] = {MENU_TOGGLE, false, 2, SM_INDENT, "Grayline tool", 0};
 
-    // set show web page option, but not on fb0
-#if defined(_USE_FB0)
-    mitems[SDOM_SHOWWEB] = {MENU_IGNORE, false, 0, 0, NULL};
-#else
+    // set show movie option (supported on all platforms via QR code)
     mitems[SDOM_SHOWWEB] = {MENU_TOGGLE, false, 3, SM_INDENT, "Show movie", 0};
-#endif
 
     SBox menu_b = box;          // copy, not ref
     menu_b.x += box.w/4;

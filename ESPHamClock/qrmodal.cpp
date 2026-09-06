@@ -41,12 +41,24 @@ bool showQRCodeModal (const char *url, const char *title, const char *subtitle, 
     int border = 8;                        // quiet zone in pixels
     int qr_px = qr_size * scale;
     int qr_box_w = qr_px + 2 * border;
+    // Check if browser opening is supported
+    bool is_live_session = isLiveWebTouch();
+    bool can_open_browser = true;
+#if defined(_USE_FB0)
+    // On standalone fb0 there is no window manager or browser unless accessed via Live Web
+    if (!is_live_session)
+        can_open_browser = false;
+#endif
 
-    // Font metrics for sizing\n    selectFontStyle (BOLD_FONT, FAST_FONT);
+    const char *display_subtitle = subtitle;
+    if (!can_open_browser && subtitle && strstr(subtitle, "open below"))
+        display_subtitle = "Scan with phone or tablet";
+
+    // Font metrics for sizing
+    selectFontStyle (BOLD_FONT, FAST_FONT);
     uint16_t title_w = getTextWidth ((char*)title);
     selectFontStyle (LIGHT_FONT, FAST_FONT);
-    uint16_t sub_w = subtitle ? getTextWidth ((char*)subtitle) : 0;
-
+    uint16_t sub_w = display_subtitle ? getTextWidth ((char*)display_subtitle) : 0;
     // Dialog layout: accommodate QR code and text widths
     int dlg_w = qr_box_w + 30;
     if (dlg_w < title_w + 24)
@@ -93,11 +105,11 @@ bool showQRCodeModal (const char *url, const char *title, const char *subtitle, 
     tft.print (title);
 
     // Subtitle (if provided)
-    if (subtitle) {
+    if (display_subtitle) {
         selectFontStyle (LIGHT_FONT, FAST_FONT);
         tft.setTextColor (GRAY);
         tft.setCursor (dlg_b.x + (dlg_w - sub_w) / 2, dlg_b.y + pad + title_h + pad/2);
-        tft.print (subtitle);
+        tft.print (display_subtitle);
     }
 
     // QR Code container (white quiet zone background)
@@ -116,51 +128,79 @@ bool showQRCodeModal (const char *url, const char *title, const char *subtitle, 
         }
     }
 
-    // Buttons: Left button (open/action), Right button ("Close")
+    // Buttons:
+    // If can_open_browser is false (e.g. standalone fb0 without Live Web), display a single centered "Close" button.
+    // Otherwise, display Left button (Open action) and Right button ("Close").
     int btn_margin = 10;
-    int btn_gap = 8;
-    int avail_w = dlg_w - 2 * btn_margin - btn_gap;
-    int open_btn_w = avail_w / 2;
-    int close_btn_w = avail_w - open_btn_w;
     int btn_y = qr_y0 + qr_box_w + pad;
 
-    SBox open_b;
-    open_b.x = dlg_b.x + btn_margin;
-    open_b.y = btn_y;
-    open_b.w = open_btn_w;
-    open_b.h = btn_h;
+    SBox open_b = {0, 0, 0, 0};
+    SBox close_b = {0, 0, 0, 0};
 
-    SBox close_b;
-    close_b.x = open_b.x + open_b.w + btn_gap;
-    close_b.y = btn_y;
-    close_b.w = close_btn_w;
-    close_b.h = btn_h;
+    if (can_open_browser) {
+        int btn_gap = 8;
+        int avail_w = dlg_w - 2 * btn_margin - btn_gap;
+        int open_btn_w = avail_w / 2;
+        int close_btn_w = avail_w - open_btn_w;
+
+        open_b.x = dlg_b.x + btn_margin;
+        open_b.y = btn_y;
+        open_b.w = open_btn_w;
+        open_b.h = btn_h;
+
+        close_b.x = open_b.x + open_b.w + btn_gap;
+        close_b.y = btn_y;
+        close_b.w = close_btn_w;
+        close_b.h = btn_h;
+    } else {
+        // Single centered Close button
+        int close_btn_w = dlg_w - 2 * btn_margin;
+        if (close_btn_w > 120)
+            close_btn_w = 120;
+
+        close_b.x = dlg_b.x + (dlg_w - close_btn_w) / 2;
+        close_b.y = btn_y;
+        close_b.w = close_btn_w;
+        close_b.h = btn_h;
+    }
 
     auto drawModalButtons = [&] (bool open_active) {
-        // Open/action button
-        fillSBox (open_b, open_active ? RGB565(30, 80, 150) : RGB565(40, 40, 40));
-        drawSBox (open_b, open_active ? RA8875_WHITE : GRAY);
-        selectFontStyle (BOLD_FONT, FAST_FONT);
-        tft.setTextColor (RA8875_WHITE);
-        uint16_t ow = getTextWidth ((char*)open_lbl);
-        tft.setCursor (open_b.x + (open_b.w - ow) / 2, open_b.y + (btn_h - 8) / 2);
-        tft.print (open_lbl);
+        if (can_open_browser) {
+            // Open/action button
+            fillSBox (open_b, open_active ? RGB565(30, 80, 150) : RGB565(40, 40, 40));
+            drawSBox (open_b, open_active ? RA8875_WHITE : GRAY);
+            selectFontStyle (BOLD_FONT, FAST_FONT);
+            tft.setTextColor (RA8875_WHITE);
+            uint16_t ow = getTextWidth ((char*)open_lbl);
+            tft.setCursor (open_b.x + (open_b.w - ow) / 2, open_b.y + (btn_h - 8) / 2);
+            tft.print (open_lbl);
 
-        // Close button
-        fillSBox (close_b, !open_active ? RGB565(30, 80, 150) : RGB565(40, 40, 40));
-        drawSBox (close_b, !open_active ? RA8875_WHITE : GRAY);
-        selectFontStyle (BOLD_FONT, FAST_FONT);
-        tft.setTextColor (RA8875_WHITE);
-        const char *close_lbl = "Close";
-        uint16_t cw = getTextWidth ((char*)close_lbl);
-        tft.setCursor (close_b.x + (close_b.w - cw) / 2, close_b.y + (btn_h - 8) / 2);
-        tft.print (close_lbl);
+            // Close button
+            fillSBox (close_b, !open_active ? RGB565(30, 80, 150) : RGB565(40, 40, 40));
+            drawSBox (close_b, !open_active ? RA8875_WHITE : GRAY);
+            selectFontStyle (BOLD_FONT, FAST_FONT);
+            tft.setTextColor (RA8875_WHITE);
+            const char *close_lbl = "Close";
+            uint16_t cw = getTextWidth ((char*)close_lbl);
+            tft.setCursor (close_b.x + (close_b.w - cw) / 2, close_b.y + (btn_h - 8) / 2);
+            tft.print (close_lbl);
+        } else {
+            // Single Close button, styled highlighted/active
+            fillSBox (close_b, RGB565(30, 80, 150));
+            drawSBox (close_b, RA8875_WHITE);
+            selectFontStyle (BOLD_FONT, FAST_FONT);
+            tft.setTextColor (RA8875_WHITE);
+            const char *close_lbl = "Close";
+            uint16_t cw = getTextWidth ((char*)close_lbl);
+            tft.setCursor (close_b.x + (close_b.w - cw) / 2, close_b.y + (btn_h - 8) / 2);
+            tft.print (close_lbl);
+        }
 
         if (boxesOverlap (dlg_b, map_b))
             tft.drawPR();
     };
 
-    bool open_focused = true;
+    bool open_focused = can_open_browser;
     drawModalButtons (open_focused);
 
     // User input loop
@@ -175,20 +215,28 @@ bool showQRCodeModal (const char *url, const char *title, const char *subtitle, 
 
     bool open_confirmed = false;
     while (waitForUser (ui)) {
+        if (isLiveWebTouch())
+            is_live_session = true;
         if (ui.kb_char == CHAR_TAB || ui.kb_char == CHAR_LEFT || ui.kb_char == CHAR_RIGHT) {
-            open_focused = !open_focused;
-            drawModalButtons (open_focused);
+            if (can_open_browser) {
+                open_focused = !open_focused;
+                drawModalButtons (open_focused);
+            }
             continue;
         }
         if (ui.kb_char == CHAR_CR || ui.kb_char == CHAR_NL || ui.kb_char == ' ') {
-            open_confirmed = open_focused;
+            // Select currently highlighted choice
+            if (can_open_browser)
+                open_confirmed = open_focused;
+            else
+                open_confirmed = false;     // Only "Close" button exists, so selecting it closes
             break;
         }
         if (ui.kb_char == CHAR_ESC) {
             open_confirmed = false;
             break;
         }
-        if (inBox (ui.tap, open_b)) {
+        if (can_open_browser && inBox (ui.tap, open_b)) {
             open_confirmed = true;
             break;
         }
@@ -209,7 +257,9 @@ bool showQRCodeModal (const char *url, const char *title, const char *subtitle, 
         tft.drawPR();
 
     if (open_confirmed) {
-        Serial.printf ("QRModal: opening %s\n", url);
+        Serial.printf ("QRModal: opening %s (is_live=%d)\n", url, is_live_session);
+        if (is_live_session)
+            cur_touch_live = true;
         openURLPopup (url);
     }
 

@@ -476,7 +476,7 @@ static void getLiveUpdate (ws_cli_conn_t *client, char args[], size_t args_len)
 
     // check for pending openurl or paste if this client did a touch
     pthread_mutex_lock (&lw_url_lock);
-    if (lastest_ws_touch_client == client) {
+    if (lastest_ws_touch_client == client || (lastest_ws_touch_client == NULL && client->port != liveweb_ro_port)) {
         if (liveweb_dopaste) {
             Serial.printf ("LIVE: sending paste command\n");
             ws_sendframe_txt (client, "paste");
@@ -598,6 +598,13 @@ static void setLiveChar (ws_cli_conn_t *client, char args[], size_t args_len)
         bool shift = strchr (wa.value[1], 'S') != NULL;
 
         if (c) {
+
+            // record this client as the latest active client for URL opening and mark live touch
+            pthread_mutex_lock (&lw_url_lock);
+            lastest_ws_touch_client = client;
+            pthread_mutex_unlock (&lw_url_lock);
+            cur_touch_live = true;
+            wifi_kb_live = true;
 
             // insert into getChar queue
             tft.putChar (c, ctrl, shift);
