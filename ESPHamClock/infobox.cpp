@@ -411,7 +411,13 @@ static void drawIB_DX (const SBox &minfo_b, const DXSpot &dx_s, const LatLong &d
     tw = getTextWidth(buf);
     tft.setCursor (tx + (view_btn_b.w-tw)/2, ty += IB_LINEDY);
     tft.printf (buf);
-    snprintf (buf, sizeof(buf), "%.*s", 4, dx_s.rx_grid);
+    // N.B. rx_grid is a genuine grid square for DX Cluster/PSK spots (4 chars
+    // is the intended display width there) but is repurposed to hold the org
+    // name for ONTA spots (POTA/SOTA/WWFF/GMA/LLOTA/TOWERS/WWBOTA/WWTOTA/...),
+    // where 4 chars clips names like "TOWERS" to "TOWE". Widen to
+    // MAX_SPOTGRID_LEN-1 (6), the field's actual storage capacity, so the
+    // full org name always fits regardless of which case applies.
+    snprintf (buf, sizeof(buf), "%.*s", MAX_SPOTGRID_LEN-1, dx_s.rx_grid);
     tw = getTextWidth(buf);
     tft.setCursor (tx + (view_btn_b.w-tw)/2, ty += IB_LINEDY);
     tft.printf (buf);

@@ -67,6 +67,8 @@ static const ONTAOrgColor onta_org_colors[] = {
     { "GMA",    RGB565(150,150,170) },   // slate grey
     { "LLOTA",  RGB565(90,90,220)   },   // indigo
     { "WWTOTA", RGB565(184,115,51)  },   // copper
+    { "TOWERS", RGB565(230,190,40)  },   // amber
+    { "WWBOTA", RGB565(140,148,60)  },   // olive/khaki 
 };
 
 /* look up the marker color for an org name (spot.rx_grid, repurposed -- see header comment);
