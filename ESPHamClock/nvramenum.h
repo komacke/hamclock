@@ -442,6 +442,13 @@ typedef enum {
     // 268
     NV_FIRES_ON,                    // whether the active-fire hotspot overlay is enabled
 
+    // 269
+    NV_ONTA_ORGMASK,                // ONTA org filter bitmask, one bit per known org (see
+                                     // ONTAOrgInfo/ontheair.cpp) -- replaces the old free-text
+                                     // NV_ONTAORG string filter, retired because a '+'-joined
+                                     // list of every known org's full name can exceed
+                                     // NV_ONTAORG_LEN (30 bytes) and silently truncate/corrupt
+
     NV_N
 
 } NV_Name;

@@ -445,6 +445,9 @@ static const uint8_t nv_sizes[NV_N] = {
     // 268
     1,                          // NV_FIRES_ON
 
+    // 269
+    4,                          // NV_ONTA_ORGMASK
+
 };
 
 #endif // _NVRAMSIZE_H

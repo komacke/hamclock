@@ -16,7 +16,6 @@
 // config
 static const char onta_page[] = "/ONTA/onta.txt";       // query page
 static const char onta_file[] = "onta.txt";             // local cache file
-#define MAX_ONTAORGS    10                              // max organizations
 #define ONTA_COLOR      RGB565(150,250,255)             // title and spot text color
 
 // second source, same onta.txt line schema, generated server-side by gen_iota.pl from the
@@ -47,42 +46,66 @@ static const ONTASource onta_sources[] = {
 };
 #define N_ONTASOURCES NARRAY(onta_sources)
 
-// per-org marker color, drawn as the background of the reference ("id") field -- same idea
-// as the freq field's own band-color background just below it, not a separate letter column:
-// unlike the DX Cluster pane's marker (spots.cpp's IOTA_MARK_W reserved column), ONTA's row
-// layout is already character-budgeted to the pixel (see formatONTASpot()'s comment), with no
-// spare width for another field. Colors chosen to avoid RA8875_RED (watchlist highlight) and
-// to stay visually distinct from each other; deliberately does NOT need to match the DX
-// Cluster pane's own WCA/ARLHS/etc marker colors from spots.cpp -- different pane, different
-// (non-overlapping) set of orgs, no reason they need to share a palette.
+// per-org marker color, filter bit, and abbreviation -- single source of truth, used by
+// the marker-color lookup below, the org filter checkbox menu (runONTAOrgMenu), and the
+// pane subtitle's abbreviated label when the full '+'-joined name list won't fit.
+// Colors chosen to avoid RA8875_RED (watchlist highlight) and to stay visually distinct
+// from each other; deliberately does NOT need to match the DX Cluster pane's own
+// WCA/ARLHS/etc marker colors from spots.cpp -- different pane, different (non-overlapping)
+// set of orgs, no reason they need to share a palette.
+// Abbrev is NOT simply the first letter: WWFF/WWTOTA/WWBOTA all start with 'W', so a naive
+// first-letter scheme collides three ways. Each org gets an explicit, disambiguated short
+// code instead -- if you add a new org here, pick an abbrev that's unique against every
+// existing one, not just its own first letter.
 typedef struct {
     const char *org;
     uint16_t color;
-} ONTAOrgColor;
-static const ONTAOrgColor onta_org_colors[] = {
-    { "POTA",   RGB565(60,200,90)   },   // green
-    { "SOTA",   RGB565(255,150,30)  },   // orange
-    { "WWFF",   RGB565(0,190,160)   },   // teal
-    { "IOTA",   RGB565(150,250,255) },   // cyan -- matches ONTA_COLOR
-    { "GMA",    RGB565(150,150,170) },   // slate grey
-    { "LLOTA",  RGB565(90,90,220)   },   // indigo
-    { "WWTOTA", RGB565(184,115,51)  },   // copper
-    { "TOWERS", RGB565(230,190,40)  },   // amber
-    { "WWBOTA", RGB565(140,148,60)  },   // olive/khaki 
+    uint32_t bit;                // ONTA_ORGMASK_ALL below must be the OR of every bit here
+    const char *abbrev;
+} ONTAOrgInfo;
+static const ONTAOrgInfo onta_org_info[] = {
+    { "POTA",   RGB565(60,200,90)   , (1U<<0), "P"  },   // green
+    { "SOTA",   RGB565(255,150,30)  , (1U<<1), "S"  },   // orange
+    { "WWFF",   RGB565(0,190,160)   , (1U<<2), "WF" },   // teal
+    { "IOTA",   RGB565(150,250,255) , (1U<<3), "I"  },   // cyan -- matches ONTA_COLOR
+    { "GMA",    RGB565(150,150,170) , (1U<<4), "G"  },   // slate grey
+    { "LLOTA",  RGB565(90,90,220)   , (1U<<5), "L"  },   // indigo
+    { "WWTOTA", RGB565(184,115,51)  , (1U<<6), "WT" },   // copper
+    { "TOWERS", RGB565(230,190,40)  , (1U<<7), "T"  },   // gold/amber
+    { "WWBOTA", RGB565(140,148,60)  , (1U<<8), "WB" },   // olive/khaki
 };
+#define N_ONTAORGINFO NARRAY(onta_org_info)
+
+// OR of every bit above -- this exact value means "every known org selected", which is
+// treated as equivalent to no filtering at all (isSpotOrgOk() just passes everything once
+// every bit it could ever test against is set, no special-casing needed). N.B. must be kept
+// in sync by hand if a row above is added/removed -- there's no compile-time way to derive
+// this from the array's own bit fields.
+#define ONTA_ORGMASK_ALL ((1U<<0)|(1U<<1)|(1U<<2)|(1U<<3)|(1U<<4)|(1U<<5)|(1U<<6)|(1U<<7)|(1U<<8))
 
 /* look up the marker color for an org name (spot.rx_grid, repurposed -- see header comment);
  * returns RA8875_BLACK as a "no specific color" sentinel for anything not in the table above,
- * eg an org the user's own onta.txt org filter produces that we haven't accounted for -- falls
- * back to plain, uncolored text rather than misbehaving.
+ * eg an org the server side starts emitting that this client hasn't been taught about yet --
+ * falls back to plain, uncolored text rather than misbehaving.
  */
 static uint16_t ontaOrgMarkerColor (const char *org)
 {
     if (org)
-        for (const ONTAOrgColor &oc : onta_org_colors)
-            if (!strcasecmp (oc.org, org))
-                return (oc.color);
+        for (const ONTAOrgInfo &oi : onta_org_info)
+            if (!strcasecmp (oi.org, org))
+                return (oi.color);
     return (RA8875_BLACK);
+}
+
+/* look up the filter bit for an org name; returns 0 (matches nothing) if unknown.
+ */
+static uint32_t ontaOrgBit (const char *org)
+{
+    if (org)
+        for (const ONTAOrgInfo &oi : onta_org_info)
+            if (!strcasecmp (oi.org, org))
+                return (oi.bit);
+    return (0);
 }
 
 // park/summit reference -> 2-letter state/province, purely additive side file. this
@@ -138,13 +161,12 @@ static const ONTASortInfo onta_sorts[ONTAS_N] = {
     {"Age",  qsDXCSpotted},
 };
 
-// organization filter and each component
-static char onta_orgfilter[NV_ONTAORG_LEN];             // original orgs as one string
-static char onta_orgtokens[NV_ONTAORG_LEN];             // all orgs each with EOS for onta_orgs
-static char *onta_orgs[MAX_ONTAORGS];                   // ptr to each token within onta_orgtokens
-static int onta_norgs;                                  // n used in onta_orgs[]
-static int next_ontaorg;                                // used to rotate org unless onta_merge
-static bool onta_merge;                                 // whether + was in list to cancel rotation
+// organization filter: one bit per known org (see ONTAOrgInfo/ONTA_ORGMASK_ALL above).
+// ONTA_ORGMASK_ALL means "everything", same as the old empty-string "All" convention, but
+// unlike the old free-text NV_ONTAORG field (limited to NV_ONTAORG_LEN=30 bytes -- a
+// '+'-joined list of every known org's full name already exceeds that), a bitmask has no
+// such ceiling no matter how many orgs get added later.
+static uint32_t onta_orgmask;
 
 
 // ages
@@ -203,55 +225,20 @@ static uint32_t spotsHash (const DXSpot *spots, int n_spots)
     return (hash);
 }
 
-/* split onta_orgfilter into onta_orgs via onta_orgtokens.
- * also check for '+' so set onta_merge.
- */
-static void parseONTAOrgs(void)
-{
-    // copy to onta_orgtokens for splitting
-    memcpy (onta_orgtokens, onta_orgfilter, NV_ONTAORG_LEN);
-
-    // remove but note all +
-    onta_merge = false;
-    for (char *plus = strchr (onta_orgtokens, '+'); plus != NULL; plus = strchr (onta_orgtokens, '+')) {
-        onta_merge = true;
-        *plus = ' ';
-    }
-
-    // split and reset rotation index
-    onta_norgs = strtokens (onta_orgtokens, onta_orgs, MAX_ONTAORGS);
-    if (next_ontaorg >= onta_norgs)
-        next_ontaorg = 0;
-
-    Serial.printf ("ONTA: parsed orgs '%s' into %d tokens with%s merging\n", onta_orgfilter, onta_norgs,                onta_merge ? "" : "out");
-}
-
-
 /* return whether the given spot's org is allowed
  */
 static bool isSpotOrgOk (const DXSpot &s)
 {
     // remember: rx_grid is repurposed for program name
 
-    // all if no orgs
-    if (onta_norgs == 0)
+    // ONTA_ORGMASK_ALL passes everything, including an org this client doesn't recognize
+    // (unlike the old string filter, an unrecognized org can't accidentally get excluded
+    // by a stale/incomplete filter list -- ontaOrgBit() returning 0 for an unknown org
+    // would otherwise silently hide it forever even under "All")
+    if (onta_orgmask == ONTA_ORGMASK_ALL)
         return (true);
 
-    // just next_ontaorg unless merging
-    if (!onta_merge)
-        return (strcasecmp (onta_orgs[next_ontaorg], s.rx_grid) == 0);
-
-    // check for any org if merging
-    if (onta_merge) {
-        for (int i = 0; i < onta_norgs; i++) {
-            if (strcasecmp (onta_orgs[i], s.rx_grid) == 0) {
-                return (true);
-            }
-        }
-    }
-
-    // nope
-    return (false);
+    return ((onta_orgmask & ontaOrgBit (s.rx_grid)) != 0);
 }
 
 
@@ -307,10 +294,15 @@ static void loadONTASettings (void)
         onta_sortby = ONTAS_AGE;
         NVWriteUInt8 (NV_ONTASORTBY, onta_sortby);
     }
-    if (!NVReadString (NV_ONTAORG, onta_orgfilter)) {
-        memset (onta_orgfilter, 0, sizeof(onta_orgfilter));
-        NVWriteString (NV_ONTAORG, onta_orgfilter);
+    if (!NVReadUInt32 (NV_ONTA_ORGMASK, &onta_orgmask)) {
+        onta_orgmask = ONTA_ORGMASK_ALL;
+        NVWriteUInt32 (NV_ONTA_ORGMASK, onta_orgmask);
     }
+    // NV_ONTAORG (the old free-text org filter) is retired in favor of the bitmask above --
+    // clear it explicitly so a stale value from an older build doesn't linger unused. Its
+    // NVRAM slot is deliberately kept, not removed, to avoid shifting every other NV_Name's
+    // storage index.
+    NVWriteString (NV_ONTAORG, "");
     if (!NVReadUInt8 (NV_ONTA_MAXAGE, &onta_age)) {
         onta_age = onta_ages[1];
         NVWriteUInt8 (NV_ONTA_MAXAGE, onta_age);
@@ -326,9 +318,6 @@ static void loadONTASettings (void)
         NVWriteUInt32 (NV_ONTA_BANDS, onta_bands);
     }
 
-    // parse onta_orgfilter
-    parseONTAOrgs();
-
     // determine onta_showbio
     uint8_t bio = 0;
     if (getQRZId() != QRZ_NONE) {
@@ -343,7 +332,7 @@ static void loadONTASettings (void)
 static void saveONTASettings (void)
 {
     NVWriteUInt8 (NV_ONTASORTBY, onta_sortby);
-    NVWriteString (NV_ONTAORG, onta_orgfilter);
+    NVWriteUInt32 (NV_ONTA_ORGMASK, onta_orgmask);
     NVWriteUInt8 (NV_ONTA_MAXAGE, onta_age);
     NVWriteUInt8 (NV_ONTABIO, onta_showbio);
     NVWriteUInt8 (NV_ONTA_MODES, onta_modes);
@@ -450,19 +439,67 @@ static void formatONTASpot (const DXSpot &spot, const SBox &box, char *line, siz
     }
 }
 
-/* fill f[] (of size NV_ONTAORG_LEN) with the currently effective org filter label:
- * the merged filter string, the single org currently being cycled through, or "All".
+// generous size for a '+'-joined list of every known org's FULL name -- unlike the old
+// NV_ONTAORG_LEN (30, sized for the persisted string), this is purely a local display
+// buffer size with no NVRAM ceiling to respect, so there's no risk of the overflow that
+// motivated moving persistence to a bitmask in the first place.
+#define ONTA_ORGLABEL_LEN 100
+
+/* fill f[] (of size f_len) with the currently effective org filter label: either "All", or
+ * a '+'-joined list of every currently-selected org's FULL name (eg "POTA+SOTA"). Full names
+ * always, regardless of available screen width -- callers needing a width-constrained version
+ * for compact display should call ontaOrgLabelAbbrev() instead, which falls back to each
+ * org's short abbrev (eg "P+S") only when the full-name version won't fit.
  * shared by drawONTAPane (subtitle) and drawONTAVisSpots (empty-results message) so
  * the two never drift out of sync.
  */
-static void ontaOrgLabel (char *f)
+static void ontaOrgLabel (char *f, size_t f_len)
 {
-    if (onta_merge)
-        quietStrncpy (f, onta_orgfilter, NV_ONTAORG_LEN);               // show original including +
-    else if (onta_norgs > 0)
-        quietStrncpy (f, onta_orgs[next_ontaorg], NV_ONTAORG_LEN);      // show current
-    else
-        quietStrncpy (f, "All", NV_ONTAORG_LEN);                        // show "All"
+    if (onta_orgmask == ONTA_ORGMASK_ALL) {
+        quietStrncpy (f, "All", f_len);
+        return;
+    }
+
+    size_t off = 0;
+    bool first = true;
+    for (const ONTAOrgInfo &oi : onta_org_info) {
+        if (!(onta_orgmask & oi.bit))
+            continue;
+        int n = snprintf (f+off, off < f_len ? f_len-off : 0, "%s%s", first ? "" : "+", oi.org);
+        if (n > 0)
+            off += (size_t)n;
+        first = false;
+    }
+    if (off == 0)
+        quietStrncpy (f, "All", f_len);     // defensive: shouldn't happen, the org menu
+                                              // enforces at least 1 checked -- treat an
+                                              // empty result as All rather than blank
+}
+
+/* like ontaOrgLabel() but using each org's short abbrev (eg "P+S+G+L") instead of its full
+ * name, for callers that need to fit within a limited pixel width. Still returns "All"
+ * unabbreviated when every org is selected, since that already fits comfortably everywhere
+ * it's used.
+ */
+static void ontaOrgLabelAbbrev (char *f, size_t f_len)
+{
+    if (onta_orgmask == ONTA_ORGMASK_ALL) {
+        quietStrncpy (f, "All", f_len);
+        return;
+    }
+
+    size_t off = 0;
+    bool first = true;
+    for (const ONTAOrgInfo &oi : onta_org_info) {
+        if (!(onta_orgmask & oi.bit))
+            continue;
+        int n = snprintf (f+off, off < f_len ? f_len-off : 0, "%s%s", first ? "" : "+", oi.abbrev);
+        if (n > 0)
+            off += (size_t)n;
+        first = false;
+    }
+    if (off == 0)
+        quietStrncpy (f, "All", f_len);
 }
 
 /* print a short message centered in the *listing* portion of an ONTA-style pane, ie below
@@ -602,10 +639,10 @@ static void drawONTAVisSpots (const SBox &box)
         // nothing to show -- if a specific org is selected (not the "All" pool, which
         // realistically always has something), say so rather than leave the pane blank.
         // POTA is unlikely to ever hit this, but SOTA/WWFF/IOTA can go quiet for a while.
-        char f[NV_ONTAORG_LEN];
-        ontaOrgLabel (f);
+        char f[ONTA_ORGLABEL_LEN];
+        ontaOrgLabel (f, sizeof(f));
         if (strcmp (f, "All")) {
-            char msg[NV_ONTAORG_LEN+50];
+            char msg[ONTA_ORGLABEL_LEN+50];
             snprintf (msg, sizeof(msg), "No '%s' org spots found - watch here for more", f);
             drawONTAEmptyMsg (box, msg);
         }
@@ -625,6 +662,18 @@ static void drawONTAVisSpots (const SBox &box)
     onta_ss.drawScrollDownControl (box, dw_color, ONTA_COLOR);
 }
 
+// dropdown arrow geometry for the org-picker affordance in the subtitle row -- small,
+// scaled down from menu.cpp's own down-pointing-triangle "submenu" indicator (MENU_IS=6)
+// to fit this compact row. onta_orgarrow_b is the tap hit region (padded a little larger
+// than the visual glyph itself, a bigger target than the drawn triangle), set fresh each
+// time drawONTAPane runs and consumed by checkOnTheAirTouch. N.B. exact pixel placement
+// here is a best-effort estimate -- untested on real hardware/SDL, may want minor on-device
+// tuning of the offsets below once actually seen on screen.
+#define ONTA_ORGARROW_W     7
+#define ONTA_ORGARROW_H     5
+#define ONTA_ORGARROW_GAP   3
+static SBox onta_orgarrow_b;
+
 /* draw spots in the given pane box from scratch.
  * use drawONTAVisSpots() if want to redraw just the spots.
  */
@@ -641,14 +690,43 @@ static void drawONTAPane (const SBox &box)
     tft.setCursor (box.x + (box.w-pw)/2, box.y + PANETITLE_H);
     tft.print (title);
 
-    // show current org or All
-    char f[NV_ONTAORG_LEN];
-    ontaOrgLabel (f);
+    // show current org filter -- "All", the full '+'-joined org names if they fit, else
+    // each org's short abbrev instead (eg "P+S+G+L") -- with a small dropdown arrow next to
+    // it that opens runONTAOrgMenu() (see checkOnTheAirTouch for the matching hit-test
+    // against onta_orgarrow_b, set below)
+    char f[ONTA_ORGLABEL_LEN];
+    ontaOrgLabel (f, sizeof(f));
     selectFontStyle (LIGHT_FONT, FAST_FONT);
-    uint16_t f_l = maxStringW (f, box.w-2);
+    uint16_t avail_w = box.w >= 2 ? box.w-2 : 0;
+    uint16_t arrow_room = ONTA_ORGARROW_GAP + ONTA_ORGARROW_W;
+    uint16_t f_l = getTextWidth (f);
+    if (f_l + arrow_room > avail_w) {
+        // full names (+ arrow) don't fit -- try the abbreviated form instead
+        ontaOrgLabelAbbrev (f, sizeof(f));
+        f_l = getTextWidth (f);
+    }
+    // last-resort truncation -- same safety net the old code always relied on, in case even
+    // the abbreviated form is still too wide (eg an extremely narrow pane)
+    if (f_l + arrow_room > avail_w)
+        f_l = maxStringW (f, avail_w > arrow_room ? avail_w-arrow_room : 0);
     tft.setTextColor(RA8875_WHITE);
-    tft.setCursor (box.x + (box.w-f_l)/2, box.y + SUBTITLE_Y0);
+    uint16_t f_x = box.x + (box.w - (f_l+arrow_room))/2;
+    uint16_t f_y = box.y + SUBTITLE_Y0;
+    tft.setCursor (f_x, f_y);
     tft.print (f);
+
+    // dropdown arrow immediately to the right of the label -- same down-pointing-triangle
+    // visual language as the "submenu" indicator in menu.cpp, scaled down for this row
+    uint16_t ax0 = f_x + f_l + ONTA_ORGARROW_GAP;
+    uint16_t ay0 = f_y + 2;                              // nudge down toward text center
+    onta_orgarrow_b.x = ax0;
+    onta_orgarrow_b.y = ay0 >= 2 ? ay0-2 : 0;             // pad tap target a bit above...
+    onta_orgarrow_b.w = ONTA_ORGARROW_W + 3;              // ...right...
+    onta_orgarrow_b.h = ONTA_ORGARROW_H + 6;              // ...and below the visual glyph
+    uint16_t tx0 = ax0,                     ty0 = ay0;
+    uint16_t tx1 = ax0 + ONTA_ORGARROW_W,   ty1 = ay0;
+    uint16_t tx2 = ax0 + ONTA_ORGARROW_W/2, ty2 = ay0 + ONTA_ORGARROW_H;
+    tft.fillTriangle (tx0, ty0, tx1, ty1, tx2, ty2, RA8875_WHITE);
 
     // show each spot
     drawONTAVisSpots (box);
@@ -920,8 +998,11 @@ static void rebuildONTAWatchList(void)
  * Sort by:
  *   ( ) Age    ( ) Call
  *   ( ) Band   ( ) Org
- * Org:
  * Watch:
+ *
+ * N.B. Org filtering now has its own dedicated popup (runONTAOrgMenu(), opened by tapping
+ * the small dropdown arrow next to the subtitle in drawONTAPane()) rather than living here
+ * as a free-text field -- see onta_orgmask/ONTAOrgInfo for why.
  */
 static void runONTASortMenu (const SBox &box)
 {
@@ -933,18 +1014,24 @@ static void runONTASortMenu (const SBox &box)
     char wl_state[WLA_MAXLEN];                                  // wl state, menu may change
     setupWLMenuText (WLID_ONTA, wl_mt, wl_state);               // N.B. we must free wl_mt.text
 
-    // set up the org name field
-    MenuText org_mt;                                            // file name field
-    memset (&org_mt, 0, sizeof(org_mt));
-    char org_text[NV_ONTAORG_LEN];
-    quietStrncpy (org_text, onta_orgfilter, NV_ONTAORG_LEN);    // init with current
-    org_mt.text = org_text;                                     // working mem
-    org_mt.t_mem = NV_ONTAORG_LEN;                              // total text memory available
-    char org_label[] = "Org: ";                                 // prompt
-    org_mt.label = org_label;
-    org_mt.l_mem = sizeof(org_label);                           // including EOS
-    org_mt.c_pos = org_mt.w_pos = 0;                            // start at left
-    org_mt.to_upper = true;
+    // set up a second, purely decorative MENU_TEXT whose only job is printing a static
+    // "Watching:" header on its own full-width row directly above wl_mt's. Has to be a
+    // MENU_TEXT (not a MENU_LABEL grid item) because MENU_TEXT rows get their own dedicated
+    // row below the checkbox grid without affecting n_table/n_tblrows at all (see
+    // runMenu()'s layout math in menu.cpp) -- a MENU_LABEL grid item changes n_table, which
+    // changes n_tblrows via ceil(n_table/n_cols), which reflows every single checkbox's
+    // column/row position, since the grid above was hand-tuned assuming an exact n_tblrows
+    // value (confirmed broken/scrambled on real hardware -- do not go back to a MENU_LABEL
+    // here). No label_fp/text_fp registered, and its .text is never read after runMenu()
+    // returns -- completely inert, nothing to save or validate.
+    MenuText watching_mt;
+    memset (&watching_mt, 0, sizeof(watching_mt));
+    char watching_label[] = "Watching:";
+    watching_mt.label = watching_label;
+    watching_mt.l_mem = sizeof(watching_label);
+    char watching_text[] = "";                                  // unused, never read back
+    watching_mt.text = watching_text;
+    watching_mt.t_mem = sizeof(watching_text);
 
     // build the possible age labels
     char onta_ages_str[N_ONTAAGES][10];
@@ -1038,8 +1125,11 @@ static void runONTASortMenu (const SBox &box)
             {MENU_AL1OFN, TST_ONTABAND(HAMBAND_6M),   7, 12, findBandName(HAMBAND_6M),   NULL},     // 32
             {MENU_AL1OFN, (onta_bands&ONTA_BAND_OTHER)!=0, 7, 12, "Other", NULL},                   // 33
 
-            // text fields across the bottom
-            {MENU_TEXT, false,                        4, 2, org_mt.label, &org_mt},                 // 34
+            // text fields across the bottom -- watching_mt is a second, inert MENU_TEXT purely
+            // to print a static "Watching:" header on its own full-width row just above wl_mt's
+            // (see watching_mt's setup above and the big comment there for why this has to be a
+            // second MENU_TEXT rather than a MENU_LABEL grid item)
+            {MENU_TEXT, false,                        0, 2, watching_mt.label, &watching_mt},       // 34
             {MENU_TEXT, false,                        5, 2, wl_mt.label, &wl_mt},                   // 35
         };
         #define ONTAMENU_NARROW_N   NARRAY(mitems)
@@ -1120,8 +1210,8 @@ static void runONTASortMenu (const SBox &box)
             {MENU_AL1OFN, TST_ONTABAND(HAMBAND_6M),   7, 12, findBandName(HAMBAND_6M),   NULL},     // 28
             {MENU_AL1OFN, (onta_bands&ONTA_BAND_OTHER)!=0, 7, 12, "Other", NULL},                   // 29
 
-            // text fields across the bottom
-            {MENU_TEXT, false,                        4, 2, org_mt.label, &org_mt},                 // 30
+            // text fields across the bottom -- see the matching narrow-layout comment above
+            {MENU_TEXT, false,                        0, 2, watching_mt.label, &watching_mt},       // 30
             {MENU_TEXT, false,                        5, 2, wl_mt.label, &wl_mt},                   // 31
         };
         #define ONTAMENU_N   NARRAY(mitems)
@@ -1183,10 +1273,6 @@ static void runONTASortMenu (const SBox &box)
         setWatchList (WLID_ONTA, wl_mt.label, wl_mt.text);
         Serial.printf ("ONTA: set WL to %s %s\n", wl_mt.label, wl_mt.text);
 
-        // save potentially new org filter
-        quietStrncpy (onta_orgfilter, strTrimAll (org_text), NV_ONTAORG_LEN);
-        parseONTAOrgs();
-
         // save
         saveONTASettings();
 
@@ -1197,6 +1283,54 @@ static void runONTASortMenu (const SBox &box)
 
     // always free the working text
     free (wl_mt.text);
+}
+
+/* show a small dedicated popup letting the op pick which org(s) to show, one checkbox per
+ * known org (see ONTAOrgInfo), all checked by default (equivalent to "All"). Opened by
+ * tapping the small dropdown arrow next to the org label in drawONTAPane's subtitle (see
+ * onta_orgarrow_b / checkOnTheAirTouch) -- distinct from runONTASortMenu's combined
+ * Age/Sort/Modes/Bands/Watch popup, which no longer includes Org at all.
+ */
+static void runONTAOrgMenu (const SBox &box)
+{
+    // insure defaults are set in case retrieval failed
+    loadONTASettings();
+
+    SBox menu_b = box;                          // copy, not ref!
+    menu_b.y = box.y + 2;                        // open near the top of the pane
+    menu_b.x = box.x + 5;
+    menu_b.w = box.w - 10;
+    SBox ok_b;
+
+    MenuItem mitems[1 + N_ONTAORGINFO];
+    mitems[0] = {MENU_LABEL, false, 0, 2, "Show orgs:", NULL};
+    for (size_t i = 0; i < N_ONTAORGINFO; i++) {
+        mitems[1+i].type    = MENU_AL1OFN;
+        mitems[1+i].set     = (onta_orgmask & onta_org_info[i].bit) != 0;
+        mitems[1+i].group   = 1;
+        mitems[1+i].indent  = 12;
+        mitems[1+i].label   = onta_org_info[i].org;
+        mitems[1+i].textf   = NULL;
+        mitems[1+i].submenu = false;
+    }
+    #define ONTAORGMENU_N   NARRAY(mitems)
+
+    MenuInfo menu = {menu_b, ok_b, UF_CLOCKSOK, M_CANCELOK, 1, ONTAORGMENU_N, mitems};
+    if (runMenu (menu)) {
+        uint32_t new_mask = 0;
+        for (size_t i = 0; i < N_ONTAORGINFO; i++)
+            if (mitems[1+i].set)
+                new_mask |= onta_org_info[i].bit;
+        // MENU_AL1OFN guarantees at least 1 stays checked, but fall back to All defensively
+        // rather than ever persist a mask that would hide every spot
+        onta_orgmask = new_mask ? new_mask : ONTA_ORGMASK_ALL;
+
+        saveONTASettings();
+
+        // full refresh, same as runONTASortMenu does on Ok
+        onta_ss.scrollToNewest();
+        scheduleNewPlot (PLOT_CH_ONTA);
+    }
 }
 
 /* reset storage and prep for box
@@ -1386,19 +1520,15 @@ bool updateOnTheAir (const SBox &box, bool fresh)
     if (ok) {
         spots_hash = spotsHash (onta_spots, n_ontaspots);
         if (onta_ss.atNewest()) {
-            bool rotated_org = false;
-            if (onta_norgs > 0 && !onta_merge) {
-                // rotate to next org
-                next_ontaorg = (next_ontaorg + 1) % onta_norgs; // rotate org
-                rotated_org = true;
-                Serial.printf ("ONTA: now showing %s\n", onta_orgs[next_ontaorg]);
-            }
+            // N.B. org rotation retired -- see isONTARotating()'s comment -- checkbox
+            // multi-select via onta_orgmask always shows the full union of checked orgs
+            // now, so there's no longer a "next org" to advance to here.
             rebuildONTAWatchList();
             onta_ss.drawNewSpotsSymbol (false, false);                  // New symbol off
             ROTHOLD_CLR(PLOT_CH_ONTA);                                  // release rotation hold
             drawONTAPane (box);
             if (findPaneForChoice(PLOT_CH_ONTA) != PANE_NONE
-                    && (fresh || rotated_org || spots_hash != prev_hash))
+                    && (fresh || spots_hash != prev_hash))
                 scheduleMapRedraw();
         } else {
             onta_ss.drawNewSpotsSymbol (NEW_SPOTS(), false);            // on if different
@@ -1453,9 +1583,13 @@ bool checkOnTheAirTouch (TouchType tt, const SCoord &s, const SBox &box)
         return (false);
     }
 
-    // check for tapping count to run menu
+    // check for tapping count to run menu -- but the small org-picker dropdown arrow within
+    // this same row gets its own dedicated popup instead of the combined one
     if (s.y < box.y + LISTING_Y0) {
-        runONTASortMenu (box);
+        if (inBox (s, onta_orgarrow_b))
+            runONTAOrgMenu (box);
+        else
+            runONTASortMenu (box);
         return (true);
     }
 
@@ -1564,9 +1698,15 @@ bool getOnTheAirPaneSpot (const SCoord &ms, DXSpot *dxs, LatLong *ll)
 }
 
 
-/* return whether we are rotating through multiple organizations
+/* return whether we are rotating through multiple organizations.
+ * ALWAYS FALSE NOW: the old "type several orgs without a '+' to cycle through them one at a
+ * time" behavior is retired now that org selection is a checkbox multi-select (onta_orgmask)
+ * showing the union of everything checked, same as '+' used to mean -- there's no longer a
+ * distinct "one at a time" mode to report on. Function kept (not removed) because
+ * plotmgmnt.cpp calls it externally to decide whether to keep auto-cycling this pane's
+ * display on a timer; always returning false is the correct answer to that question now.
  */
 bool isONTARotating(void)
 {
-    return (onta_norgs > 1 && !onta_merge && onta_ss.atNewest());
+    return (false);
 }
